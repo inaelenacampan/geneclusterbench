@@ -246,6 +246,8 @@ def get_gene_id(seq):
 def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
                   mutation_rate, n_sim_genes, prefix, max_core, random_state):
 
+    # nisolates : number of simulation to produce
+
     # reading sequences
     print("> Opening GFF3 file")
     with open(gfffile, 'r') as infile:
@@ -282,21 +284,30 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
     prev_end            = -1
     gene_seqs           = []
 
+    # CD = coding sequence
+
     print("> Iterating over CDS entries...")
     for entry in parsed_gff.all_features(featuretype=()):
         if "CDS" not in entry.featuretype: continue
 
         left  = entry.start - 1
         right = entry.stop
+
+        # Extract the nucleotide sequence
         gene_sequence = Seq(''.join(seq_dict[entry.seqid][left:right]))
+
+        # take the reverse
         if entry.strand == "-":
             gene_sequence = gene_sequence.reverse_complement()
 
         gene_seq_to_save = copy.deepcopy(gene_sequence)
         # print(gene_seq_to_save)
 
+        # translate to amino acid
         gene_sequence = gene_sequence.translate(stop_symbol = "")
+
         # print(gene_sequence); sys.exit()
+
         geneid = get_gene_id(gene_sequence)         # The IDs must be of the translated genes, i.e. of the AA sequences. That is what makes sense.
         # geneid = get_gene_id(gene_seq_to_save)
         gene_seq_dict["geneid_" + str(geneid)] = str(gene_seq_to_save)
@@ -328,7 +339,7 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
     #     print(iG.seqid, iG.start, iG.stop, theseql)
     # sys.exit()
 
-    # sub-sample genes so that some are conserved
+    # sub-sample genes so that some are conserved on a random manner
     print("> Subsampling genes...")
     gene_locations = random_state.sample(gene_locations, n_sim_genes)
     print("> Done!")
