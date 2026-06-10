@@ -249,8 +249,9 @@ def draw_phylogenetic_tree(filepath, folder):
 
     fig, ax = plt.subplots(figsize=(12, 8))
     Phylo.draw(tree, axes=ax)
-
-    plt.savefig(f"{folder}/tree.png", dpi=300)
+    file_name_tree = ("sim_gr_" + str(args.gain_rate) + "_lr_" +
+              str(args.loss_rate) + "_mu_" + str(args.mutation_rate) + "tree.png")
+    plt.savefig(f"{folder}/{file_name_tree}", dpi=300)
     return
 
 # Main function
