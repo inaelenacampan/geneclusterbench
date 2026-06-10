@@ -6,7 +6,7 @@ from pathlib import Path
 
 DEFAULT_OUTDIRSIMS = (
     "/nfs/research/jlees/campan/data/clustering_benchmarking/"
-    "2025_09_22_simsnowwithntandaasandgffs"
+    "2026_06_10_simsnowwithntandaasandgffs"
 )
 PACKAGE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = PACKAGE_DIR.parents[1]
@@ -16,7 +16,7 @@ DEFAULT_SEEDS = str(PROJECT_ROOT / "data" / "random_numbers.txt")
 
 DEFAULT_GFF = (
     "/nfs/research/jlees/campan/projects/clustering_benchmarking/tests/"
-    "2025_06_05_annotation/MSdataset/6925_1#61/PROKKA_06122025.gff"
+    "2026_06_10_annotation/MSdataset/6925_1#61/PROKKA_06122025.gff"
 )
 
 GENERATION_SCAFFOLD = '. "{env}" && python3 "{execexec}" -g "{inputgff}" -o "{outputpath}" -s "{seed}"'
