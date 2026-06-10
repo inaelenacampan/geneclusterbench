@@ -5,14 +5,14 @@ from pathlib import Path
 
 
 DEFAULT_DATAPATH = (
-    "/nfs/research/jlees/vrbouza/data/clustering_benchmarking/"
+    "/nfs/research/jlees/campan/data/clustering_benchmarking/"
     "2025_09_11_simsnowwithntandaas"
 )
 DEFAULT_SOFTWAREDIR = (
-    "/hps/software/users/jlees/vrbouza/projects/clustering_benchmark/software"
+    "/hps/software/users/jlees/campan/projects/clustering_benchmark/software"
 )
 DEFAULT_RUNNER = (
-    "/hps/software/users/jlees/vrbouza/projects/assembler_development/"
+    "/hps/software/users/jlees/campan/projects/assembler_development/"
     "benchmarking/run_benchmark.py"
 )
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -244,7 +244,7 @@ def main():
     parser.add_argument("--datapath", default=DEFAULT_DATAPATH)
     parser.add_argument("--seeds", "-s", default=DEFAULT_SEEDS)
     parser.add_argument("--outdir", "-o", default="./")
-    parser.add_argument("--temp-outdir", "-to", default="/hps/nobackup/jlees/vrbouza/tmp/")
+    parser.add_argument("--temp-outdir", "-to", default="/hps/nobackup/jlees/campan/tmp/")
     parser.add_argument("--threads", "-j", default=4, type=int)
     parser.add_argument("--time", "-t", default="1-12:00:00")
     parser.add_argument("--mem", "-m", default="48")
