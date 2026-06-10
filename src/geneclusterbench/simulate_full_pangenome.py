@@ -1,4 +1,5 @@
 # Copyright Gerry Tonkin-Hill 2019
+# import libraries
 
 import sys, os
 import argparse
@@ -18,6 +19,7 @@ import math
 from Bio.SeqFeature import SeqFeature, FeatureLocation
 from BCBio import GFF
 
+# codon = sequence of three consecutive nucleotides (the building blocks of DNA and RNA) that acts as the basic unit of genetic information
 
 codons = [
     'ATA', 'ATC', 'ATT', 'ATG', 'ACA', 'ACC', 'ACG', 'ACT', 'AAC', 'AAT',
@@ -27,7 +29,14 @@ codons = [
     'GAC', 'GAT', 'GAA', 'GAG', 'GGA', 'GGC', 'GGG', 'GGT', 'TCA', 'TCC',
     'TCG', 'TCT', 'TTC', 'TTT', 'TTA', 'TTG', 'TAC', 'TAT', 'TGC', 'TGT', 'TGG'
 ]
+
+# seq -> string kind of object for bioinformatics
+
 codons = [Seq(c) for c in codons]
+
+# genetic codon translation table (codon → amino acid lookup)
+# Start Codon: AUG (Methionine) is the universal start codon that initiates translation.
+# Stop Codons: UAA, UAG, and UGA are stop codons that terminate translation.
 
 translation_table = np.array([[[b'K', b'N', b'K', b'N', b'X'],
                                [b'T', b'T', b'T', b'T', b'T'],
@@ -55,6 +64,9 @@ translation_table = np.array([[[b'K', b'N', b'K', b'N', b'X'],
                                [b'X', b'X', b'X', b'X', b'X'],
                                [b'X', b'X', b'X', b'X', b'X']]])
 
+# ASCII codes
+# 0A 1C 2G 3T
+
 reduce_array = np.full(200, 4)
 reduce_array[[65, 97]]  = 0
 reduce_array[[67, 99]]  = 1
@@ -65,8 +77,9 @@ absolute_gene_map = {}
 absolute_gene_ind = 0
 
 def translate(seq):
+    # encode sequence
     indices = reduce_array[np.fromstring(seq, dtype=np.int8)]
-
+    # Returns an array of amino acid bytes
     return translation_table[
         indices[np.arange(0, len(seq), 3)], indices[np.arange(1, len(seq), 3)],
         indices[np.arange(2, len(seq), 3)]].tostring().decode('ascii')
