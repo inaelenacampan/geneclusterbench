@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 DEFAULT_OUTDIRSIMS = (
-    "/nfs/research/jlees/vrbouza/data/clustering_benchmarking/"
+    "/nfs/research/jlees/campan/data/clustering_benchmarking/"
     "2025_09_22_simsnowwithntandaasandgffs"
 )
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -15,7 +15,7 @@ DEFAULT_PY3ENV = str(PROJECT_ROOT / ".venv" / "bin" / "activate")
 DEFAULT_SEEDS = str(PROJECT_ROOT / "data" / "random_numbers.txt")
 
 DEFAULT_GFF = (
-    "/nfs/research/jlees/vrbouza/projects/clustering_benchmarking/tests/"
+    "/nfs/research/jlees/campan/projects/clustering_benchmarking/tests/"
     "2025_06_05_annotation/MSdataset/6925_1#61/PROKKA_06122025.gff"
 )
 
