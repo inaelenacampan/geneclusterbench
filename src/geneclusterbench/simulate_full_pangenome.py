@@ -93,12 +93,17 @@ def get_codon(index, strand="+"):
 
 
 def clean_gff_string(gff_string):
+    # list of strings
     splitlines = gff_string.splitlines()
     lines_to_delete = []
+
     for index in range(len(splitlines)):
+        # directive lines from a GFF
         if '##sequence-region' in splitlines[index]:
             lines_to_delete.append(index)
+
     for index in sorted(lines_to_delete, reverse=True):
+        # delete object
         del splitlines[index]
     cleaned_gff = "\n".join(splitlines)
     return cleaned_gff
@@ -116,18 +121,30 @@ def simulate_img_with_mutation(in_tree,
                                ngenes    = 100,
                                min_ncore = 10,
                                max_ncore = 99999999):
-    # simulate accessory p/a using infintely many genes model
+    # simulate accessory p/a using infintely many genes model -> see paper of Baumdicker
     n_additions = 0
+
+    # in_tree : phylogenetic tree
+    # gain rate ->  a gene gain is the first occurence of a new gene in a population 
+
+    # genes are lost with exponential probability, and new genes are gained via a Poisson process
+
     for node in in_tree.preorder_node_iter():
         node.acc_genes = []
         if node.parent_node is not None:
+            # probability to keep a gene
             p_keep = np.exp(-(node.edge.length * loss_rate / 2.0))
+
+            # each gene inherited from the parent survives independently with a certain probability
+
             to_inherit = [
                 g for g in node.parent_node.acc_genes
                 if np.random.random() < p_keep
             ]
 
             # simulate new genes with lengths sampled uniformly.
+            # poisson distribution
+
             n_new = np.random.poisson(lam=node.edge.length * gain_rate / 2.0)
             lengths = np.random.uniform(low=0.0,
                                         high=node.edge.length,
@@ -168,8 +185,10 @@ def simulate_img_with_mutation(in_tree,
                 n_new = np.random.poisson(lam=node.edge.length *
                                           mutation_rate / 2.0,
                                           size=1)[0]
+                # get random location
                 locations = list(np.random.uniform(low=0.0, high=1,
                                                    size=n_new))
+                # associated codon
                 mutations = [(random_state.sample(range(0, len(codons)), 1)[0], l)
                              for l in locations]
                 node.gene_mutations[g] += mutations
@@ -181,7 +200,9 @@ def simulate_pangenome(ngenes, nisolates, effective_pop_size, gain_rate,
                        loss_rate, mutation_rate, max_core, random_state):
 
     # simulate a phylogeny using the coalscent
+    
     sim_tree = treesim.pure_kingman_tree(
+        # TaxonNamespace : manage unique identities of operational taxonomic units (OTUs) across multiple data structures
         taxon_namespace = TaxonNamespace([str(i) for i in range(1, 1 + nisolates)]),
         pop_size        = effective_pop_size,
         rng             = random_state,
@@ -190,6 +211,7 @@ def simulate_pangenome(ngenes, nisolates, effective_pop_size, gain_rate,
     basic_tree = copy.deepcopy(sim_tree)
 
     # simulate gene p/a and mutation
+    # using infintely many genes model 
     sim_tree = simulate_img_with_mutation(sim_tree,
                                           gain_rate     = gain_rate,
                                           loss_rate     = loss_rate,
@@ -224,6 +246,7 @@ def get_gene_id(seq):
 def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
                   mutation_rate, n_sim_genes, prefix, max_core, random_state):
 
+    # reading sequences
     print("> Opening GFF3 file")
     with open(gfffile, 'r') as infile:
         lines = infile.read().replace(',','')
