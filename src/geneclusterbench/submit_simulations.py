@@ -15,8 +15,8 @@ DEFAULT_PY3ENV = str(PROJECT_ROOT / ".venv" / "bin" / "activate")
 DEFAULT_SEEDS = str(PROJECT_ROOT / "data" / "random_numbers.txt")
 
 DEFAULT_GFF = (
-    "/nfs/research/jlees/campan/projects/clustering_benchmarking/tests/"
-    "2026_06_10_annotation/MSdataset/6925_1#61/PROKKA_06122025.gff"
+    "/nfs/research/jlees/campan/data/clustering_benchmarking/"
+    "2026_06_10_simsnowwithntandaasandgffs/MSdataset/6925_1#61/PROKKA_06122025.gff"
 )
 
 GENERATION_SCAFFOLD = '. "{env}" && python3 "{execexec}" -g "{inputgff}" -o "{outputpath}" -s "{seed}"'
