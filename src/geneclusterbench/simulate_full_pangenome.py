@@ -6,6 +6,7 @@ import argparse
 from collections import OrderedDict, defaultdict
 import gffutils
 from Bio import SeqIO
+from Bio import Phylo
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from io import StringIO
@@ -18,6 +19,7 @@ import copy
 import math
 from Bio.SeqFeature import SeqFeature, FeatureLocation
 from BCBio import GFF
+import matplotlib.pyplot as plt
 
 # codon = sequence of three consecutive nucleotides (the building blocks of DNA and RNA) that acts as the basic unit of genetic information
 
@@ -241,6 +243,15 @@ def get_gene_id(seq):
 
     return theid
 
+def draw_phylogenetic_tree(filepath, folder):
+    # treefile needs to be a .nwk format
+    tree = Phylo.read(filepath, "newick")
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    Phylo.draw(tree, axes=ax)
+
+    plt.savefig(f"{folder}/tree.png", dpi=300)
+    return
 
 # Main function
 def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
@@ -746,6 +757,7 @@ def main():
                   random_state      = rstate,
     )
 
+    draw_phylogenetic_tree(f"{prefix}_sim_tree.nwk", args.output_dir)
     print("> Simulation finished!")
     return
 
