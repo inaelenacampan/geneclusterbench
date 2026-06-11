@@ -18,7 +18,7 @@ from sklearn.metrics.cluster import adjusted_mutual_info_score
 # TO MODIFY
 # keep in mind to install the needed packages
 DEFAULT_DATAPATH = (
-    "/nfs/research/jlees/vrbouza/data/clustering_benchmarking/"
+    "/nfs/research/jlees/campan/data/clustering_benchmarking/"
     "2025_09_04_morepangenomesims"
 )
 DEFAULT_FONT_REGULAR = (

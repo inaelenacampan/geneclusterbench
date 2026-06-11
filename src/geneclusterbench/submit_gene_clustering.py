@@ -201,6 +201,7 @@ def submit_clustering_jobs(args):
     print("\n> Writing job commands file...")
     with open(os.path.join("./", COMMANDS_FILE), "w") as handle:
         for i, command in enumerate(jobinfo):
+            # one job at a time in the run_benchmark.py file that is missing
             handle.write(f"{i}\t{command}\n")
     print("> Done!")
 
