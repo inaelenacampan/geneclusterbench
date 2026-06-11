@@ -1,3 +1,5 @@
+# import libraries
+
 import argparse
 import os
 import warnings
@@ -13,7 +15,8 @@ from matplotlib.ticker import AutoMinorLocator
 from sklearn import metrics
 from sklearn.metrics.cluster import adjusted_mutual_info_score
 
-
+# TO MODIFY
+# keep in mind to install the needed packages
 DEFAULT_DATAPATH = (
     "/nfs/research/jlees/vrbouza/data/clustering_benchmarking/"
     "2025_09_04_morepangenomesims"
