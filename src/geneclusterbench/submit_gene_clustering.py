@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 
 # new data paths
-
 DEFAULT_DATAPATH = (
     "/nfs/research/jlees/campan/data/clustering_benchmarking/"
     "2026_06_10_simsnowwithntandaasandgffs"
@@ -15,9 +14,9 @@ DEFAULT_DATAPATH = (
 DEFAULT_SOFTWAREDIR = (
     "/hps/software/users/jlees/campan/clustering_benchmarking/software"
 )
-# ??
+# run-benchmark to be written by myself
 DEFAULT_RUNNER = (
-    "/hps/software/users/jlees/campan/projects/assembler_development/"
+    "/hps/software/users/jlees/campan/assembler_development/"
     "benchmarking/run_benchmark.py"
 )
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -89,14 +88,14 @@ def get_c_values_for_process(proc, seqtype):
         return [c for c in CRANGE if c >= CDHIT_EST_MIN_C]
     return CRANGE
 
-# updated the mmseq path
+# updated the mmseq path and cd-hit
 def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9):
     mmseqs2exec = os.path.join(softwaredir, "mmseqs/bin/mmseqs")
     cdhitexec = os.path.join(
         softwaredir,
         "cdhit/cdhit/cd-hit-est" if seqtype == "nt" else "cdhit/cdhit/cd-hit",
     )
-
+    # cd-hit method
     if proc == "cdhit":
         word_size = get_cdhit_word_size(c, seqtype)
         return CDHIT_SCAFFOLD.format(
@@ -109,6 +108,7 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
             ncores=nthreads,
             outputfile="./cdhit",
         )
+    #mmseqs2 method
     if proc == "mmseqs2":
         return MMSEQS2_SCAFFOLD.format(
             workdir=outfolder,
