@@ -1,16 +1,21 @@
+# import libraries
+
 import argparse
 import os
 import time
 from pathlib import Path
 
+# new data paths
 
 DEFAULT_DATAPATH = (
     "/nfs/research/jlees/campan/data/clustering_benchmarking/"
-    "2025_09_11_simsnowwithntandaas"
+    "2026_06_10_simsnowwithntandaasandgffs"
 )
+# updated
 DEFAULT_SOFTWAREDIR = (
-    "/hps/software/users/jlees/campan/projects/clustering_benchmark/software"
+    "/hps/software/users/jlees/campan/clustering_benchmarking/software"
 )
+# ??
 DEFAULT_RUNNER = (
     "/hps/software/users/jlees/campan/projects/assembler_development/"
     "benchmarking/run_benchmark.py"
@@ -45,7 +50,7 @@ DEFAULT_PARAMS = {"c": 0.9}
 COMMANDS_FILE = "execcommands.tsv"
 CDHIT_EST_MIN_C = 0.8
 
-
+# basic reading function for the random seeds
 def load_seeds(seedsfile):
     seeds = []
     with open(seedsfile, "r") as f:
@@ -56,7 +61,7 @@ def load_seeds(seedsfile):
     seeds.sort()
     return seeds
 
-
+# type of "alphabet" used : aminoacids or nucleotide
 def get_cdhit_word_size(c, seqtype):
     if seqtype == "aa":
         if c >= 0.7:
@@ -84,9 +89,9 @@ def get_c_values_for_process(proc, seqtype):
         return [c for c in CRANGE if c >= CDHIT_EST_MIN_C]
     return CRANGE
 
-
+# updated the mmseq path
 def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9):
-    mmseqs2exec = os.path.join(softwaredir, "mmseqs2/MMseqs2/build/bin/mmseqs")
+    mmseqs2exec = os.path.join(softwaredir, "mmseqs/bin/mmseqs")
     cdhitexec = os.path.join(
         softwaredir,
         "cdhit/cdhit/cd-hit-est" if seqtype == "nt" else "cdhit/cdhit/cd-hit",
