@@ -61,6 +61,7 @@ def load_seeds(seedsfile):
     return seeds
 
 # type of "alphabet" used : aminoacids or nucleotide
+# thresholds : diffrent values how were there chosen?
 def get_cdhit_word_size(c, seqtype):
     if seqtype == "aa":
         if c >= 0.7:
@@ -147,11 +148,13 @@ def get_clustering_fasta(simdir, seqtype):
 
 def submit_clustering_jobs(args):
     print("> Getting seeds")
+    # reads a list of random seeds : each seed corresponds to one simulated dataset
     seeds = load_seeds(args.seeds)
     print("> Got {} seeds".format(len(seeds)))
 
     print("\n> Preparing jobs...")
     jobinfo = []
+    # reproducibility
     timestamp = int(time.time()) if args.preset_timestamp < 0 else args.preset_timestamp
     generaloutdir = os.path.join(args.temp_outdir, f"clustering_benchmark_{timestamp}")
 
@@ -165,10 +168,10 @@ def submit_clustering_jobs(args):
             simdir = os.path.join(simulations_dir, assembly, str(seed))
             if not os.path.isdir(simdir):
                 continue
-            for seqtype in args.sequence_type:
+            for seqtype in args.sequence_type: # e.g. nt, aa
                 infile = get_clustering_fasta(simdir, seqtype)
 
-                for process in args.process:
+                for process in args.process: # e.g. cdhit, mmseqs2
                     for c_value in get_c_values_for_process(process, seqtype):
                         suffix = f"_st-{seqtype}" + (
                             f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
@@ -205,6 +208,7 @@ def submit_clustering_jobs(args):
             handle.write(f"{i}\t{command}\n")
     print("> Done!")
 
+    # SLURM submission command
     print("\n> Launching job array...")
     tmpwrapcmd = EXEC_SCAFFOLD.format(
         executable=args.benchmark_runner,
