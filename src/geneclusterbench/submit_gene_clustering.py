@@ -62,6 +62,16 @@ def load_seeds(seedsfile):
 
 # type of "alphabet" used : aminoacids or nucleotide
 # thresholds : diffrent values how were there chosen?
+
+"""
+
+The core idea: CD-HIT uses a short-word filtering heuristic to quickly decide whether two sequences are likely 
+to meet the identity threshold before doing a full alignment. It looks for shared k-mers (words) of length n. 
+The math is: if two sequences share ≥ c (identity), they must share at least some minimum number of common k-mers of size n. 
+The smaller the word size, the more permissive/sensitive the filter, but also the slower and more memory-intensive 
+(more possible words to index).
+
+"""
 def get_cdhit_word_size(c, seqtype):
     if seqtype == "aa":
         if c >= 0.7:
@@ -96,6 +106,7 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
         softwaredir,
         "cdhit/cdhit/cd-hit-est" if seqtype == "nt" else "cdhit/cdhit/cd-hit",
     )
+    diamondexec = os.path.join(softwaredir, "Diamond/diamond")
     # cd-hit method
     if proc == "cdhit":
         word_size = get_cdhit_word_size(c, seqtype)
