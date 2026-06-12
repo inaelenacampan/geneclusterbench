@@ -19,18 +19,18 @@ from sklearn.metrics.cluster import adjusted_mutual_info_score
 # keep in mind to install the needed packages
 DEFAULT_DATAPATH = (
     "/nfs/research/jlees/campan/data/clustering_benchmarking/"
-    "2025_09_04_morepangenomesims"
+    "2026_06_10_simsnowwithntandaasandgffs"
 )
 DEFAULT_FONT_REGULAR = (
-    "/nfs/research/jlees/vrbouza/data/ibm-plex-sans/fonts/complete/ttf/"
+    "/nfs/research/jlees/campan/data/ibm-plex-sans/fonts/complete/ttf/"
     "IBMPlexSans-Regular.ttf"
 )
 DEFAULT_FONT_ITALIC = (
-    "/nfs/research/jlees/vrbouza/data/ibm-plex-sans/fonts/complete/ttf/"
+    "/nfs/research/jlees/campan/data/ibm-plex-sans/fonts/complete/ttf/"
     "IBMPlexSans-Italic.ttf"
 )
 DEFAULT_FONT_BOLD = (
-    "/nfs/research/jlees/vrbouza/data/ibm-plex-sans/fonts/complete/ttf/"
+    "/nfs/research/jlees/campan/data/ibm-plex-sans/fonts/complete/ttf/"
     "IBMPlexSans-Bold.ttf"
 )
 PACKAGE_DIR = Path(__file__).resolve().parent
