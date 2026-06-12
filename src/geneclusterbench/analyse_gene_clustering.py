@@ -15,8 +15,8 @@ from matplotlib.ticker import AutoMinorLocator
 from sklearn import metrics
 from sklearn.metrics.cluster import adjusted_mutual_info_score
 
-# TO MODIFY
-# keep in mind to install the needed packages
+# keep in mind to install the needed packages for fonts
+
 DEFAULT_DATAPATH = (
     "/nfs/research/jlees/campan/data/clustering_benchmarking/"
     "2026_06_10_simsnowwithntandaasandgffs"
@@ -108,6 +108,8 @@ def get_labels_list_from_df(indf):
         labels.append(tmp[0])
     return labels
 
+# counting how many genes belonging to that true class fall into each predicted cluster
+# values from 0 to 1 : the higher the better
 
 def get_purity(inlab, truthdf):
     nclusters = len(set(inlab))
@@ -119,6 +121,11 @@ def get_purity(inlab, truthdf):
         sumofmaxes += max(countlist)
     return float(sumofmaxes) / float(len(truthdf.index))
 
+# multiple statistics : purity from the above function & metrics from skicit learn
+# The Rand Index computes a similarity measure between two clusterings by considering all pairs of samples 
+# and counting pairs that are assigned in the same or different clusters in the predicted and true clusterings
+# The Mutual Information is a measure of the similarity between two labels of the same data.
+# for mathematical expression see documentation
 
 def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
     probelab = get_labels_list_from_df(indf)
@@ -323,6 +330,7 @@ def get_info_from_folder(theargs):
         )
     return (listoflists, theass, nameofass)
 
+# plot idea : how does this metric vary with the clustering threshold, averaged over random seeds, for this assembly
 
 def plotter(theargs):
     name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
@@ -426,6 +434,8 @@ def plotter(theargs):
     fig.clf()
     del fig, ax
 
+# here we fix a c in comparaison to the previous plots
+# now we compare clustering methods between them for this fixed c
 
 def plotter_pointplots(theargs):
     name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
