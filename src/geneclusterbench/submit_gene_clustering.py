@@ -42,7 +42,7 @@ CDHIT_SCAFFOLD = (
 DIAMOND_SCAFFOLD = (
     "mkdir -p {workdir} && cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
-    "{execexec} linclust -d {inputfile} -o {outputfile} "
+    "{execexec} cluster -d {inputfile} -o {outputfile} "
     "--approx-id {approx_id} --threads {ncores} -M {mem}G && "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
