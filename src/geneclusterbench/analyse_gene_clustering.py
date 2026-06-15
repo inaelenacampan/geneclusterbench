@@ -37,7 +37,7 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = PACKAGE_DIR.parents[1]
 DEFAULT_SEEDS = str(PROJECT_ROOT / "data" / "random_numbers.txt")
 
-CLUSTERERS = ["cdhit", "mmseqs2"]
+CLUSTERERS = ["cdhit", "mmseqs2", "diamond"]
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
 DEFAULT_PARAMS = {"st": "nt", "c": 0.9}
@@ -49,6 +49,8 @@ FANCYDICT = {
     "mmseqs2/nt": "MMseqs2 (NT)",
     "cdhit/aa": "CD-HIT (AA)",
     "mmseqs2/aa": "MMseqs2 (AA)",
+    "diamond/aa" : "Diamond (AA)",
+    "diamond/nt" : "Diamond (NT)",
 }
 
 CONFIGDICT = {
@@ -71,6 +73,8 @@ CONFIGDICT_COLOURS = {
     "cdhit/aa": "#E58F9E",
     "mmseqs2/nt": "#193F90",
     "mmseqs2/aa": "#8BB8E8",
+    "diamond/aa" : "#8BCF8B",
+    "diamond/nt" : "#1A7A1A",
 }
 
 
@@ -204,6 +208,36 @@ def get_df_from_clusterer(clusterer, folderpath):
 
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
         return outdf.set_index("cluster_id")
+    
+    if clusterer == "diamond":
+        # read clusters
+        # the output for diamond is a 2-column file (ascii text)
+        # then copy paste from mmseqs2 lecture code (identical output => same code)
+
+        firstdf = pd.read_csv(
+            os.path.join(folderpath, "diamond"),
+            names=["cluster_id", "gene_id"],
+            sep="\t",
+        )
+        clusterlist = list(set([int(iC.split("_")[1]) for iC in firstdf["cluster_id"]]))
+        clusterlist.sort()
+        genelist = list(set(list(firstdf["gene_id"])))
+        genelist.sort(key=lambda x: int(x.split("_")[1]))
+
+        listoflists = []
+        for cluster_index in range(len(clusterlist)):
+            tmpset = set(
+                firstdf[
+                    firstdf["cluster_id"] == "geneid_" + str(clusterlist[cluster_index])
+                ]["gene_id"]
+            )
+            row = [cluster_index]
+            for gene in genelist:
+                row.append(+1.0 if gene in tmpset else -1.0)
+            listoflists.append(row)
+
+        outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
+        return outdf.set_index("cluster_id")
 
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
 
@@ -233,6 +267,8 @@ def check_status_of_folder(clusterer, path):
         filenam = "cdhit.clstr"
     elif clusterer == "mmseqs2":
         filenam = "mmseqs2_cluster.tsv"
+    elif clusterer == "diamond":
+        filenam = "diamond"
     else:
         print("Invalid clusterer " + clusterer)
         return False
