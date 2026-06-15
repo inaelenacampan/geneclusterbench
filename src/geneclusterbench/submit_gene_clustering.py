@@ -30,6 +30,7 @@ MMSEQS2_SCAFFOLD = (
     "--min-seq-id {c} --threads {ncores} && "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
+
 CDHIT_SCAFFOLD = (
     "mkdir -p {workdir} && cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
@@ -37,6 +38,15 @@ CDHIT_SCAFFOLD = (
     "-o {outputfile} && "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
+
+DIAMOND_SCAFFOLD = (
+    "mkdir -p {workdir} && cd {workdir} && "
+    "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
+    "{execexec} linclust -d {inputfile} -o {outputfile} "
+    "--approx-id {approx_id} --threads {ncores} -M {mem}G && "
+    "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
+)
+
 SLURM_SCAFFOLD = (
     "sbatch --array={arrayvals} -c {nth} -t {timemax} --mem {memmax}G "
     "-J {jobname} -e {logpath}/log.%A.%a.%x.err "
@@ -130,6 +140,17 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
             c=c,
             ncores=nthreads,
             outputfile="./mmseqs2",
+        )
+    # diamond method
+    if proc == "diamond":
+        return DIAMOND_SCAFFOLD.format(
+            workdir=outfolder,
+            inputfile=infile,
+            execexec=diamondexec,
+            approx_id=int(c * 100), # transform 30% in 30 (as in documentation)
+            ncores=nthreads,
+            mem=int(maxmem),
+            outputfile="./diamond",
         )
     raise RuntimeError("Process " + proc + " not supported")
 
@@ -272,7 +293,7 @@ def main():
     parser.add_argument("--max-simultaneous-cores", "-M", default=2000, type=int)
     parser.add_argument("--preset-timestamp", "-P", default=-1, type=int)
     parser.add_argument("--pretend", "-p", action="store_true")
-    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2")
+    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond")
     parser.add_argument("--sequence-type", "-st", default="nt,aa")
     parser.add_argument("--softwaredir", default=DEFAULT_SOFTWAREDIR)
     parser.add_argument("--benchmark-runner", default=DEFAULT_RUNNER)
