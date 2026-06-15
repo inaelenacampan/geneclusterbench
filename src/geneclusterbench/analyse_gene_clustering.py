@@ -707,6 +707,8 @@ def main():
         raise RuntimeError("No valid clustering results were produced from the analysable simulations")
 
     outdf = build_results_dataframe(listoflists)
+    print("Clusterers found:", set(outdf.index.get_level_values("clusterer")))
+    
     assemblies = set(list(outdf.index.get_level_values("assembly")))
 
     if not os.path.isdir(args.outfolder):
