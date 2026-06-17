@@ -345,6 +345,15 @@ def get_info_from_folder(theargs):
                 stacklevel=2,
             )
             continue
+        tmpseqtype = paramdict.get("st", DEFAULT_PARAMS["st"])
+        if tmpclusterer == "diamond" and tmpseqtype == "nt":
+            warnings.warn(
+                f"Skipping disabled diamond+nt result folder {folderpath}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
+
         if not check_status_of_folder(tmpclusterer, folderpath):
             continue
 
