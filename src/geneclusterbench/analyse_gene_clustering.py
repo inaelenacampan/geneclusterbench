@@ -543,7 +543,7 @@ def plotter_pointplots(theargs):
     x_fancy = [FANCYDICT[value] for value in x]
     ymean = []
     ystd = []
-    ycount = []bacpop_presentation_template-IC
+    ycount = []
     for x_value in x:
         tmpdf = subdf[
             (subdf.index.get_level_values("simulations") == True)
