@@ -134,6 +134,14 @@ def get_purity(inlab, truthdf):
 
 def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
     probelab = get_labels_list_from_df(indf)
+
+    _, ari_p = permutation_test_agreement(
+        truthlab,
+        probelab,
+        metrics.adjusted_rand_score,
+        nperm=999
+    )
+
     outlist = [
         True,
         infotuple[0],
@@ -142,12 +150,13 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
         float(metrics.adjusted_rand_score(truthlab, probelab)),
         get_purity(probelab, truthdf),
         float(adjusted_mutual_info_score(truthlab, probelab)),
+        ari_p,
     ]
     outlist += [float(el) for el in metrics.homogeneity_completeness_v_measure(truthlab, probelab)]
     return outlist
-    
 
-def permutation_test_agreement(labels1, labels2, metric_function, nperm=999, seed=None):
+
+def permutation_test_agreement(labels1, labels2, metric_function = metrics.adjusted_rand_score, nperm=999, seed=None):
     
     rng = default_rng(seed)
     observed = metric_function(labels1,labels2)
@@ -534,7 +543,7 @@ def plotter_pointplots(theargs):
     x_fancy = [FANCYDICT[value] for value in x]
     ymean = []
     ystd = []
-    ycount = []
+    ycount = []bacpop_presentation_template-IC
     for x_value in x:
         tmpdf = subdf[
             (subdf.index.get_level_values("simulations") == True)
@@ -630,6 +639,7 @@ def build_results_dataframe(listoflists):
             "homogeneity",
             "completeness",
             "v_measure",
+            "adj_rand_index_p"
         ]
         + PARAMORDER
         + ["runtime"],
@@ -736,6 +746,13 @@ def main():
     outdf = build_results_dataframe(listoflists)
     print("Clusterers found:", set(outdf.index.get_level_values("clusterer")))
     
+    outdf.to_csv(
+        os.path.join(
+            args.outfolder,
+            "clustering_metrics_with_pvalues.txt"
+        ),
+        sep="\t"
+    )
     assemblies = set(list(outdf.index.get_level_values("assembly")))
 
     if not os.path.isdir(args.outfolder):
