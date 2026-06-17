@@ -14,6 +14,7 @@ from matplotlib.font_manager import FontProperties
 from matplotlib.ticker import AutoMinorLocator
 from sklearn import metrics
 from sklearn.metrics.cluster import adjusted_mutual_info_score
+from numpy.random import default_rng
 
 # keep in mind to install the needed packages for fonts
 
@@ -144,6 +145,23 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
     ]
     outlist += [float(el) for el in metrics.homogeneity_completeness_v_measure(truthlab, probelab)]
     return outlist
+    
+
+def permutation_test_agreement(labels1, labels2, metric_function, nperm=999, seed=None):
+    
+    rng = default_rng(seed)
+    observed = metric_function(labels1,labels2)
+    permuted = np.empty(nperm)
+    labels1 = np.asarray(labels1)
+
+    for i in range(nperm):
+        # shouldn't I shuffle both??
+        permuted[i] = metric_function(rng.permutation(labels1), labels2)
+
+    # +1 : we do not want a null p-value (as it follows a uniform distribution)
+    pvalue = (np.sum(permuted >= observed) + 1) / (nperm + 1)
+
+    return observed, pvalue
 
 
 def parse_cdhit_identity(line):
