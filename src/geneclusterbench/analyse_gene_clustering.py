@@ -639,7 +639,7 @@ def build_results_dataframe(listoflists):
             "homogeneity",
             "completeness",
             "v_measure",
-            "adj_rand_index_p"
+            "adj_rand_index_p",
         ]
         + PARAMORDER
         + ["runtime"],
