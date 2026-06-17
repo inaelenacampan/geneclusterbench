@@ -107,6 +107,8 @@ def get_cdhit_word_size(c, seqtype):
 def get_c_values_for_process(proc, seqtype):
     if proc == "cdhit" and seqtype == "nt":
         return [c for c in CRANGE if c >= CDHIT_EST_MIN_C]
+    if proc == "diamond" and seqtype == "nt":
+        return []
     return CRANGE
 
 # updated the mmseq path and cd-hit

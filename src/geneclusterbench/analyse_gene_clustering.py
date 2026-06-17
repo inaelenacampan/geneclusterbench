@@ -50,7 +50,7 @@ FANCYDICT = {
     "cdhit/aa": "CD-HIT (AA)",
     "mmseqs2/aa": "MMseqs2 (AA)",
     "diamond/aa" : "Diamond (AA)",
-    "diamond/nt" : "Diamond (NT)",
+    #"diamond/nt" : "Diamond (NT)",
 }
 
 CONFIGDICT = {
@@ -74,7 +74,7 @@ CONFIGDICT_COLOURS = {
     "mmseqs2/nt": "#193F90",
     "mmseqs2/aa": "#8BB8E8",
     "diamond/aa" : "#8BCF8B",
-    "diamond/nt" : "#1A7A1A",
+    #"diamond/nt" : "#1A7A1A",
 }
 
 
