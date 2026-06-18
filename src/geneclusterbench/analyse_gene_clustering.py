@@ -156,19 +156,21 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
     return outlist
 
 
-def permutation_test_agreement(labels1, labels2, metric_function = metrics.adjusted_rand_score, nperm=999, seed=None):
-    
+def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjusted_rand_score, nperm=999, seed=None):
     rng = default_rng(seed)
-    observed = metric_function(labels1,labels2)
-    permuted = np.empty(nperm)
     labels1 = np.asarray(labels1)
+    labels2 = np.asarray(labels2)
 
+    observed = metric_function(labels1, labels2)
+
+    permuted = np.empty(nperm)
     for i in range(nperm):
-        # shouldn't I shuffle both??
+        # permuting only one array is statistically equivalent to permuting both;
         permuted[i] = metric_function(rng.permutation(labels1), labels2)
 
-    # +1 : we do not want a null p-value (as it follows a uniform distribution)
-    pvalue = (np.sum(permuted >= observed) + 1) / (nperm + 1)
+    n_greater = np.sum(permuted > observed)
+    n_equal = np.sum(permuted == observed)
+    pvalue = float((n_greater + 0.5 * n_equal + 1) / (nperm +1))
 
     return observed, pvalue
 
@@ -636,10 +638,10 @@ def build_results_dataframe(listoflists):
             "adj_rand_index",
             "purity",
             "adj_mutual_info",
+            "adj_rand_index_p",
             "homogeneity",
             "completeness",
             "v_measure",
-            "adj_rand_index_p",
         ]
         + PARAMORDER
         + ["runtime"],
@@ -746,13 +748,6 @@ def main():
     outdf = build_results_dataframe(listoflists)
     print("Clusterers found:", set(outdf.index.get_level_values("clusterer")))
     
-    outdf.to_csv(
-        os.path.join(
-            args.outfolder,
-            "clustering_metrics_with_pvalues.txt"
-        ),
-        sep="\t"
-    )
     assemblies = set(list(outdf.index.get_level_values("assembly")))
 
     if not os.path.isdir(args.outfolder):
@@ -783,6 +778,14 @@ def main():
         pool.map(plotter, plottingtasks)
         pool.close()
         pool.join()
+    
+    outdf.to_csv(
+        os.path.join(
+            args.outfolder,
+            "clustering_metrics_with_pvalues.txt"
+        ),
+        sep="\t"
+    )
 
     print("\n> Done!\n")
 
