@@ -271,9 +271,14 @@ def get_df_from_clusterer(clusterer, folderpath):
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
 
 def count_singleton_clusters(thedf):
-    """Number of clusters (rows) that contain exactly one member."""
+    
     member_counts = (thedf >= 0.0).sum(axis=1)
     return int((member_counts == 1).sum())
+
+def count_pairs_clusters(thedf):
+    
+    member_counts = (thedf >= 0.0).sum(axis=1)
+    return int((member_counts == 2).sum())
 
 def get_time_diff_from_file(inpath):
     time0 = None
@@ -394,12 +399,13 @@ def get_info_from_folder(theargs):
         runtime = get_time_diff_from_file(os.path.join(folderpath, "timebenchmark.txt"))
         n_clusters = len(thedf.index)
         n_singletons = count_singleton_clusters(thedf)
+        n_pairs = count_pairs_clusters(thedf)
         paramlist = [paramdict[el] if el in paramdict else DEFAULT_PARAMS[el] for el in PARAMORDER]
         listoflists.append(
             calculate_values_from_cluster_matrix(
                 (theass, theseed, tmpclusterer), thedf, truthlabels, truthdf
             )
-            + [n_clusters, n_singletons]
+            + [n_clusters, n_singletons, n_pairs]
             + paramlist
             + [runtime]
         )
@@ -753,6 +759,7 @@ def build_results_dataframe(listoflists):
             "v_measure",
             "n_clusters",
             "n_singletons",
+            "n_pairs",
         ]
         + PARAMORDER
         + ["runtime"],
