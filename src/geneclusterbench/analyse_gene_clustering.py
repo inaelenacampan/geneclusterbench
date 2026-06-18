@@ -388,11 +388,13 @@ def get_info_from_folder(theargs):
 
         thedf = get_df_from_clusterer(tmpclusterer, folderpath)
         runtime = get_time_diff_from_file(os.path.join(folderpath, "timebenchmark.txt"))
+        n_clusters = len(thedf.index)
         paramlist = [paramdict[el] if el in paramdict else DEFAULT_PARAMS[el] for el in PARAMORDER]
         listoflists.append(
             calculate_values_from_cluster_matrix(
                 (theass, theseed, tmpclusterer), thedf, truthlabels, truthdf
             )
+            + [n_clusters]
             + paramlist
             + [runtime]
         )
@@ -615,6 +617,108 @@ def plotter_pointplots(theargs):
     fig.clf()
     del fig, ax
 
+def number_of_clusters_violin(theargs):
+    name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
+    ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
+
+    print(f"\t- Plotting violin {name} for simulations of {namedict[assembly]}")
+    subdf = datadf[
+     
+       (datadf.index.get_level_values("assembly") == assembly)
+        & (datadf.index.get_level_values("simulations") == (datatype == "simulations"))
+        & (datadf["c"] == DEFAULT_PARAMS["c"])
+    ]
+
+    if subdf.empty:
+        warnings.warn(
+            f"No rows available for {assembly}/{datatype}/{name}; skipping violin plot",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
+    x = []
+    for clusterer, seqtype in [(c, st) for st in SEQTYPES for c in clusterers]:
+        if len(list(subdf[(subdf.index.get_level_values("clusterer") == clusterer) & (subdf["st"] == seqtype)][name])):
+            x.append(clusterer + "/" + seqtype)
+
+    if not x:
+        warnings.warn(
+            f"No clusterer/sequence-type rows available for {assembly}/{datatype}/{name}; skipping violin plot",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    x_fancy = [FANCYDICT[value] for value in x]
+    data, counts = [], []
+    for x_value in x:
+        tmpdf = subdf[
+            (subdf.index.get_level_values("simulations") == True)
+            & (subdf.index.get_level_values("assembly") == assembly)
+            & (subdf.index.get_level_values("clusterer") == x_value.split("/")[0])
+            & (subdf["st"] == x_value.split("/")[1])
+        ][name].astype(float)
+        data.append(tmpdf.values)
+        counts.append(tmpdf.count())
+
+    fig = plt.figure(1, dpi=150)
+    ax = fig.subplots()
+    positions = list(range(1, len(x) + 1))
+
+    # violinplot needs >=2 points per group to estimate a density;
+    # groups with a single seed get plotted as a lone point instead
+    violin_positions = [p for p, c in zip(positions, counts) if c >= 2]
+    violin_data = [d for d, c in zip(data, counts) if c >= 2]
+    violin_keys = [k for k, c in zip(x, counts) if c >= 2]
+
+    if violin_data:
+        parts = ax.violinplot(violin_data, positions=violin_positions, showmeans=True, showextrema=True)
+        for body, key in zip(parts["bodies"], violin_keys):
+            body.set_facecolor(CONFIGDICT_COLOURS[key])
+            body.set_edgecolor(CONFIGDICT_COLOURS[key])
+            body.set_alpha(0.6)
+        for partname in ("cbars", "cmins", "cmaxes", "cmeans"):
+            if partname in parts:
+                parts[partname].set_edgecolor("black")
+                parts[partname].set_linewidth(0.8)
+
+    for p, d, c, key in zip(positions, data, counts, x):
+        if c < 2 and len(d):
+            ax.plot(p, d[0], "o", c=CONFIGDICT_COLOURS[key])
+
+    ax.set_xticks(positions)
+    ax.set_xticklabels(x_fancy)
+    ax.set_ylim(0.0, None)
+
+    ax.set_xlabel("Clusterer", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
+    ax.set_ylabel("Number of clusters (adim.)", fontproperties=ibmplexsans, loc="top", fontsize=AXIS_TITLE_FONT_SIZE)
+    ax.yaxis.set_minor_locator(AutoMinorLocator())
+    ax.tick_params(which="major", direction="in")
+    ax.tick_params(which="minor", direction="in")
+    ax.xaxis.set_ticks_position("both")
+    ax.yaxis.set_ticks_position("both")
+    ax.get_yaxis().get_offset_text().set_x(-0.075)
+    ax.get_yaxis().get_offset_text().set_fontproperties(ibmplexsans)
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(ibmplexsans)
+
+    plt.text(0, 1.01, namedict[assembly], fontproperties=ibmplexsansitalics, horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
+    plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans, horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
+    if DOPREM:
+        plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold, horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
+
+    outnamescaff = name.replace(" ", "").replace("#", "NumberOf")
+    for ext in ["png", "pdf", "svg"]:
+        fig.savefig(
+            os.path.join(outfolder, "_".join(["plot_violin", datatype, assembly, outnamescaff]) + "." + ext),
+            bbox_inches="tight",
+        )
+    fig.clf()
+    del fig, ax
+
 
 def load_seeds(seedsfile):
     seeds = []
@@ -642,6 +746,7 @@ def build_results_dataframe(listoflists):
             "homogeneity",
             "completeness",
             "v_measure",
+            "n_clusters",
         ]
         + PARAMORDER
         + ["runtime"],
@@ -766,16 +871,24 @@ def main():
         for assembly in assemblies
     ]
 
+    plottingtasks_violin = [
+        ("n_clusters", outdf, namedict, args.outfolder, assembly, "simulations", font_props)
+        for assembly in assemblies
+    ]
+
     print("\n> Plotting...")
     if args.nthreads <= 1:
         for task in plottingtasks_pointplots:
             plotter_pointplots(task)
         for task in plottingtasks:
             plotter(task)
+        for task in plottingtasks_violin:
+            number_of_clusters_violin(task)
     else:
         pool = Pool(args.nthreads)
         pool.map(plotter_pointplots, plottingtasks_pointplots)
         pool.map(plotter, plottingtasks)
+        pool.map(number_of_clusters_violin, plottingtasks_violin)
         pool.close()
         pool.join()
     
