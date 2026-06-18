@@ -690,7 +690,7 @@ def number_of_clusters_violin(theargs):
 
     ax.set_xticks(positions)
     ax.set_xticklabels(x_fancy)
-    ax.set_ylim(0.0, None)
+    ax.set_ylim(1500, 2500)
 
     ax.set_xlabel("Clusterer", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
     ax.set_ylabel("Number of clusters (adim.)", fontproperties=ibmplexsans, loc="top", fontsize=AXIS_TITLE_FONT_SIZE)
