@@ -170,7 +170,7 @@ def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjuste
 
     n_greater = np.sum(permuted > observed)
     n_equal = np.sum(permuted == observed)
-    pvalue = float((n_greater + 0.5 * n_equal + 1) / (nperm +1))
+    pvalue = float((n_greater + 0.5 * n_equal) / (nperm))
 
     return observed, pvalue
 
