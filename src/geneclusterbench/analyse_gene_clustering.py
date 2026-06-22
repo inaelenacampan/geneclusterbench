@@ -139,7 +139,7 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
         truthlab,
         probelab,
         metrics.adjusted_rand_score,
-        nperm=999
+        nperm=100
     )
 
     outlist = [
@@ -156,7 +156,7 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
     return outlist
 
 
-def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjusted_rand_score, nperm=999, seed=None):
+def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjusted_rand_score, nperm=9, seed=None):
     rng = default_rng(seed)
     labels1 = np.asarray(labels1)
     labels2 = np.asarray(labels2)
@@ -165,13 +165,11 @@ def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjuste
 
     permuted = np.empty(nperm)
     for i in range(nperm):
-        # permuting only one array is statistically equivalent to permuting both;
         permuted[i] = metric_function(rng.permutation(labels1), labels2)
 
     n_greater = np.sum(permuted > observed)
     n_equal = np.sum(permuted == observed)
-    pvalue = float((n_greater + 0.5 * n_equal) / (nperm))
-
+    pvalue = float((n_greater + 0.5 * n_equal) / nperm)
     return observed, pvalue
 
 
