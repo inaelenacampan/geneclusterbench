@@ -1197,8 +1197,6 @@ def main():
         for task in plottingtasks_stackedbar_c:
             number_of_clusters_stacked_bar_vs_c(task)
 
-    # multithread branch:
-    pool.map(number_of_clusters_stacked_bar_vs_c, plottingtasks_stackedbar_c)
     else:
         pool = Pool(args.nthreads)
         pool.map(plotter_pointplots, plottingtasks_pointplots)
