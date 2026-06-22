@@ -421,7 +421,6 @@ def get_info_from_folder(theargs):
 
 def plotter(theargs):
     name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
-    print(theargs)
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
     print(f"\t- Plotting c-plot {name} for simulations of {namedict[assembly]}")
     subdf = datadf[
@@ -857,8 +856,14 @@ def number_of_clusters_stacked_bar(theargs):
     plt.legend(
         handles=method_handles,
         labels=[h.get_label() for h in method_handles],
-        loc="lower right", frameon=False, prop=ibmplexsans,
-        handlelength=0.8, handletextpad=0.75, labelspacing=0.3, ncol=2,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.18),   # below the x-axis
+        frameon=False,
+        prop=ibmplexsans,
+        handlelength=0.8,
+        handletextpad=0.75,
+        labelspacing=0.3,
+        ncol=len(method_handles),       # all in one row
     )
 
     for ext in ["png", "pdf", "svg"]:
@@ -1006,10 +1011,15 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
     plt.legend(
         handles=method_handles,
         labels=[h.get_label() for h in method_handles],
-        loc="lower right", frameon=False, prop=ibmplexsans,
-        handlelength=0.8, handletextpad=0.75, labelspacing=0.3, ncol=2,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.18),   # below the x-axis
+        frameon=False,
+        prop=ibmplexsans,
+        handlelength=0.8,
+        handletextpad=0.75,
+        labelspacing=0.3,
+        ncol=len(method_handles),       # all in one row; reduce to 3 if too wide
     )
-
     for ext in ["png", "pdf", "svg"]:
         fig.savefig(
             os.path.join(outfolder, "_".join(["plot_stackedbar_c", datatype, assembly, "n_clusters"]) + "." + ext),
