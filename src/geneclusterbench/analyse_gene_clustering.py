@@ -575,23 +575,31 @@ def plotter_pointplots(theargs):
 
     fig = plt.figure(1, dpi=150)
     ax = fig.subplots()
-    for index in range(len(x)):
+    positions = list(range(len(x)))
+    bar_width = 0.5
+
+    for index in positions:
+        ax.bar(
+            index,
+            ymean[index],
+            bar_width,
+            color=CONFIGDICT_COLOURS[x[index]],
+            label=x_fancy[index],
+        )
         if ycount[index] >= 2:
+            yerr_low = min(ystd[index], ymean[index]) 
             ax.errorbar(
-                x_fancy[index],
+                index,
                 ymean[index],
-                c=CONFIGDICT_COLOURS[x[index]],
-                yerr=[[ystd[index] if ymean[index] > ystd[index] else ymean[index]], [ystd[index]]],
+                yerr=[[yerr_low], [ystd[index]]],
+                fmt="none",
+                color="black",
                 capsize=4.0,
-                fmt="o",
+                linewidth=1.0,
             )
-        else:
-            ax.plot(
-                x_fancy[index],
-                ymean[index],
-                "o",
-                c=CONFIGDICT_COLOURS[x[index]],
-            )
+
+    ax.set_xticks(positions)
+    ax.set_xticklabels(x_fancy)
 
     if name in CONFIGDICT and "ylimits" in CONFIGDICT[name]:
         ax.set_ylim(CONFIGDICT[name]["ylimits"][0], CONFIGDICT[name]["ylimits"][1])
