@@ -60,10 +60,11 @@ CONFIGDICT = {
         "ylimits": (0.8, 1.1),
         "ylimits_c": (0.4, 1.1),
     },
-    "purity": {"ylabel": "Purity (adim.)", "ylimits": (0.85, 1.1)},
+    "purity": {"ylabel": "Purity (adim.)", "ylimits": (0.85, 1.1), "ylimits_c": (0.4, 1.1)},
     "adj_mutual_info": {
         "ylabel": "Adjusted mutual information (adim.)",
-        "ylimits": (0.8, 1.0),
+        "ylimits": (0.8, 1.1),
+        "ylimits_c": (0.4, 1.1),
     },
     "v_measure": {"ylabel": "V-measure (adim.)", "ylimits": (0.8, 1.1)},
     "runtime": {"ylabel": "Runtime (s)"},
