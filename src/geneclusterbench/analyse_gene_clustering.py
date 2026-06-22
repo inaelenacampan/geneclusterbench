@@ -820,6 +820,7 @@ def number_of_clusters_stacked_bar(theargs):
         )
 
     ax.set_xlim(-0.6, len(x) - 0.4)
+    ax.set_ylim(0, np.nanmax(mean_total) * 1.2)
     ax.set_xticks(positions)
     ax.set_xticklabels(x_fancy)
     ax.set_xlabel("Clusterer", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
@@ -854,8 +855,8 @@ def number_of_clusters_stacked_bar(theargs):
         mpatches.Patch(facecolor="#55555566", label="Singletons"),
     ]
     plt.legend(
-        handles=method_handles + segment_handles,
-        labels=[h.get_label() for h in method_handles + segment_handles],
+        handles=method_handles,
+        labels=[h.get_label() for h in method_handles],
         loc="lower right", frameon=False, prop=ibmplexsans,
         handlelength=0.8, handletextpad=0.75, labelspacing=0.3, ncol=2,
     )
@@ -969,6 +970,7 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
                 )
 
     ax.set_xlim(-0.6, (n_c - 1) * group_spacing + 0.6)
+    ax.set_ylim(0, np.nanmax(mean_total) * 1.2)
     ax.set_xticks(group_positions)
     ax.set_xticklabels([str(c) for c in xs])
     ax.set_xlabel("c (adim.)", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
@@ -1002,8 +1004,8 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
         mpatches.Patch(facecolor="#55555566", label="Singletons"),
     ]
     plt.legend(
-        handles=method_handles + segment_handles,
-        labels=[h.get_label() for h in method_handles + segment_handles],
+        handles=method_handles,
+        labels=[h.get_label() for h in method_handles],
         loc="lower right", frameon=False, prop=ibmplexsans,
         handlelength=0.8, handletextpad=0.75, labelspacing=0.3, ncol=2,
     )
