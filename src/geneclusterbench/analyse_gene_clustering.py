@@ -421,6 +421,7 @@ def get_info_from_folder(theargs):
 
 def plotter(theargs):
     name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
+    print(theargs)
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
     print(f"\t- Plotting c-plot {name} for simulations of {namedict[assembly]}")
     subdf = datadf[
@@ -463,7 +464,7 @@ def plotter(theargs):
                 ystd[cluster_index, x_index] = tmpdf.std() if tmpdf.count() >= 2 else 0.0
 
         for y_index, ynam in enumerate(ynams):
-            ax.plot(xs, ymean[y_index, :], "-", c=CONFIGDICT_COLOURS[ynam], label=FANCYDICT[ynam])
+            ax.plot(xs, ymean[y_index, :], "-o", c=CONFIGDICT_COLOURS[ynam], label=FANCYDICT[ynam])
             if np.any(ycount[y_index, :] >= 2):
                 ax.fill_between(
                     xs,
@@ -502,8 +503,13 @@ def plotter(theargs):
     ax.get_yaxis().get_offset_text().set_x(-0.075)
     ax.get_yaxis().get_offset_text().set_fontproperties(ibmplexsans)
     ax.set_xlim(xs[0], xs[-1])
-    # change to log scale
-    ax.set_yscale("log")
+    
+    outnamescaff = name.replace(" ", "").replace("#", "NumberOf")
+
+    if outnamescaff!= "runtime" :
+        # change to log scale
+        ax.set_yscale("log")
+        ax.set_ylim(0.97, 1.001)
     for label in ax.get_xticklabels() + ax.get_yticklabels():
         label.set_fontproperties(ibmplexsans)
 
@@ -513,7 +519,6 @@ def plotter(theargs):
         plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold, horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
     plt.legend(loc="best", frameon=False, prop=ibmplexsans, handlelength=0.5, handletextpad=0.75, labelspacing=0.3)
 
-    outnamescaff = name.replace(" ", "").replace("#", "NumberOf")
     for ext in ["png", "pdf", "svg"]:
         fig.savefig(
             os.path.join(outfolder, "_".join(["plot_c", datatype, assembly, outnamescaff]) + "." + ext),
@@ -782,47 +787,43 @@ def number_of_clusters_stacked_bar(theargs):
         mean_singletons.append(tmpdf["n_singletons"].astype(float).mean())
         mean_pairs.append(tmpdf["n_pairs"].astype(float).mean())
 
-    # convert to percentages
-    pct_singletons = [s / t * 100 for s, t in zip(mean_singletons, mean_total)]
-    pct_pairs      = [p / t * 100 for p, t in zip(mean_pairs,      mean_total)]
-    pct_rest       = [100 - s - p  for s, p in zip(pct_singletons,  pct_pairs)]
+    mean_rest = [t - s - p for t, s, p in zip(mean_total, mean_singletons, mean_pairs)]
 
     positions = list(range(len(x)))
     bar_width = 0.5
 
-    # three shades per method colour: full / mid / light
-    colours_rest       = [CONFIGDICT_COLOURS[k] for k in x]
-    colours_pairs      = [c + "BB" for c in colours_rest]   # ~73% opacity via hex alpha
-    colours_singletons = [c + "66" for c in colours_rest]   # ~40% opacity via hex alpha
-
     fig = plt.figure(1, dpi=150, figsize=(max(5, len(x) * 1.4), 5))
     ax = fig.subplots()
 
-    bars_rest       = ax.bar(positions, pct_rest,       bar_width,
-                             color=colours_rest,       label="Other clusters")
-    bars_pairs      = ax.bar(positions, pct_pairs,      bar_width,
-                             bottom=pct_rest,
-                             color=colours_pairs,      label="Pairs")
-    bars_singletons = ax.bar(positions, pct_singletons, bar_width,
-                             bottom=[r + p for r, p in zip(pct_rest, pct_pairs)],
-                             color=colours_singletons, label="Singletons")
+    import matplotlib.patches as mpatches
+    for i, x_value in enumerate(x):
+        col            = CONFIGDICT_COLOURS[x_value]   # darkest  → other clusters (bottom)
+        col_pairs      = col + "BB"                    # mid      → pairs
+        col_singletons = col + "66"                    # lightest → singletons (top)
 
-    # total count label above each bar
-    for pos, total in zip(positions, mean_total):
+        # bottom segment: other clusters (darkest)
+        ax.bar(positions[i], mean_rest[i], bar_width, color=col)
+        # middle segment: pairs
+        ax.bar(positions[i], mean_pairs[i], bar_width,
+               bottom=mean_rest[i], color=col_pairs)
+        # top segment: singletons (lightest)
+        ax.bar(positions[i], mean_singletons[i], bar_width,
+               bottom=mean_rest[i] + mean_pairs[i], color=col_singletons)
+
+        # total count above bar
         ax.text(
-            pos, 101.5,
-            f"{int(round(total))}",
+            positions[i], mean_total[i] * 1.03,
+            f"{int(round(mean_total[i]))}",
             ha="center", va="bottom",
             fontproperties=ibmplexsans,
             fontsize=9,
         )
 
-    ax.set_ylim(0, 108)
     ax.set_xlim(-0.6, len(x) - 0.4)
     ax.set_xticks(positions)
     ax.set_xticklabels(x_fancy)
     ax.set_xlabel("Clusterer", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
-    ax.set_ylabel("Proportion of clusters (%)", fontproperties=ibmplexsans, loc="top", fontsize=AXIS_TITLE_FONT_SIZE)
+    ax.set_ylabel("Number of clusters (adim.)", fontproperties=ibmplexsans, loc="top", fontsize=AXIS_TITLE_FONT_SIZE)
 
     ax.yaxis.set_minor_locator(AutoMinorLocator())
     ax.tick_params(which="major", direction="in")
@@ -843,8 +844,21 @@ def number_of_clusters_stacked_bar(theargs):
         plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold,
                  horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
 
-    plt.legend(loc="lower right", frameon=False, prop=ibmplexsans,
-               handlelength=0.8, handletextpad=0.75, labelspacing=0.3)
+    # legend: method colours + segment shading, all in one block
+    method_handles = [
+        mpatches.Patch(facecolor=CONFIGDICT_COLOURS[k], label=FANCYDICT[k]) for k in x
+    ]
+    segment_handles = [
+        mpatches.Patch(facecolor="#555555",   label="Other clusters"),
+        mpatches.Patch(facecolor="#555555BB", label="Pairs"),
+        mpatches.Patch(facecolor="#55555566", label="Singletons"),
+    ]
+    plt.legend(
+        handles=method_handles + segment_handles,
+        labels=[h.get_label() for h in method_handles + segment_handles],
+        loc="lower right", frameon=False, prop=ibmplexsans,
+        handlelength=0.8, handletextpad=0.75, labelspacing=0.3, ncol=2,
+    )
 
     for ext in ["png", "pdf", "svg"]:
         fig.savefig(
@@ -894,13 +908,12 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
     n_methods = len(x)
     n_c = len(xs)
     bar_width = 0.8 / n_methods
-    group_spacing = 1.0  # distance between c-value groups
+    group_spacing = 1.0
 
-    # precompute means for all methods x c values
-    pct_singletons = np.zeros((n_methods, n_c))
-    pct_pairs      = np.zeros((n_methods, n_c))
-    pct_rest       = np.zeros((n_methods, n_c))
-    mean_total     = np.zeros((n_methods, n_c))
+    mean_total      = np.full((n_methods, n_c), np.nan)
+    mean_singletons = np.full((n_methods, n_c), np.nan)
+    mean_pairs      = np.full((n_methods, n_c), np.nan)
+    mean_rest       = np.full((n_methods, n_c), np.nan)
 
     for m_idx, x_value in enumerate(x):
         for c_idx, c_value in enumerate(xs):
@@ -912,54 +925,42 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
                 & (subdf["c"] == c_value)
             ]
             if tmpdf.empty:
-                pct_singletons[m_idx, c_idx] = np.nan
-                pct_pairs[m_idx, c_idx]      = np.nan
-                pct_rest[m_idx, c_idx]       = np.nan
-                mean_total[m_idx, c_idx]     = np.nan
                 continue
             t = tmpdf["n_clusters"].astype(float).mean()
             s = tmpdf["n_singletons"].astype(float).mean()
             p = tmpdf["n_pairs"].astype(float).mean()
-            mean_total[m_idx, c_idx]     = t
-            pct_singletons[m_idx, c_idx] = s / t * 100
-            pct_pairs[m_idx, c_idx]      = p / t * 100
-            pct_rest[m_idx, c_idx]       = 100 - (s / t * 100) - (p / t * 100)
+            mean_total[m_idx, c_idx]      = t
+            mean_singletons[m_idx, c_idx] = s
+            mean_pairs[m_idx, c_idx]      = p
+            mean_rest[m_idx, c_idx]       = t - s - p
 
     fig = plt.figure(1, dpi=150, figsize=(max(8, n_c * n_methods * 0.55), 5))
     ax = fig.subplots()
 
-    # centre the method bars around each c-group position
     group_positions = np.arange(n_c) * group_spacing
     offsets = (np.arange(n_methods) - (n_methods - 1) / 2.0) * bar_width
 
+    import matplotlib.patches as mpatches
     for m_idx, x_value in enumerate(x):
-        col = CONFIGDICT_COLOURS[x_value]
-        col_pairs      = col + "BB"
-        col_singletons = col + "66"
+        col            = CONFIGDICT_COLOURS[x_value]   # darkest  → other clusters (bottom)
+        col_pairs      = col + "BB"                    # mid      → pairs
+        col_singletons = col + "66"                    # lightest → singletons (top)
         bar_positions  = group_positions + offsets[m_idx]
-
         valid = ~np.isnan(mean_total[m_idx])
 
-        ax.bar(
-            bar_positions[valid], pct_rest[m_idx][valid], bar_width * 0.9,
-            color=col,            label=FANCYDICT[x_value],
-        )
-        ax.bar(
-            bar_positions[valid], pct_pairs[m_idx][valid], bar_width * 0.9,
-            bottom=pct_rest[m_idx][valid],
-            color=col_pairs,      label="_nolegend_",
-        )
-        ax.bar(
-            bar_positions[valid], pct_singletons[m_idx][valid], bar_width * 0.9,
-            bottom=(pct_rest[m_idx] + pct_pairs[m_idx])[valid],
-            color=col_singletons, label="_nolegend_",
-        )
+        # bottom: other clusters (darkest)
+        ax.bar(bar_positions[valid], mean_rest[m_idx][valid], bar_width * 0.9, color=col)
+        # middle: pairs
+        ax.bar(bar_positions[valid], mean_pairs[m_idx][valid], bar_width * 0.9,
+               bottom=mean_rest[m_idx][valid], color=col_pairs)
+        # top: singletons (lightest)
+        ax.bar(bar_positions[valid], mean_singletons[m_idx][valid], bar_width * 0.9,
+               bottom=(mean_rest[m_idx] + mean_pairs[m_idx])[valid], color=col_singletons)
 
-        # total count above each bar
-        for pos, total, valid_flag in zip(bar_positions, mean_total[m_idx], valid):
-            if valid_flag:
+        for pos, total, v in zip(bar_positions, mean_total[m_idx], valid):
+            if v:
                 ax.text(
-                    pos, 101.5,
+                    pos, total * 1.03,
                     f"{int(round(total))}",
                     ha="center", va="bottom",
                     fontproperties=ibmplexsans,
@@ -967,23 +968,11 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
                     rotation=90,
                 )
 
-    # a small dummy legend for the three segments (shared across all methods)
-    import matplotlib.patches as mpatches
-    legend_patches = [
-        mpatches.Patch(facecolor="#555555",   label="Other clusters"),
-        mpatches.Patch(facecolor="#555555BB", label="Pairs"),
-        mpatches.Patch(facecolor="#55555566", label="Singletons"),
-    ]
-    method_handles, method_labels = ax.get_legend_handles_labels()
-    all_handles = method_handles + legend_patches
-    all_labels  = method_labels  + [p.get_label() for p in legend_patches]
-
     ax.set_xlim(-0.6, (n_c - 1) * group_spacing + 0.6)
-    ax.set_ylim(0, 115)
     ax.set_xticks(group_positions)
     ax.set_xticklabels([str(c) for c in xs])
     ax.set_xlabel("c (adim.)", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
-    ax.set_ylabel("Proportion of clusters (%)", fontproperties=ibmplexsans, loc="top", fontsize=AXIS_TITLE_FONT_SIZE)
+    ax.set_ylabel("Number of clusters (adim.)", fontproperties=ibmplexsans, loc="top", fontsize=AXIS_TITLE_FONT_SIZE)
 
     ax.yaxis.set_minor_locator(AutoMinorLocator())
     ax.tick_params(which="major", direction="in")
@@ -1004,9 +993,20 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
         plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold,
                  horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
 
-    plt.legend(handles=all_handles, labels=all_labels,
-               loc="lower right", frameon=False, prop=ibmplexsans,
-               handlelength=0.8, handletextpad=0.75, labelspacing=0.3, ncol=2)
+    method_handles = [
+        mpatches.Patch(facecolor=CONFIGDICT_COLOURS[k], label=FANCYDICT[k]) for k in x
+    ]
+    segment_handles = [
+        mpatches.Patch(facecolor="#555555",   label="Other clusters"),
+        mpatches.Patch(facecolor="#555555BB", label="Pairs"),
+        mpatches.Patch(facecolor="#55555566", label="Singletons"),
+    ]
+    plt.legend(
+        handles=method_handles + segment_handles,
+        labels=[h.get_label() for h in method_handles + segment_handles],
+        loc="lower right", frameon=False, prop=ibmplexsans,
+        handlelength=0.8, handletextpad=0.75, labelspacing=0.3, ncol=2,
+    )
 
     for ext in ["png", "pdf", "svg"]:
         fig.savefig(
