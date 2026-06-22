@@ -485,7 +485,7 @@ def plotter(theargs):
     else:
         ax.set_ylim(0.0, None)
 
-    ax.set_xlabel("c (adim.)", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
+    ax.set_xlabel("c - minimum sequence identity (adim.)", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
     ax.set_ylabel(
         CONFIGDICT[name]["ylabel"] if name in CONFIGDICT and "ylabel" in CONFIGDICT[name] else name,
         fontproperties=ibmplexsans,
@@ -502,7 +502,8 @@ def plotter(theargs):
     ax.get_yaxis().get_offset_text().set_x(-0.075)
     ax.get_yaxis().get_offset_text().set_fontproperties(ibmplexsans)
     ax.set_xlim(xs[0], xs[-1])
-
+    # change to log scale
+    ax.set_yscale("log")
     for label in ax.get_xticklabels() + ax.get_yticklabels():
         label.set_fontproperties(ibmplexsans)
 
@@ -731,6 +732,291 @@ def number_of_clusters_violin(theargs):
     del fig, ax
 
 
+def number_of_clusters_stacked_bar(theargs):
+    name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
+    ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
+
+    print(f"\t- Plotting stacked bar {name} for simulations of {namedict[assembly]}")
+    subdf = datadf[
+        (datadf.index.get_level_values("assembly") == assembly)
+        & (datadf.index.get_level_values("simulations") == (datatype == "simulations"))
+        & (datadf["c"] == DEFAULT_PARAMS["c"])
+    ]
+
+    if subdf.empty:
+        warnings.warn(
+            f"No rows available for {assembly}/{datatype}/{name}; skipping stacked bar",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
+    x = []
+    for clusterer, seqtype in [(c, st) for st in SEQTYPES for c in clusterers]:
+        if len(list(subdf[
+            (subdf.index.get_level_values("clusterer") == clusterer)
+            & (subdf["st"] == seqtype)
+        ]["n_clusters"])):
+            x.append(clusterer + "/" + seqtype)
+
+    if not x:
+        warnings.warn(
+            f"No clusterer/sequence-type rows available for {assembly}/{datatype}; skipping stacked bar",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    x_fancy = [FANCYDICT[value] for value in x]
+    mean_total, mean_singletons, mean_pairs = [], [], []
+
+    for x_value in x:
+        tmpdf = subdf[
+            (subdf.index.get_level_values("simulations") == True)
+            & (subdf.index.get_level_values("assembly") == assembly)
+            & (subdf.index.get_level_values("clusterer") == x_value.split("/")[0])
+            & (subdf["st"] == x_value.split("/")[1])
+        ]
+        mean_total.append(tmpdf["n_clusters"].astype(float).mean())
+        mean_singletons.append(tmpdf["n_singletons"].astype(float).mean())
+        mean_pairs.append(tmpdf["n_pairs"].astype(float).mean())
+
+    # convert to percentages
+    pct_singletons = [s / t * 100 for s, t in zip(mean_singletons, mean_total)]
+    pct_pairs      = [p / t * 100 for p, t in zip(mean_pairs,      mean_total)]
+    pct_rest       = [100 - s - p  for s, p in zip(pct_singletons,  pct_pairs)]
+
+    positions = list(range(len(x)))
+    bar_width = 0.5
+
+    # three shades per method colour: full / mid / light
+    colours_rest       = [CONFIGDICT_COLOURS[k] for k in x]
+    colours_pairs      = [c + "BB" for c in colours_rest]   # ~73% opacity via hex alpha
+    colours_singletons = [c + "66" for c in colours_rest]   # ~40% opacity via hex alpha
+
+    fig = plt.figure(1, dpi=150, figsize=(max(5, len(x) * 1.4), 5))
+    ax = fig.subplots()
+
+    bars_rest       = ax.bar(positions, pct_rest,       bar_width,
+                             color=colours_rest,       label="Other clusters")
+    bars_pairs      = ax.bar(positions, pct_pairs,      bar_width,
+                             bottom=pct_rest,
+                             color=colours_pairs,      label="Pairs")
+    bars_singletons = ax.bar(positions, pct_singletons, bar_width,
+                             bottom=[r + p for r, p in zip(pct_rest, pct_pairs)],
+                             color=colours_singletons, label="Singletons")
+
+    # total count label above each bar
+    for pos, total in zip(positions, mean_total):
+        ax.text(
+            pos, 101.5,
+            f"{int(round(total))}",
+            ha="center", va="bottom",
+            fontproperties=ibmplexsans,
+            fontsize=9,
+        )
+
+    ax.set_ylim(0, 108)
+    ax.set_xlim(-0.6, len(x) - 0.4)
+    ax.set_xticks(positions)
+    ax.set_xticklabels(x_fancy)
+    ax.set_xlabel("Clusterer", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
+    ax.set_ylabel("Proportion of clusters (%)", fontproperties=ibmplexsans, loc="top", fontsize=AXIS_TITLE_FONT_SIZE)
+
+    ax.yaxis.set_minor_locator(AutoMinorLocator())
+    ax.tick_params(which="major", direction="in")
+    ax.tick_params(which="minor", direction="in")
+    ax.xaxis.set_ticks_position("both")
+    ax.yaxis.set_ticks_position("both")
+    ax.get_yaxis().get_offset_text().set_x(-0.075)
+    ax.get_yaxis().get_offset_text().set_fontproperties(ibmplexsans)
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(ibmplexsans)
+
+    plt.text(0, 1.01, namedict[assembly], fontproperties=ibmplexsansitalics,
+             horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
+    plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans,
+             horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
+    if DOPREM:
+        plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold,
+                 horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
+
+    plt.legend(loc="lower right", frameon=False, prop=ibmplexsans,
+               handlelength=0.8, handletextpad=0.75, labelspacing=0.3)
+
+    for ext in ["png", "pdf", "svg"]:
+        fig.savefig(
+            os.path.join(outfolder, "_".join(["plot_stackedbar", datatype, assembly, "n_clusters"]) + "." + ext),
+            bbox_inches="tight",
+        )
+    fig.clf()
+    del fig, ax
+
+
+def number_of_clusters_stacked_bar_vs_c(theargs):
+    name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
+    ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
+
+    print(f"\t- Plotting stacked bar vs c for simulations of {namedict[assembly]}")
+    subdf = datadf[
+        (datadf.index.get_level_values("assembly") == assembly)
+        & (datadf.index.get_level_values("simulations") == (datatype == "simulations"))
+    ]
+
+    if subdf.empty:
+        warnings.warn(
+            f"No rows available for {assembly}/{datatype}; skipping stacked bar vs c",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    xs = sorted(set(subdf["c"].astype(float)))
+    clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
+    x = []
+    for clusterer, seqtype in [(c, st) for st in SEQTYPES for c in clusterers]:
+        if len(list(subdf[
+            (subdf.index.get_level_values("clusterer") == clusterer)
+            & (subdf["st"] == seqtype)
+        ]["n_clusters"])):
+            x.append(clusterer + "/" + seqtype)
+
+    if not x:
+        warnings.warn(
+            f"No clusterer/sequence-type rows available for {assembly}/{datatype}; skipping stacked bar vs c",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    n_methods = len(x)
+    n_c = len(xs)
+    bar_width = 0.8 / n_methods
+    group_spacing = 1.0  # distance between c-value groups
+
+    # precompute means for all methods x c values
+    pct_singletons = np.zeros((n_methods, n_c))
+    pct_pairs      = np.zeros((n_methods, n_c))
+    pct_rest       = np.zeros((n_methods, n_c))
+    mean_total     = np.zeros((n_methods, n_c))
+
+    for m_idx, x_value in enumerate(x):
+        for c_idx, c_value in enumerate(xs):
+            tmpdf = subdf[
+                (subdf.index.get_level_values("simulations") == True)
+                & (subdf.index.get_level_values("assembly") == assembly)
+                & (subdf.index.get_level_values("clusterer") == x_value.split("/")[0])
+                & (subdf["st"] == x_value.split("/")[1])
+                & (subdf["c"] == c_value)
+            ]
+            if tmpdf.empty:
+                pct_singletons[m_idx, c_idx] = np.nan
+                pct_pairs[m_idx, c_idx]      = np.nan
+                pct_rest[m_idx, c_idx]       = np.nan
+                mean_total[m_idx, c_idx]     = np.nan
+                continue
+            t = tmpdf["n_clusters"].astype(float).mean()
+            s = tmpdf["n_singletons"].astype(float).mean()
+            p = tmpdf["n_pairs"].astype(float).mean()
+            mean_total[m_idx, c_idx]     = t
+            pct_singletons[m_idx, c_idx] = s / t * 100
+            pct_pairs[m_idx, c_idx]      = p / t * 100
+            pct_rest[m_idx, c_idx]       = 100 - (s / t * 100) - (p / t * 100)
+
+    fig = plt.figure(1, dpi=150, figsize=(max(8, n_c * n_methods * 0.55), 5))
+    ax = fig.subplots()
+
+    # centre the method bars around each c-group position
+    group_positions = np.arange(n_c) * group_spacing
+    offsets = (np.arange(n_methods) - (n_methods - 1) / 2.0) * bar_width
+
+    for m_idx, x_value in enumerate(x):
+        col = CONFIGDICT_COLOURS[x_value]
+        col_pairs      = col + "BB"
+        col_singletons = col + "66"
+        bar_positions  = group_positions + offsets[m_idx]
+
+        valid = ~np.isnan(mean_total[m_idx])
+
+        ax.bar(
+            bar_positions[valid], pct_rest[m_idx][valid], bar_width * 0.9,
+            color=col,            label=FANCYDICT[x_value],
+        )
+        ax.bar(
+            bar_positions[valid], pct_pairs[m_idx][valid], bar_width * 0.9,
+            bottom=pct_rest[m_idx][valid],
+            color=col_pairs,      label="_nolegend_",
+        )
+        ax.bar(
+            bar_positions[valid], pct_singletons[m_idx][valid], bar_width * 0.9,
+            bottom=(pct_rest[m_idx] + pct_pairs[m_idx])[valid],
+            color=col_singletons, label="_nolegend_",
+        )
+
+        # total count above each bar
+        for pos, total, valid_flag in zip(bar_positions, mean_total[m_idx], valid):
+            if valid_flag:
+                ax.text(
+                    pos, 101.5,
+                    f"{int(round(total))}",
+                    ha="center", va="bottom",
+                    fontproperties=ibmplexsans,
+                    fontsize=7,
+                    rotation=90,
+                )
+
+    # a small dummy legend for the three segments (shared across all methods)
+    import matplotlib.patches as mpatches
+    legend_patches = [
+        mpatches.Patch(facecolor="#555555",   label="Other clusters"),
+        mpatches.Patch(facecolor="#555555BB", label="Pairs"),
+        mpatches.Patch(facecolor="#55555566", label="Singletons"),
+    ]
+    method_handles, method_labels = ax.get_legend_handles_labels()
+    all_handles = method_handles + legend_patches
+    all_labels  = method_labels  + [p.get_label() for p in legend_patches]
+
+    ax.set_xlim(-0.6, (n_c - 1) * group_spacing + 0.6)
+    ax.set_ylim(0, 115)
+    ax.set_xticks(group_positions)
+    ax.set_xticklabels([str(c) for c in xs])
+    ax.set_xlabel("c (adim.)", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
+    ax.set_ylabel("Proportion of clusters (%)", fontproperties=ibmplexsans, loc="top", fontsize=AXIS_TITLE_FONT_SIZE)
+
+    ax.yaxis.set_minor_locator(AutoMinorLocator())
+    ax.tick_params(which="major", direction="in")
+    ax.tick_params(which="minor", direction="in")
+    ax.xaxis.set_ticks_position("both")
+    ax.yaxis.set_ticks_position("both")
+    ax.get_yaxis().get_offset_text().set_x(-0.075)
+    ax.get_yaxis().get_offset_text().set_fontproperties(ibmplexsans)
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(ibmplexsans)
+
+    plt.text(0, 1.01, namedict[assembly], fontproperties=ibmplexsansitalics,
+             horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
+    plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans,
+             horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
+    if DOPREM:
+        plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold,
+                 horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
+
+    plt.legend(handles=all_handles, labels=all_labels,
+               loc="lower right", frameon=False, prop=ibmplexsans,
+               handlelength=0.8, handletextpad=0.75, labelspacing=0.3, ncol=2)
+
+    for ext in ["png", "pdf", "svg"]:
+        fig.savefig(
+            os.path.join(outfolder, "_".join(["plot_stackedbar_c", datatype, assembly, "n_clusters"]) + "." + ext),
+            bbox_inches="tight",
+        )
+    fig.clf()
+    del fig, ax
+
+
 def load_seeds(seedsfile):
     seeds = []
     with open(seedsfile, "r") as f:
@@ -889,6 +1175,15 @@ def main():
         for assembly in assemblies
     ]
 
+    plottingtasks_stackedbar_c = [
+        ("n_clusters", outdf, namedict, args.outfolder, assembly, "simulations", font_props)
+        for assembly in assemblies
+    ]
+
+    plottingtasks_stackedbar = [
+        ("n_clusters", outdf, namedict, args.outfolder, assembly, "simulations", font_props)
+        for assembly in assemblies
+    ]
     print("\n> Plotting...")
     if args.nthreads <= 1:
         for task in plottingtasks_pointplots:
@@ -897,11 +1192,20 @@ def main():
             plotter(task)
         for task in plottingtasks_violin:
             number_of_clusters_violin(task)
+        for task in plottingtasks_stackedbar:
+            number_of_clusters_stacked_bar(task)
+        for task in plottingtasks_stackedbar_c:
+            number_of_clusters_stacked_bar_vs_c(task)
+
+    # multithread branch:
+    pool.map(number_of_clusters_stacked_bar_vs_c, plottingtasks_stackedbar_c)
     else:
         pool = Pool(args.nthreads)
         pool.map(plotter_pointplots, plottingtasks_pointplots)
         pool.map(plotter, plottingtasks)
         pool.map(number_of_clusters_violin, plottingtasks_violin)
+        pool.map(number_of_clusters_stacked_bar, plottingtasks_stackedbar)
+        pool.map(number_of_clusters_stacked_bar_vs_c, plottingtasks_stackedbar_c)
         pool.close()
         pool.join()
     
