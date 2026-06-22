@@ -57,15 +57,15 @@ FANCYDICT = {
 CONFIGDICT = {
     "adj_rand_index": {
         "ylabel": "Adjusted Rand index (adim.)",
-        "ylimits": (0.8, 1.0),
-        "ylimits_c": (0.5, 1.0),
+        "ylimits": (0.8, 1.1),
+        "ylimits_c": (0.4, 1.1),
     },
-    "purity": {"ylabel": "Purity (adim.)", "ylimits": (0.85, 1.0)},
+    "purity": {"ylabel": "Purity (adim.)", "ylimits": (0.85, 1.1)},
     "adj_mutual_info": {
         "ylabel": "Adjusted mutual information (adim.)",
         "ylimits": (0.8, 1.0),
     },
-    "v_measure": {"ylabel": "V-measure (adim.)", "ylimits": (0.8, 1.0)},
+    "v_measure": {"ylabel": "V-measure (adim.)", "ylimits": (0.8, 1.1)},
     "runtime": {"ylabel": "Runtime (s)"},
 }
 
@@ -973,7 +973,7 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
     ax.set_ylim(0, np.nanmax(mean_total) * 1.2)
     ax.set_xticks(group_positions)
     ax.set_xticklabels([str(c) for c in xs])
-    ax.set_xlabel("c (adim.)", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
+    ax.set_xlabel("c - minimum sequence identity (adim.)", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
     ax.set_ylabel("Number of clusters (adim.)", fontproperties=ibmplexsans, loc="top", fontsize=AXIS_TITLE_FONT_SIZE)
 
     ax.yaxis.set_minor_locator(AutoMinorLocator())
