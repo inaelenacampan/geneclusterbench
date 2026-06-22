@@ -587,11 +587,10 @@ def plotter_pointplots(theargs):
             label=x_fancy[index],
         )
         if ycount[index] >= 2:
-            yerr_low = min(ystd[index], ymean[index]) 
             ax.errorbar(
                 index,
                 ymean[index],
-                yerr=[[yerr_low], [ystd[index]]],
+                yerr=[[ystd[index] if ymean[index] > ystd[index] else ymean[index]], [ystd[index]]],
                 fmt="none",
                 color="black",
                 capsize=4.0,
