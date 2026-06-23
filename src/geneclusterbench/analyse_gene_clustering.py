@@ -169,9 +169,8 @@ def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjuste
     for i in range(nperm):
         permuted[i] = metric_function(rng.permutation(labels1), labels2)
 
-    n_greater = np.sum(permuted > observed)
-    n_equal = np.sum(permuted == observed)
-    pvalue = float((n_greater + 0.5 * n_equal + 1) / (nperm + 1)
+    n_greater = np.sum(permuted >= observed)
+    pvalue = float((n_greater + 1) / (nperm + 1))
     return observed, pvalue
 
 
