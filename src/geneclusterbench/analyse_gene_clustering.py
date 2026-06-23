@@ -134,13 +134,14 @@ def get_purity(inlab, truthdf):
 # for mathematical expression see documentation
 
 def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
+    
     probelab = get_labels_list_from_df(indf)
 
     _, ari_p = permutation_test_agreement(
         truthlab,
         probelab,
         metrics.adjusted_rand_score,
-        nperm=100
+        nperm=10000
     )
 
     outlist = [
@@ -157,7 +158,7 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
     return outlist
 
 
-def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjusted_rand_score, nperm=9, seed=None):
+def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjusted_rand_score, nperm=10000, seed=None):
     rng = default_rng(seed)
     labels1 = np.asarray(labels1)
     labels2 = np.asarray(labels2)
@@ -170,7 +171,7 @@ def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjuste
 
     n_greater = np.sum(permuted > observed)
     n_equal = np.sum(permuted == observed)
-    pvalue = float((n_greater + 0.5 * n_equal) / nperm)
+    pvalue = float((n_greater + 0.5 * n_equal + 1) / (nperm + 1)
     return observed, pvalue
 
 

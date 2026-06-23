@@ -13,6 +13,7 @@ execcommands_copy.tsv
 logs/
 *.out
 *.err
+indf_print.txt
 
 # Generated simulation and analysis outputs
 temp_runanalysis/
