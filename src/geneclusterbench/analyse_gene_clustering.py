@@ -579,6 +579,8 @@ def plotter_pointplots(theargs):
     positions = list(range(len(x)))
     bar_width = 0.5
 
+    outnamescaff = name.replace(" ", "").replace("#", "NumberOf")
+
     for index in positions:
         ax.bar(
             index,
@@ -588,6 +590,18 @@ def plotter_pointplots(theargs):
             label=x_fancy[index],
         )
         if ycount[index] >= 2:
+            if outnamescaff == "runtime":
+                lower_err = min(ystd[index], ymean[index])
+                ax.errorbar(
+                    index,
+                    ymean[index],
+                    yerr=[[max(0, lower_err)], [ystd[index]]],
+                    fmt="none",
+                    color="black",
+                    capsize=4.0,
+                    linewidth=1.0,
+                ) else :
+                
             ax.errorbar(
                 index,
                 ymean[index],
@@ -630,7 +644,6 @@ def plotter_pointplots(theargs):
     if DOPREM:
         plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold, horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
 
-    outnamescaff = name.replace(" ", "").replace("#", "NumberOf")
     for ext in ["png", "pdf", "svg"]:
         fig.savefig(
             os.path.join(outfolder, "_".join(["plot_point", datatype, assembly, outnamescaff]) + "." + ext),
