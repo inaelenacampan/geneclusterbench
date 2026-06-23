@@ -600,17 +600,18 @@ def plotter_pointplots(theargs):
                     color="black",
                     capsize=4.0,
                     linewidth=1.0,
-                ) else :
+                ) 
+            else :
                 
-            ax.errorbar(
-                index,
-                ymean[index],
-                yerr=[[ystd[index] if ymean[index] > ystd[index] else ymean[index]], [ystd[index]]],
-                fmt="none",
-                color="black",
-                capsize=4.0,
-                linewidth=1.0,
-            )
+                ax.errorbar(
+                    index,
+                    ymean[index],
+                    yerr=[[ystd[index] if ymean[index] > ystd[index] else ymean[index]], [ystd[index]]],
+                    fmt="none",
+                    color="black",
+                    capsize=4.0,
+                    linewidth=1.0,
+                )
 
     ax.set_xticks(positions)
     ax.set_xticklabels(x_fancy)
