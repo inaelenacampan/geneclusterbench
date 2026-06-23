@@ -485,7 +485,7 @@ def plotter(theargs):
     else:
         ax.set_ylim(0.0, None)
 
-    ax.set_xlabel("c - minimum sequence identity (adim.)", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
+    ax.set_xlabel("minimum sequence identity (adim.)", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
     ax.set_ylabel(
         CONFIGDICT[name]["ylabel"] if name in CONFIGDICT and "ylabel" in CONFIGDICT[name] else name,
         fontproperties=ibmplexsans,
@@ -985,7 +985,7 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
     ax.set_ylim(0, np.nanmax(mean_total) * 1.2)
     ax.set_xticks(group_positions)
     ax.set_xticklabels([str(c) for c in xs])
-    ax.set_xlabel("c - minimum sequence identity (adim.)", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
+    ax.set_xlabel("minimum sequence identity (adim.)", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
     ax.set_ylabel("Number of clusters (adim.)", fontproperties=ibmplexsans, loc="top", fontsize=AXIS_TITLE_FONT_SIZE)
 
     ax.yaxis.set_minor_locator(AutoMinorLocator())
