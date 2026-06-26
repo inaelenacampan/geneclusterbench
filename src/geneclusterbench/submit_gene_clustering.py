@@ -47,6 +47,14 @@ DIAMOND_SCAFFOLD = (
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
+PANAROO_SCAFFOLD = (
+    "mkdir -p {workdir} && cd {workdir} && "
+    "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
+    "{execexec} -i {inputfile} -o {outdir} "
+    "-c {c} --clean-mode strict -t {ncores} && "
+    "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
+)
+
 SLURM_SCAFFOLD = (
     "sbatch --array={arrayvals} -c {nth} -t {timemax} --mem {memmax}G "
     "-J {jobname} -e {logpath}/log.%A.%a.%x.err "
@@ -113,12 +121,14 @@ def get_c_values_for_process(proc, seqtype):
 
 # updated the mmseq path and cd-hit
 def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9):
+    
     mmseqs2exec = os.path.join(softwaredir, "mmseqs/bin/mmseqs")
     cdhitexec = os.path.join(
         softwaredir,
         "cdhit/cdhit/cd-hit-est" if seqtype == "nt" else "cdhit/cdhit/cd-hit",
     )
     diamondexec = os.path.join(softwaredir, "Diamond/diamond")
+    panarooexec = os.path.join(softwaredir, "panaroo_env/bin/panaroo")
     # cd-hit method
     if proc == "cdhit":
         word_size = get_cdhit_word_size(c, seqtype)
@@ -154,6 +164,16 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
             mem=int(maxmem),
             outputfile="./diamond",
         )
+    # panaroo method
+    if proc == "panaroo":
+        return PANAROO_SCAFFOLD.format(
+            workdir=outfolder,
+            inputfile=infile,
+            execexec=panarooexec,
+            c=c, 
+            ncores=nthreads,
+            outdir=os.path.join(outfolder, "panaroo_out"),
+        )
     raise RuntimeError("Process " + proc + " not supported")
 
 
@@ -178,6 +198,15 @@ def get_clustering_fasta(simdir, seqtype):
             f"Expected one {expected} in {simdir}, found {len(matches)}"
         )
     return os.path.join(simdir, matches[0])
+
+def get_panaroo_gffs(simdir):
+    matches = [
+        os.path.join(simdir, el) for el in os.listdir(simdir)
+        if el.endswith(".gff")
+    ]
+    if not matches:
+        raise RuntimeError(f"No GFF files found in {simdir}")
+    return " ".join(matches)  # e.g. "path/iso_0.gff path/iso_1.gff ..."
 
 
 def submit_clustering_jobs(args):
@@ -205,29 +234,54 @@ def submit_clustering_jobs(args):
             for seqtype in args.sequence_type: # e.g. nt, aa
                 infile = get_clustering_fasta(simdir, seqtype)
 
-                for process in args.process: # e.g. cdhit, mmseqs2
-                    for c_value in get_c_values_for_process(process, seqtype):
-                        suffix = f"_st-{seqtype}" + (
-                            f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
-                        )
-                        jobinfo.append(
-                            get_command_for_process(
-                                process,
-                                seqtype,
-                                infile,
-                                os.path.join(
-                                    generaloutdir,
-                                    "simulations",
-                                    assembly,
-                                    str(seed),
-                                    process + suffix,
-                                ),
-                                args.threads,
-                                args.mem,
-                                args.softwaredir,
-                                c_value,
+                for process in args.process:
+                    if process == "panaroo":
+                        infile = get_panaroo_gffs(simdir)
+                        for c_value in get_c_values_for_process(process, "aa"):
+                            suffix = f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
+                            jobinfo.append(
+                                get_command_for_process(
+                                    process,
+                                    "aa",  # seqtype irrelevant for panaroo but needed by function signature
+                                    infile,
+                                    os.path.join(
+                                        generaloutdir,
+                                        "simulations",
+                                        assembly,
+                                        str(seed),
+                                        process + suffix,
+                                    ),
+                                    args.threads,
+                                    args.mem,
+                                    args.softwaredir,
+                                    c_value,
+                                )
                             )
-                        )
+                    else:
+                        for seqtype in args.sequence_type:
+                            infile = get_clustering_fasta(simdir, seqtype)
+                            for c_value in get_c_values_for_process(process, seqtype):
+                                suffix = f"_st-{seqtype}" + (
+                                    f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
+                                )
+                                jobinfo.append(
+                                    get_command_for_process(
+                                        process,
+                                        seqtype,
+                                        infile,
+                                        os.path.join(
+                                            generaloutdir,
+                                            "simulations",
+                                            assembly,
+                                            str(seed),
+                                            process + suffix,
+                                        ),
+                                        args.threads,
+                                        args.mem,
+                                        args.softwaredir,
+                                        c_value,
+                                    )
+                                )
 
     if not jobinfo:
         raise RuntimeError(
@@ -295,7 +349,7 @@ def main():
     parser.add_argument("--max-simultaneous-cores", "-M", default=2000, type=int)
     parser.add_argument("--preset-timestamp", "-P", default=-1, type=int)
     parser.add_argument("--pretend", "-p", action="store_true")
-    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond")
+    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo")
     parser.add_argument("--sequence-type", "-st", default="nt,aa")
     parser.add_argument("--softwaredir", default=DEFAULT_SOFTWAREDIR)
     parser.add_argument("--benchmark-runner", default=DEFAULT_RUNNER)
