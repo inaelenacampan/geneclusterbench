@@ -316,6 +316,8 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
         # print(gene_seq_to_save)
 
         # translate to amino acid
+        # possible bug for the annotation of the codon?
+
         gene_sequence = gene_sequence.translate(stop_symbol = "")
 
         # print(gene_sequence); sys.exit()
@@ -433,6 +435,7 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
 
             gene_seq_to_save = copy.deepcopy(gene_sequence)
             # print(gene_seq_to_save)
+            # possible bug for the annotation of the codon?
             gene_sequence = gene_sequence.translate(stop_symbol = "")
             geneid = get_gene_id(gene_sequence)         # The IDs must be of the translated genes, i.e. of the AA sequences. That is what makes sense.
             # geneid = get_gene_id(gene_seq_to_save)
