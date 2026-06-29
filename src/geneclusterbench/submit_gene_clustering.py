@@ -226,23 +226,46 @@ def submit_clustering_jobs(args):
         el for el in os.listdir(simulations_dir)
         if os.path.isdir(os.path.join(simulations_dir, el))
     ]
+
     for assembly in assemblies:
         for seed in seeds:
             simdir = os.path.join(simulations_dir, assembly, str(seed))
             if not os.path.isdir(simdir):
                 continue
-            for seqtype in args.sequence_type: # e.g. nt, aa
-                infile = get_clustering_fasta(simdir, seqtype)
-
-                for process in args.process:
-                    if process == "panaroo":
-                        infile = get_panaroo_gffs(simdir)
-                        for c_value in get_c_values_for_process(process, "aa"):
-                            suffix = f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
+            for process in args.process:
+                if process == "panaroo":
+                    infile = get_panaroo_gffs(simdir)
+                    for c_value in get_c_values_for_process(process, "aa"):
+                        suffix = f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
+                        jobinfo.append(
+                            get_command_for_process(
+                                process,
+                                "aa",
+                                infile,
+                                os.path.join(
+                                    generaloutdir,
+                                    "simulations",
+                                    assembly,
+                                    str(seed),
+                                    process + suffix,
+                                ),
+                                args.threads,
+                                args.mem,
+                                args.softwaredir,
+                                c_value,
+                            )
+                        )
+                else:
+                    for seqtype in args.sequence_type: # eg ; aa, nt
+                        infile = get_clustering_fasta(simdir, seqtype)
+                        for c_value in get_c_values_for_process(process, seqtype):
+                            suffix = f"_st-{seqtype}" + (
+                                f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
+                            )
                             jobinfo.append(
                                 get_command_for_process(
                                     process,
-                                    "aa",  # seqtype irrelevant for panaroo but needed by function signature
+                                    seqtype,
                                     infile,
                                     os.path.join(
                                         generaloutdir,
@@ -257,31 +280,6 @@ def submit_clustering_jobs(args):
                                     c_value,
                                 )
                             )
-                    else:
-                        for seqtype in args.sequence_type:
-                            infile = get_clustering_fasta(simdir, seqtype)
-                            for c_value in get_c_values_for_process(process, seqtype):
-                                suffix = f"_st-{seqtype}" + (
-                                    f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
-                                )
-                                jobinfo.append(
-                                    get_command_for_process(
-                                        process,
-                                        seqtype,
-                                        infile,
-                                        os.path.join(
-                                            generaloutdir,
-                                            "simulations",
-                                            assembly,
-                                            str(seed),
-                                            process + suffix,
-                                        ),
-                                        args.threads,
-                                        args.mem,
-                                        args.softwaredir,
-                                        c_value,
-                                    )
-                                )
 
     if not jobinfo:
         raise RuntimeError(
