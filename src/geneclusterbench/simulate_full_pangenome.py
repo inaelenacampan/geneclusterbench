@@ -525,9 +525,14 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
                             print(f"=====================\n> Orig gene & mutated gene ids: {iG.id}. iG.start: {iG.start}, iG.stop: {iG.stop}.\nSeq from the contig:\n" + contig_gene_seq + f"\n>    Seq from the gene in strand {iG.strand}:\n" + expected_gene_seq + f"\n> Seq. reversed-complement:\n" + contig_gene_rc)
 
                     record_list[-1].features.append(feature)
-
+                    # check for *
+                    extracted_seq = feature.extract(record_list[-1].seq)
+                    translated = str(extracted_seq.translate(to_stop=False))
+                    if "*" in translated[:-1]:
+                        print(f"\n\t\t Issue - ID: {feature.qualifiers.get('ID')}\n\t\tNT: {extracted_seq}\n\t\tAA: {translated}")
+                        sys.exit(1)        
                     # sys.exit()
-                # sys.exit()
+                    # sys.exit()
 
         # sys.exit()
         # print("here4")
