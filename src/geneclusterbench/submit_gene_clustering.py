@@ -62,7 +62,7 @@ PANTA_SCAFFOLD = (
     "-i {c} -t {ncores} -a {seq_type}&& "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
-
+# to do
 PPANGGOLIN_SCAFFOLD = (
     "mkdir -p {workdir} && cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
@@ -70,7 +70,7 @@ PPANGGOLIN_SCAFFOLD = (
     ""
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
-
+# to do
 PANX_SCAFFOLD = (
     "mkdir -p {workdir} && cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
@@ -153,6 +153,7 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
     )
     diamondexec = os.path.join(softwaredir, "Diamond/diamond")
     panarooexec = os.path.join(softwaredir, "panaroo_env/bin/panaroo")
+    # incorrect path
     pantaexec = os.path.join(softwaredir, "panta/panta")
     
     if seqtype == "nt" :
@@ -208,13 +209,13 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
     # panta method
     if proc == "panta":
         return PANTA_SCAFFOLD.format(
-            workdir = ,
-            inputfile = ,
+            workdir = outfolder,
+            inputfile = infile,
             execexec = pantaexec,
             c = c,
             ncores = nthreads,
             outdir = "./panta",
-            seq_type  = seq_arg
+            seq_type  = seq_arg,
         )
     raise RuntimeError("Process " + proc + " not supported")
 
@@ -241,7 +242,7 @@ def get_clustering_fasta(simdir, seqtype):
         )
     return os.path.join(simdir, matches[0])
 
-def get_panaroo_gffs(simdir):
+def get_sim_iso_gffs(simdir):
     matches = [
         os.path.join(simdir, el) for el in os.listdir(simdir)
         if el.endswith(".gff")
@@ -276,7 +277,7 @@ def submit_clustering_jobs(args):
                 continue
             for process in args.process:
                 if process == "panaroo":
-                    infile = get_panaroo_gffs(simdir)
+                    infile = get_sim_iso_gffs(simdir)
                     for c_value in get_c_values_for_process(process, "aa"):
                         suffix = f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
                         jobinfo.append(
@@ -299,7 +300,10 @@ def submit_clustering_jobs(args):
                         )
                 else:
                     for seqtype in args.sequence_type: # eg ; aa, nt
-                        infile = get_clustering_fasta(simdir, seqtype)
+                        if process == "panta":
+                            infile = get_sim_iso_gffs(simdir)
+                        else :
+                            infile = get_clustering_fasta(simdir, seqtype)
                         for c_value in get_c_values_for_process(process, seqtype):
                             suffix = f"_st-{seqtype}" + (
                                 f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
