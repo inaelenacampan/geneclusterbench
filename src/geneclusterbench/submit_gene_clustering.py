@@ -63,6 +63,22 @@ PANTA_SCAFFOLD = (
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
+PPANGGOLIN_SCAFFOLD = (
+    "mkdir -p {workdir} && cd {workdir} && "
+    "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
+    ""
+    ""
+    "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
+)
+
+PANX_SCAFFOLD = (
+    "mkdir -p {workdir} && cd {workdir} && "
+    "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
+    ""
+    ""
+    "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
+)
+
 SLURM_SCAFFOLD = (
     "sbatch --array={arrayvals} -c {nth} -t {timemax} --mem {memmax}G "
     "-J {jobname} -e {logpath}/log.%A.%a.%x.err "
