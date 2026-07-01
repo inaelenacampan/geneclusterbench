@@ -55,6 +55,14 @@ PANAROO_SCAFFOLD = (
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
+PANTA_SCAFFOLD = (
+    "mkdir -p {workdir} && cd {workdir} && "
+    "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
+    "{execexec} main -g {inputfile} -o {outdir} "
+    "-i {c} -t {ncores} -a {seq_type}&& "
+    "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
+)
+
 SLURM_SCAFFOLD = (
     "sbatch --array={arrayvals} -c {nth} -t {timemax} --mem {memmax}G "
     "-J {jobname} -e {logpath}/log.%A.%a.%x.err "
@@ -129,6 +137,13 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
     )
     diamondexec = os.path.join(softwaredir, "Diamond/diamond")
     panarooexec = os.path.join(softwaredir, "panaroo_env/bin/panaroo")
+    pantaexec = os.path.join(softwaredir, "panta/panta")
+    
+    if seqtype == "nt" :
+        seq_arg = "nucleotide"
+    else :
+        seq_arg = "protein"
+
     # cd-hit method
     if proc == "cdhit":
         word_size = get_cdhit_word_size(c, seqtype)
@@ -172,7 +187,18 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
             execexec=panarooexec,
             c=c, 
             ncores=nthreads,
-            outdir=os.path.join(outfolder, "panaroo_out"),
+            outdir="./panaroo",
+        )
+    # panta method
+    if proc == "panta":
+        return PANTA_SCAFFOLD.format(
+            workdir = ,
+            inputfile = ,
+            execexec = pantaexec,
+            c = c,
+            ncores = nthreads,
+            outdir = "./panta",
+            seq_type  = seq_arg
         )
     raise RuntimeError("Process " + proc + " not supported")
 
@@ -347,7 +373,7 @@ def main():
     parser.add_argument("--max-simultaneous-cores", "-M", default=2000, type=int)
     parser.add_argument("--preset-timestamp", "-P", default=-1, type=int)
     parser.add_argument("--pretend", "-p", action="store_true")
-    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo")
+    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo,panta")
     parser.add_argument("--sequence-type", "-st", default="nt,aa")
     parser.add_argument("--softwaredir", default=DEFAULT_SOFTWAREDIR)
     parser.add_argument("--benchmark-runner", default=DEFAULT_RUNNER)
