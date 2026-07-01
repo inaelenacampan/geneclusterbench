@@ -269,14 +269,14 @@ def get_gene_id(seq):
 
     return theid
 
-def draw_phylogenetic_tree(filepath, folder):
+def draw_phylogenetic_tree(filepath, folder, gain_rate, loss_rate, mutation_rate):
     # treefile needs to be a .nwk format
     tree = Phylo.read(filepath, "newick")
 
     fig, ax = plt.subplots(figsize=(12, 8))
     Phylo.draw(tree, axes=ax)
-    file_name_tree = ("sim_gr_" + str(args.gain_rate) + "_lr_" +
-              str(args.loss_rate) + "_mu_" + str(args.mutation_rate) + "tree.png")
+    file_name_tree = ("sim_gr_" + str(gain_rate) + "_lr_" +
+              str(loss_rate) + "_mu_" + str(mutation_rate) + "tree.png")
     plt.savefig(f"{folder}/{file_name_tree}", dpi=300)
     return
 
@@ -814,7 +814,7 @@ def main():
                   random_state      = rstate,
     )
 
-    draw_phylogenetic_tree(f"{prefix}_sim_tree.nwk", args.output_dir)
+    draw_phylogenetic_tree(f"{prefix}_sim_tree.nwk", args.output_dir, args.gain_rate, args.loss_rate, args.mutation_rate)
     print("> Simulation finished!")
     return
 
