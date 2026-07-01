@@ -131,6 +131,16 @@ def normalise_deletion_indices(indices):
     return np.unique(indices.astype(int))
 
 
+def cds_intervals_overlap(left_entry, right_entry):
+    if left_entry.seqid != right_entry.seqid:
+        return False
+    return left_entry.start <= right_entry.stop and right_entry.start <= left_entry.stop
+
+
+def overlaps_any_fixed_core(entry, fixed_core_entries):
+    return any(cds_intervals_overlap(entry, fixed_entry) for fixed_entry in fixed_core_entries)
+
+
 def simulate_img_with_mutation(in_tree,
                                gain_rate,
                                loss_rate,
@@ -305,6 +315,9 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
         seq_dict[seq.id] = np.array(list(str(seq.seq)))
 
     gene_seq_dict = {}
+    original_gene_ids = {}
+    # geneid_* is protein-based; keep exact nucleotide sequences separately.
+    original_gene_sequences = {}
 
     parsed_gff = gffutils.create_db(
         clean_gff_string(split[0]),
@@ -352,9 +365,12 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
 
         geneid = get_gene_id(gene_sequence)         # The IDs must be of the translated genes, i.e. of the AA sequences. That is what makes sense.
         # geneid = get_gene_id(gene_seq_to_save)
-        gene_seq_dict["geneid_" + str(geneid)] = str(gene_seq_to_save)
+        gene_id = "geneid_" + str(geneid)
+        original_gene_ids[entry.id] = gene_id
+        original_gene_sequences[entry.id] = str(gene_seq_to_save)
+        gene_seq_dict.setdefault(gene_id, str(gene_seq_to_save))
 
-        gene_seqs.append(SeqRecord(gene_sequence, id=entry.id, description="geneid_" + str(geneid)))
+        gene_seqs.append(SeqRecord(gene_sequence, id=entry.id, description=gene_id))
 
         all_gene_locations.append(entry)
         prev_end = prev_end_by_seqid[entry.seqid]
@@ -390,7 +406,37 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
             f"{len(gene_locations)} non-overlapping CDS entries are available"
         )
     print("> Subsampling genes...")
-    gene_locations = random_state.sample(gene_locations, n_sim_genes)
+    sampled_gene_locations = []
+    available_gene_locations = gene_locations.copy()
+
+    while len(sampled_gene_locations) < n_sim_genes:
+        if not available_gene_locations:
+            raise RuntimeError(
+                f"Could only sample {len(sampled_gene_locations)} CDS entries "
+                f"without fixed-core overlaps, but --n_sim_genes={n_sim_genes}"
+            )
+
+        candidate = random_state.sample(available_gene_locations, 1)[0]
+        available_gene_locations.remove(candidate)
+
+        tentative_sample = sampled_gene_locations + [candidate]
+        tentative_sample_ids = {entry.id for entry in tentative_sample}
+        fixed_core_entries = [
+            entry for entry in all_gene_locations
+            if entry.id not in tentative_sample_ids
+        ]
+
+        if overlaps_any_fixed_core(candidate, fixed_core_entries):
+            print(
+                "WARNING: sampled CDS overlaps fixed core CDS; resampling:",
+                candidate.id,
+            )
+            continue
+
+        sampled_gene_locations.append(candidate)
+
+    gene_locations = sampled_gene_locations
+    sampled_gene_ids = {entry.id for entry in gene_locations}
     print("> Done!")
 
     print("> Simulating presence/absence matrix and gene mutations...")
@@ -429,6 +475,8 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
         temp_seq_dict = copy.deepcopy(seq_dict)
         included_genes = set()
         n_mutations = 0
+        # Feature IDs are unique in the output GFF; use them for exact NT validation.
+        feature_seq_dict = {}
         # print("here1")
         for gene in pan: # Iterate over mutated genes, and mutate them
             # gene is a list with first element an index and the second a list of duples (integer, float)
@@ -463,6 +511,13 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
                     raise RuntimeError("Error issue with start!")
                 temp_seq_dict[entry.seqid][start:(start + 3)] = cod
 
+        if not included_genes:
+            print(
+                "WARNING: simulated genome",
+                i,
+                "has no sampled CDS entries retained; output GFF will contain only fixed core CDS entries",
+            )
+
         # print("here2")
 
         # remove genes not in the accessory
@@ -491,9 +546,10 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
             gene_sequence = gene_sequence.translate(stop_symbol = "")
             geneid = get_gene_id(gene_sequence)         # The IDs must be of the translated genes, i.e. of the AA sequences. That is what makes sense.
             # geneid = get_gene_id(gene_seq_to_save)
-            gene_seq_dict["geneid_" + str(geneid)] = str(gene_seq_to_save)
+            gene_id = "geneid_" + str(geneid)
+            gene_seq_dict.setdefault(gene_id, str(gene_seq_to_save))
             gene_seqs.append(
-                SeqRecord(gene_sequence, id = entry.id, description = "geneid_" + str(geneid))
+                SeqRecord(gene_sequence, id = entry.id, description = gene_id)
             )
             if g in included_genes:
                 if not entry.seqid in GFF_entries:
@@ -501,8 +557,23 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
 
                 GFF_entries[entry.seqid].append(copy.deepcopy(entry))
                 # GFF_entries[entry.seqid][-1].id = entry.id + " geneid_" + str(geneid)
-                GFF_entries[entry.seqid][-1].id = entry.id + "-geneid_" + str(geneid) # Don't add spaces, some software might not expect them (though they are allowed in GFF3 in principle...)
-                GFF_entries[entry.seqid][-1].g_index = g   # unambiguous key into expected_seq_by_g
+                feature_id = entry.id + "-" + gene_id # Don't add spaces, some software might not expect them (though they are allowed in GFF3 in principle...)
+                GFF_entries[entry.seqid][-1].id = feature_id
+                feature_seq_dict[feature_id] = str(gene_seq_to_save)
+
+
+        for entry in all_gene_locations:
+            if entry.id in sampled_gene_ids:
+                continue
+
+            if entry.seqid not in GFF_entries:
+                GFF_entries[entry.seqid] = []
+
+            GFF_entries[entry.seqid].append(copy.deepcopy(entry))
+            feature_id = entry.id + "-" + original_gene_ids[entry.id]
+            GFF_entries[entry.seqid][-1].id = feature_id
+            feature_seq_dict[feature_id] = original_gene_sequences[entry.id]
+
 
         # print("here3")
 
@@ -516,11 +587,22 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
                 print(entryid, "duplicated deleted indices:", n_dup)
 
             if entryid in GFF_entries:
-                for gene in GFF_entries[entryid]: # This is inefficient, but well...
-                    tmpsum = int(np.sum(deleted < (gene.start - 1)))
+                retained_entries = []
+                for gene in GFF_entries[entryid]:
+                    gene_left = gene.start - 1
+                    gene_right = gene.stop
+                    overlaps_deleted = bool(np.any((deleted >= gene_left) & (deleted < gene_right)))
+                    if overlaps_deleted:
+                        print(entryid, "dropped CDS overlapping deleted sequence:", gene.id)
+                        continue
+
+                    tmpsum = int(np.sum(deleted < gene_left))
                     if tmpsum:
-                        gene.start = gene.start - tmpsum
-                        gene.stop  = gene.stop  - tmpsum
+                        gene.start -= tmpsum
+                        gene.stop -= tmpsum
+                    retained_entries.append(gene)
+
+                GFF_entries[entryid] = retained_entries
 
 
             temp_seq_dict[entryid] = np.delete(temp_seq_dict[entryid], deleted)
@@ -531,6 +613,7 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
             record_list.append(SeqRecord(Seq(''.join(temp_seq_dict[iS])), id = iS, description = ""))
             record_list[-1].features = []
             if iS in GFF_entries:
+                GFF_entries[iS].sort(key=lambda gene: (gene.start, gene.stop, gene.id))
                 for iG in GFF_entries[iS]: # And these, the "features" (i.e. the genes)
                     qualifiers = {
                         "source"    : "simulation",
@@ -563,28 +646,26 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
                     #     print(len(record_list[-1].seq), iG.start, iG.stop)
                     #     print("\t========= HEY!!!!!")
 
-                    # To do this checks, remember start codon and stop codons can change. The NT sequence is, for each gene, fixed to one of the random ones. Thus, it is always the same, ignoring potential variations due to synonymous mutations.
-                    #### TODO: incorporate NT variations due to this
-
-                    contig_gene_seq = record_list[-1].seq[iG.start - 1 : iG.stop]
-                    expected_gene_seq = expected_seq_by_g[iG.g_index]
+                    contig_gene_seq = str(record_list[-1].seq[iG.start - 1 : iG.stop])
+                    expected_gene_seq = feature_seq_dict[iG.id]
                     if iG.strand == "+":
                         # if record_list[-1].seq[iG.start - 1 : iG.stop] != gene_seq_dict[iG.id.split(" ")[1]]:
                         # if record_list[-1].seq[iG.start - 1 : iG.stop - 3] != gene_seq_dict[iG.id.split(" ")[1]][:-3]:
                         if contig_gene_seq[2:-3] != expected_gene_seq[2:-3]:
-                            print(f"=====================\n> Orig gene & mutated gene ids: {iG.id}. iG.start: {iG.start}, iG.stop: {iG.stop}.\nSeq from the contig:\n" + contig_gene_seq + f"\n>    Seq from the gene in strand {iG.strand}:\n" + expected_gene_seq)
+                            raise RuntimeError(f"CDS sequence mismatch for {iG.id} ({iG.seqid}:{iG.start}-{iG.stop}, strand {iG.strand})\nSeq from the contig:\n" + contig_gene_seq + f"\n> Expected CDS sequence:\n" + expected_gene_seq)
                     else:
                         # if "".join(["A" if el == "T" else "T" if el == "A" else "G" if el == "C" else "C" for el in record_list[-1].seq[iG.start - 1 : iG.stop][::-1] ]) != gene_seq_dict[iG.id.split(" ")[1]]:
                         # if "".join(["A" if el == "T" else "T" if el == "A" else "G" if el == "C" else "C" for el in record_list[-1].seq[iG.start - 1 : iG.stop][::-1] ])[:-3] != gene_seq_dict[iG.id.split(" ")[1]][:-3]:
                         contig_gene_rc = reverse_complement_text(contig_gene_seq)
                         if contig_gene_rc[2:-3] != expected_gene_seq[2:-3]:
-                            print(f"=====================\n> Orig gene & mutated gene ids: {iG.id}. iG.start: {iG.start}, iG.stop: {iG.stop}.\nSeq from the contig:\n" + contig_gene_seq + f"\n>    Seq from the gene in strand {iG.strand}:\n" + expected_gene_seq + f"\n> Seq. reversed-complement:\n" + contig_gene_rc)
-        
-                    # sys.exit()
-                    # sys.exit()
+                            raise RuntimeError(f"CDS sequence mismatch for {iG.id} ({iG.seqid}:{iG.start}-{iG.stop}, strand {iG.strand})\nSeq from the contig:\n" + contig_gene_seq + f"\n> Expected CDS sequence:\n" + expected_gene_seq + f"\n> Seq. reversed-complement:\n" + contig_gene_rc)
 
-        # sys.exit()
-        # print("here4")
+                    record_list[-1].features.append(feature)
+
+        written_cds = sum(len(record.features) for record in record_list)
+        if written_cds == 0:
+            raise RuntimeError("No CDS annotations were written to the simulated GFF")
+        print("# CDS written: ", written_cds)
         print("# Mutations in genome: ", n_mutations)
         print("# Genes deleted: ",       deleted_genes)
 
