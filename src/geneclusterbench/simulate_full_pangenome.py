@@ -116,15 +116,15 @@ def reverse_complement_text(seq):
 
 
 def validate_no_internal_stop_codons(gene_sequence, entry):
-    translated = gene_sequence.translate()
-    internal_stop_index = str(translated[:-1]).find("*")
-    if internal_stop_index != -1:
-        codon_number = internal_stop_index + 1
+    translated = str(gene_sequence.translate())[:-1]  # drop trailing stop
+    stop_positions = [i + 1 for i, aa in enumerate(translated) if aa == "*"]
+    if stop_positions:
         raise RuntimeError(
-            "Internal stop codon found in CDS "
+            "Internal stop codon(s) found in CDS "
             f"{entry.id} ({entry.seqid}:{entry.start}-{entry.stop}, "
-            f"strand {entry.strand}) at codon {codon_number}"
+            f"strand {entry.strand}) at codon(s) {stop_positions}"
         )
+    return 0
 
 
 def normalise_deletion_indices(indices):
@@ -468,6 +468,7 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
         # remove genes not in the accessory
         deleted_genes = 0
         GFF_entries = {}
+        expected_seq_by_g = {}   # unambiguous NT sequence per gene-instance, keyed by loop index g
         d_index = defaultdict(lambda: np.array([])) # Here we store the indices that indicate what genes to remove
         for g, entry in enumerate(gene_locations):
             left = entry.start - 1
@@ -484,6 +485,7 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
                 gene_sequence = gene_sequence.reverse_complement()
 
             gene_seq_to_save = copy.deepcopy(gene_sequence)
+            expected_seq_by_g[g] = str(gene_seq_to_save)   # keyed by g, no collisions possible
             # print(gene_seq_to_save)
             # possible bug for the annotation of the codon?
             gene_sequence = gene_sequence.translate(stop_symbol = "")
@@ -500,7 +502,7 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
                 GFF_entries[entry.seqid].append(copy.deepcopy(entry))
                 # GFF_entries[entry.seqid][-1].id = entry.id + " geneid_" + str(geneid)
                 GFF_entries[entry.seqid][-1].id = entry.id + "-geneid_" + str(geneid) # Don't add spaces, some software might not expect them (though they are allowed in GFF3 in principle...)
-
+                GFF_entries[entry.seqid][-1].g_index = g   # unambiguous key into expected_seq_by_g
 
         # print("here3")
 
@@ -564,9 +566,8 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
                     # To do this checks, remember start codon and stop codons can change. The NT sequence is, for each gene, fixed to one of the random ones. Thus, it is always the same, ignoring potential variations due to synonymous mutations.
                     #### TODO: incorporate NT variations due to this
 
-                    gene_id = iG.id.split("-")[1]
                     contig_gene_seq = record_list[-1].seq[iG.start - 1 : iG.stop]
-                    expected_gene_seq = gene_seq_dict[gene_id]
+                    expected_gene_seq = expected_seq_by_g[iG.g_index]
                     if iG.strand == "+":
                         # if record_list[-1].seq[iG.start - 1 : iG.stop] != gene_seq_dict[iG.id.split(" ")[1]]:
                         # if record_list[-1].seq[iG.start - 1 : iG.stop - 3] != gene_seq_dict[iG.id.split(" ")[1]][:-3]:
