@@ -115,6 +115,22 @@ def reverse_complement_text(seq):
     return str(Seq(str(seq)).reverse_complement())
 
 
+def validate_no_internal_stop_codons(gene_sequence, entry):
+    translated = gene_sequence.translate()
+    internal_stop_index = str(translated[:-1]).find("*")
+    if internal_stop_index != -1:
+        codon_number = internal_stop_index + 1
+        raise RuntimeError(
+            "Internal stop codon found in CDS "
+            f"{entry.id} ({entry.seqid}:{entry.start}-{entry.stop}, "
+            f"strand {entry.strand}) at codon {codon_number}"
+        )
+
+
+def normalise_deletion_indices(indices):
+    return np.unique(indices.astype(int))
+
+
 def simulate_img_with_mutation(in_tree,
                                gain_rate,
                                loss_rate,
@@ -162,12 +178,22 @@ def simulate_img_with_mutation(in_tree,
             n_additions += n_new
 
     print("\t- Accessory size: ", n_additions)
-    # Now add core
-    ncore = ngenes - n_additions
+    # Now add core. Gene IDs must stay within the sampled source genes.
+    remaining_gene_slots = ngenes - n_additions
+    if remaining_gene_slots < 0:
+        raise RuntimeError(
+            f"Simulated {n_additions} accessory genes, but only {ngenes} "
+            "source genes were sampled. Increase --n_sim_genes or lower "
+            "--gain_rate/--pop_size."
+        )
+
+    ncore = min(remaining_gene_slots, max_ncore)
     if ncore < min_ncore:
-        ncore = min_ncore
-    if ncore > max_ncore:
-        ncore = max_ncore
+        print(
+            "\t- Core size capped by sampled source genes: ",
+            ncore,
+            f"(requested minimum {min_ncore})",
+        )
 
     core_genes = list(range(n_additions, n_additions + ncore))
     for node in in_tree.preorder_node_iter():
@@ -293,7 +319,7 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
     # Get gene entries to modify
     all_gene_locations  = []
     gene_locations      = []
-    prev_end            = -1
+    prev_end_by_seqid   = defaultdict(lambda: -1)
     gene_seqs           = []
 
     # CD = coding sequence
@@ -312,6 +338,8 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
         if entry.strand == "-":
             gene_sequence = gene_sequence.reverse_complement()
 
+        validate_no_internal_stop_codons(gene_sequence, entry)
+
         gene_seq_to_save = copy.deepcopy(gene_sequence)
         # print(gene_seq_to_save)
 
@@ -329,11 +357,11 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
         gene_seqs.append(SeqRecord(gene_sequence, id=entry.id, description="geneid_" + str(geneid)))
 
         all_gene_locations.append(entry)
-        if entry.start < prev_end:
-            prev_end = entry.end
-            gene_locations = gene_locations[0:-1]
+        prev_end = prev_end_by_seqid[entry.seqid]
+        if entry.start <= prev_end:
+            prev_end_by_seqid[entry.seqid] = max(prev_end, entry.end)
             continue
-        prev_end = entry.end
+        prev_end_by_seqid[entry.seqid] = entry.end
         gene_locations.append(entry)
     print("> Done!")
 
@@ -353,7 +381,14 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
     #     print(iG.seqid, iG.start, iG.stop, theseql)
     # sys.exit()
 
-    # sub-sample genes so that some are conserved on a random manner
+    # sub-sample genes so that some are conserved
+    if n_sim_genes < 1:
+        raise RuntimeError("--n_sim_genes must be at least 1")
+    if n_sim_genes > len(gene_locations):
+        raise RuntimeError(
+            f"Requested --n_sim_genes={n_sim_genes}, but only "
+            f"{len(gene_locations)} non-overlapping CDS entries are available"
+        )
     print("> Subsampling genes...")
     gene_locations = random_state.sample(gene_locations, n_sim_genes)
     print("> Done!")
@@ -370,6 +405,13 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
         max_core      = max_core,
         random_state  = random_state,
     )
+    max_gene_index = max((gene[0] for pan in pan_sim for gene in pan), default=-1)
+    if max_gene_index >= len(gene_locations):
+        raise RuntimeError(
+            f"Simulation generated gene index {max_gene_index}, but only "
+            f"{len(gene_locations)} sampled CDS entries are available"
+        )
+
     print("> Done!")
 
     # write out tree
@@ -401,6 +443,14 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
             if right < left: raise RuntimeError("Error issue with left/right!")
 
             start_sites = list(range(left, right, 3))[1:-1]
+
+            if gene[1] and not start_sites:
+                raise RuntimeError(
+                    "Cannot apply internal codon mutations to CDS "
+                    f"{entry.id} ({entry.seqid}:{entry.start}-{entry.stop}, "
+                    f"strand {entry.strand}) because it has no mutable "
+                    "internal codon positions"
+                )
 
             n_mutations += len(gene[1])
 
@@ -456,17 +506,22 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
 
         for entryid in d_index:
             # print("\n", entry.seqid, "\n", temp_seq_dict[entryid].shape, "\n", d_index[entryid])
+            raw_deleted = d_index[entryid].astype(int)
+            deleted = normalise_deletion_indices(d_index[entryid])
+
+            n_dup = len(raw_deleted) - len(deleted)
+            if n_dup:
+                print(entryid, "duplicated deleted indices:", n_dup)
 
             if entryid in GFF_entries:
                 for gene in GFF_entries[entryid]: # This is inefficient, but well...
-                    tmpsum = sum([int(el) < gene.start for el in d_index[entryid]])
+                    tmpsum = int(np.sum(deleted < (gene.start - 1)))
                     if tmpsum:
                         gene.start = gene.start - tmpsum
                         gene.stop  = gene.stop  - tmpsum
 
 
-            temp_seq_dict[entryid] = np.delete(temp_seq_dict[entryid],
-                                               d_index[entryid].astype(int))
+            temp_seq_dict[entryid] = np.delete(temp_seq_dict[entryid], deleted)
 
 
         record_list = []
@@ -523,14 +578,7 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
                         contig_gene_rc = reverse_complement_text(contig_gene_seq)
                         if contig_gene_rc[2:-3] != expected_gene_seq[2:-3]:
                             print(f"=====================\n> Orig gene & mutated gene ids: {iG.id}. iG.start: {iG.start}, iG.stop: {iG.stop}.\nSeq from the contig:\n" + contig_gene_seq + f"\n>    Seq from the gene in strand {iG.strand}:\n" + expected_gene_seq + f"\n> Seq. reversed-complement:\n" + contig_gene_rc)
-
-                    record_list[-1].features.append(feature)
-                    # check for *
-                    extracted_seq = feature.extract(record_list[-1].seq)
-                    translated = str(extracted_seq.translate(to_stop=False))
-                    if "*" in translated[:-1]:
-                        print(f"\n\t\t Issue - ID: {feature.qualifiers.get('ID')}\n\t\tNT: {extracted_seq}\n\t\tAA: {translated}")
-                        sys.exit(1)        
+        
                     # sys.exit()
                     # sys.exit()
 
