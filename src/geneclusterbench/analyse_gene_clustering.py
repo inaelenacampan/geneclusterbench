@@ -38,7 +38,7 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = PACKAGE_DIR.parents[1]
 DEFAULT_SEEDS = str(PROJECT_ROOT / "data" / "random_numbers.txt")
 
-CLUSTERERS = ["cdhit", "mmseqs2", "diamond"]
+CLUSTERERS = ["cdhit", "mmseqs2", "diamond", "panaroo", "panta"]
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
 DEFAULT_PARAMS = {"st": "nt", "c": 0.9}
@@ -51,7 +51,9 @@ FANCYDICT = {
     "cdhit/aa": "CD-HIT (AA)",
     "mmseqs2/aa": "MMseqs2 (AA)",
     "diamond/aa" : "Diamond (AA)",
-    #"diamond/nt" : "Diamond (NT)",
+    "panaroo": "Panaroo",
+    "panta/aa" : "Panta (AA)",
+    "panta/nt" : "Panta (NT)",
 }
 
 CONFIGDICT = {
@@ -71,12 +73,14 @@ CONFIGDICT = {
 }
 
 CONFIGDICT_COLOURS = {
-    "cdhit/nt": "#D41645",
-    "cdhit/aa": "#E58F9E",
-    "mmseqs2/nt": "#193F90",
-    "mmseqs2/aa": "#8BB8E8",
-    "diamond/aa" : "#8BCF8B",
-    #"diamond/nt" : "#1A7A1A",
+    "cdhit/nt": "#900C3F",
+    "cdhit/aa": "#182B55",
+    "mmseqs2/nt": "#5F4E94",
+    "mmseqs2/aa": "#A291C7",
+    "diamond/aa" : "#82CBEC",
+    "panaroo": "#D94F21",
+    "panta/aa" : "#FEBD2B" ,
+    "panta/nt" : "#9AAB4B",
 }
 
 
@@ -267,6 +271,40 @@ def get_df_from_clusterer(clusterer, folderpath):
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
         return outdf.set_index("cluster_id")
 
+    # to be checked, normally cd hit and panaroo have the same kind of output
+    if clusterer == "panaroo":
+        listoflists = []
+        setofgenes = set()
+        listofclusters = []
+        tmpdict = {}
+        with open(os.path.join(folderpath, "panaroo/combined_protein_cdhit_out.txt.clstr"), "r") as f:
+            tmpclusterid = -1
+            for line in f:
+                if line[0] == ">":
+                    tmpclusterid = int(line.replace(">", "").split(" ")[1].strip())
+                    tmpdict[tmpclusterid] = {}
+                    listofclusters.append(tmpclusterid)
+                else:
+                    tmpgeneid = line.strip().split(">")[1].split("...")[0]
+                    setofgenes.add(tmpgeneid)
+                    tmpdict[tmpclusterid][tmpgeneid] = (
+                        parse_cdhit_identity(line)
+                    ) if "*" not in line else 2.0
+
+        listofgenes = list(setofgenes)
+        listofgenes.sort(key=lambda x: int(x.split("_")[1]))
+        for cluster in listofclusters:
+            row = [cluster]
+            for gene in listofgenes:
+                row.append(tmpdict[cluster][gene] if gene in tmpdict[cluster] else -1.0)
+            listoflists.append(row)
+        outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + listofgenes)
+        return outdf.set_index("cluster_id")
+
+    if clutserer == "panta":
+        return outdf.set_index("cluster_id")
+
+    
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
 
 def count_singleton_clusters(thedf):
