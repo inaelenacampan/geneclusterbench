@@ -62,7 +62,7 @@ PANTA_SCAFFOLD = (
     "-i {c} -t {ncores} -a {seq_type}&& "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
-# to do
+
 PPANGGOLIN_SCAFFOLD = (
     "mkdir -p {workdir} && cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
@@ -70,7 +70,7 @@ PPANGGOLIN_SCAFFOLD = (
     ""
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
-# to do
+
 PANX_SCAFFOLD = (
     "mkdir -p {workdir} && cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
@@ -146,16 +146,6 @@ def get_c_values_for_process(proc, seqtype):
 # updated the mmseq path and cd-hit
 def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9):
     
-    mmseqs2exec = os.path.join(softwaredir, "mmseqs/bin/mmseqs")
-    cdhitexec = os.path.join(
-        softwaredir,
-        "cdhit/cdhit/cd-hit-est" if seqtype == "nt" else "cdhit/cdhit/cd-hit",
-    )
-    diamondexec = os.path.join(softwaredir, "Diamond/diamond")
-    panarooexec = os.path.join(softwaredir, "panaroo_env/bin/panaroo")
-    # incorrect path
-    pantaexec = os.path.join(softwaredir, "panta/panta")
-    
     if seqtype == "nt" :
         seq_arg = "nucleotide"
     else :
@@ -163,6 +153,12 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
 
     # cd-hit method
     if proc == "cdhit":
+
+        cdhitexec = os.path.join(
+                softwaredir,
+                "cdhit/cdhit/cd-hit-est" if seqtype == "nt" else "cdhit/cdhit/cd-hit",
+            )
+        
         word_size = get_cdhit_word_size(c, seqtype)
         return CDHIT_SCAFFOLD.format(
             workdir=outfolder,
@@ -176,6 +172,9 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
         )
     #mmseqs2 method
     if proc == "mmseqs2":
+
+        mmseqs2exec = os.path.join(softwaredir, "mmseqs/bin/mmseqs")
+
         return MMSEQS2_SCAFFOLD.format(
             workdir=outfolder,
             inputfile=infile,
@@ -187,6 +186,9 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
         )
     # diamond method
     if proc == "diamond":
+
+        diamondexec = os.path.join(softwaredir, "Diamond/diamond")
+
         return DIAMOND_SCAFFOLD.format(
             workdir=outfolder,
             inputfile=infile,
@@ -198,6 +200,9 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
         )
     # panaroo method
     if proc == "panaroo":
+        
+        panarooexec = os.path.join(softwaredir, "panaroo_env/bin/panaroo")
+
         return PANAROO_SCAFFOLD.format(
             workdir=outfolder,
             inputfile=infile,
@@ -208,6 +213,9 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
         )
     # panta method
     if proc == "panta":
+        
+        pantaexec = os.path.join(softwaredir, "panta/bin/panta")
+
         return PANTA_SCAFFOLD.format(
             workdir = outfolder,
             inputfile = infile,
@@ -216,6 +224,23 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
             ncores = nthreads,
             outdir = "./panta",
             seq_type  = seq_arg,
+        )
+    
+    # ppanggolin method
+    if proc == "ppanggolin":
+
+        ppanggolinexec = os.path.join(softwaredir, "ppanggolin/bin/ppanggolin")
+
+        return PPANGGOLIN_SCAFFOLD.format(
+            workdir = outfolder,
+        )
+    
+    # panX method
+    if proc == "panx":
+        panxexec = os.path.join(softwaredir, "panX/pan-genome-analysis/panX.py")
+
+        return PANX_SCAFFOLD.format(
+            workdir = outfolder,
         )
     raise RuntimeError("Process " + proc + " not supported")
 
@@ -393,7 +418,7 @@ def main():
     parser.add_argument("--max-simultaneous-cores", "-M", default=2000, type=int)
     parser.add_argument("--preset-timestamp", "-P", default=-1, type=int)
     parser.add_argument("--pretend", "-p", action="store_true")
-    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo,panta")
+    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo,panta,ppanggolin,panx")
     parser.add_argument("--sequence-type", "-st", default="nt,aa")
     parser.add_argument("--softwaredir", default=DEFAULT_SOFTWAREDIR)
     parser.add_argument("--benchmark-runner", default=DEFAULT_RUNNER)
