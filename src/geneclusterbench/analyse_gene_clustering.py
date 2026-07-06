@@ -6,7 +6,7 @@ import warnings
 from pathlib import Path
 from datetime import datetime
 from multiprocessing import Pool
-
+import json
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -301,8 +301,37 @@ def get_df_from_clusterer(clusterer, folderpath):
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + listofgenes)
         return outdf.set_index("cluster_id")
 
-    if clutserer == "panta":
-        return outdf.set_index("cluster_id")
+        if clusterer == "panta":
+        
+            with open(os.path.join(folderpath, "panta/annotated_clusters.json"), "r") as f:
+                groups = json.load(f)
+    
+            def extract_gene_id(full_id):
+                return full_id.split("-")[-1]
+    
+            listofclusters = sorted(groups.keys(), key=lambda g: int(g.split("_")[1]))
+    
+            setofgenes = set()
+            tmpdict = {}
+            for group_name in listofclusters:
+                geneset = {extract_gene_id(g) for g in groups[group_name]["gene_id"]}
+                tmpdict[group_name] = geneset
+                setofgenes |= geneset
+    
+            listofgenes = list(setofgenes)
+            listofgenes.sort(key=lambda x: int(x.split("_")[1]))
+    
+            listoflists = []
+            for cluster_index, group_name in enumerate(listofclusters):
+                tmpset = tmpdict[group_name]
+                row = [cluster_index]
+                for gene in listofgenes:
+                    row.append(+1.0 if gene in tmpset else -1.0)
+                listoflists.append(row)
+    
+            outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + listofgenes)
+            return outdf.set_index("cluster_id")
+
 
     
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
@@ -344,6 +373,11 @@ def check_status_of_folder(clusterer, path):
         filenam = "mmseqs2_cluster.tsv"
     elif clusterer == "diamond":
         filenam = "diamond"
+    elif clusterer == "panta":
+        filenam = "panta/annotated_clusters.json"
+    elif clusterer == "panaroo":
+        filenam = "panaroo/combined_protein_cdhit_out.txt.clstr"
+
     else:
         print("Invalid clusterer " + clusterer)
         return False
