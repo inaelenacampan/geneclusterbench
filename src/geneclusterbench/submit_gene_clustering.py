@@ -65,12 +65,13 @@ PANTA_SCAFFOLD = (
 
 PPANGGOLIN_SCAFFOLD = (
     "mkdir -p {workdir} && cd {workdir} && "
+    "{execexec} annotate --anno {inputfile} -o {outdir} --cpu {ncores} -f && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
-    ""
-    ""
+    "{execexec} cluster -p {outdir}/pangenome.h5 --identity {c} --cpu {ncores} && "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
+# to do!!
 PANX_SCAFFOLD = (
     "mkdir -p {workdir} && cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
@@ -143,7 +144,19 @@ def get_c_values_for_process(proc, seqtype):
         return []
     return CRANGE
 
-# updated the mmseq path and cd-hit
+def get_or_write_ppanggolin_anno_list(simdir):
+    listpath = os.path.join(simdir, "ppanggolin_anno_list.tsv")
+    if not os.path.isfile(listpath):
+        gffs = sorted(el for el in os.listdir(simdir) if el.endswith(".gff"))
+        if not gffs:
+            raise RuntimeError(f"No GFF files found in {simdir}")
+        with open(listpath, "w") as handle:
+            for gff in gffs:
+                genome_name = os.path.splitext(gff)[0]
+                handle.write(f"{genome_name}\t{os.path.join(simdir, gff)}\n")
+    return listpath
+
+
 def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9):
     
     if seqtype == "nt" :
@@ -232,7 +245,12 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
         ppanggolinexec = os.path.join(softwaredir, "ppanggolin/bin/ppanggolin")
 
         return PPANGGOLIN_SCAFFOLD.format(
-            workdir = outfolder,
+            workdir=outfolder,
+            inputfile=infile,
+            execexec=ppanggolinexec,
+            outdir="./ppanggolin",
+            c=c,
+            ncores=nthreads,
         )
     
     # panX method
@@ -301,8 +319,13 @@ def submit_clustering_jobs(args):
             if not os.path.isdir(simdir):
                 continue
             for process in args.process:
-                if process == "panaroo":
-                    infile = get_sim_iso_gffs(simdir)
+                
+                if process in ("panaroo", "ppanggolin"):
+                    if process == "ppanggolin":
+                        infile = get_or_write_ppanggolin_anno_list(simdir)
+                    else:
+                        infile = get_sim_iso_gffs(simdir)
+
                     for c_value in get_c_values_for_process(process, "aa"):
                         suffix = f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
                         jobinfo.append(
