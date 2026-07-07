@@ -15,6 +15,7 @@ from matplotlib.ticker import AutoMinorLocator
 from sklearn import metrics
 from sklearn.metrics.cluster import adjusted_mutual_info_score
 from numpy.random import default_rng
+import re
 
 # keep in mind to install the needed packages for fonts
 
@@ -38,7 +39,7 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = PACKAGE_DIR.parents[1]
 DEFAULT_SEEDS = str(PROJECT_ROOT / "data" / "random_numbers.txt")
 
-CLUSTERERS = ["cdhit", "mmseqs2", "diamond", "panaroo", "panta"]
+CLUSTERERS = ["cdhit", "mmseqs2", "diamond", "panaroo"]
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
 DEFAULT_PARAMS = {"st": "nt", "c": 0.9}
@@ -52,8 +53,8 @@ FANCYDICT = {
     "mmseqs2/aa": "MMseqs2 (AA)",
     "diamond/aa" : "Diamond (AA)",
     "panaroo": "Panaroo",
-    "panta/aa" : "Panta (AA)",
-    "panta/nt" : "Panta (NT)",
+    #"panta/aa" : "Panta (AA)",
+    #"panta/nt" : "Panta (NT)",
 }
 
 CONFIGDICT = {
@@ -79,8 +80,8 @@ CONFIGDICT_COLOURS = {
     "mmseqs2/aa": "#A291C7",
     "diamond/aa" : "#82CBEC",
     "panaroo": "#D94F21",
-    "panta/aa" : "#FEBD2B" ,
-    "panta/nt" : "#9AAB4B",
+    #"panta/aa" : "#FEBD2B" ,
+    #"panta/nt" : "#9AAB4B",
 }
 
 
@@ -147,7 +148,7 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
         metrics.adjusted_rand_score,
         nperm=10000
     )
-
+    
     outlist = [
         True,
         infotuple[0],
@@ -273,6 +274,20 @@ def get_df_from_clusterer(clusterer, folderpath):
 
     # to be checked, normally cd hit and panaroo have the same kind of output
     if clusterer == "panaroo":
+
+        gene_data = pd.read_csv(
+            os.path.join(folderpath, "panaroo/gene_data.csv"),
+            low_memory=False,
+            header=None
+        )
+
+        panaroo_to_original = dict(
+                zip(
+                    gene_data[2],
+                    gene_data[3].astype(str).str.extract(r'(geneid_\d+)')[0]
+                )
+        )
+        
         listoflists = []
         setofgenes = set()
         listofclusters = []
@@ -285,14 +300,19 @@ def get_df_from_clusterer(clusterer, folderpath):
                     tmpdict[tmpclusterid] = {}
                     listofclusters.append(tmpclusterid)
                 else:
-                    tmpgeneid = line.strip().split(">")[1].split("...")[0]
+                    panaroo_geneid = line.strip().split(">")[1].split("...")[0]
+
+                    tmpgeneid = panaroo_to_original.get(
+                        panaroo_geneid,
+                        panaroo_geneid
+                    )
                     setofgenes.add(tmpgeneid)
                     tmpdict[tmpclusterid][tmpgeneid] = (
                         parse_cdhit_identity(line)
                     ) if "*" not in line else 2.0
 
         listofgenes = list(setofgenes)
-        listofgenes.sort(key=lambda x: int(x.split("_")[1]))
+        listofgenes.sort(key=lambda x: int(re.search(r"geneid_(\d+)", x).group(1)))
         for cluster in listofclusters:
             row = [cluster]
             for gene in listofgenes:
@@ -301,39 +321,8 @@ def get_df_from_clusterer(clusterer, folderpath):
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + listofgenes)
         return outdf.set_index("cluster_id")
 
-        if clusterer == "panta":
-        
-            with open(os.path.join(folderpath, "panta/annotated_clusters.json"), "r") as f:
-                groups = json.load(f)
-    
-            def extract_gene_id(full_id):
-                return full_id.split("-")[-1]
-    
-            listofclusters = sorted(groups.keys(), key=lambda g: int(g.split("_")[1]))
-    
-            setofgenes = set()
-            tmpdict = {}
-            for group_name in listofclusters:
-                geneset = {extract_gene_id(g) for g in groups[group_name]["gene_id"]}
-                tmpdict[group_name] = geneset
-                setofgenes |= geneset
-    
-            listofgenes = list(setofgenes)
-            listofgenes.sort(key=lambda x: int(x.split("_")[1]))
-    
-            listoflists = []
-            for cluster_index, group_name in enumerate(listofclusters):
-                tmpset = tmpdict[group_name]
-                row = [cluster_index]
-                for gene in listofgenes:
-                    row.append(+1.0 if gene in tmpset else -1.0)
-                listoflists.append(row)
-    
-            outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + listofgenes)
-            return outdf.set_index("cluster_id")
 
-
-    
+            
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
 
 def count_singleton_clusters(thedf):
@@ -373,8 +362,8 @@ def check_status_of_folder(clusterer, path):
         filenam = "mmseqs2_cluster.tsv"
     elif clusterer == "diamond":
         filenam = "diamond"
-    elif clusterer == "panta":
-        filenam = "panta/annotated_clusters.json"
+    #elif clusterer == "panta":
+        #filenam = "panta/annotated_clusters.json"
     elif clusterer == "panaroo":
         filenam = "panaroo/combined_protein_cdhit_out.txt.clstr"
 
