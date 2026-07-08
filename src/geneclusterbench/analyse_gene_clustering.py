@@ -16,6 +16,7 @@ from sklearn import metrics
 from sklearn.metrics.cluster import adjusted_mutual_info_score
 from numpy.random import default_rng
 import re
+import subprocess
 
 # keep in mind to install the needed packages for fonts
 
@@ -389,6 +390,36 @@ def get_df_from_clusterer(clusterer, folderpath):
 
         return outdf.set_index("cluster_id")
 
+    if clusterer == "ppanggolin":
+        output_dir = os.path.join(folderpath, "ppanggolin_outputs/")
+        os.makedirs(output_dir, exist_ok=True)
+
+        subprocess.run(
+            [
+                "ppanggolin",
+                "write_pangenome",
+                "-p",
+                os.path.join(folderpath, "ppanggolin/pangenome.h5"),
+                "-o",
+                output_dir,
+                "--families_tsv",
+            ],
+            check=True,
+        )
+
+        families_file = os.path.join(output_dir, "gene_families.tsv")
+
+        if not os.path.isfile(families_file):
+            raise RuntimeError(
+                f"PPanGGOLiN did not create expected file: {families_file}"
+            )
+
+        families = pd.read_csv(
+            families_file,
+            sep="\t",
+        )
+
+        return outdf.set_index("cluster_id")
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
 
 def count_singleton_clusters(thedf):
