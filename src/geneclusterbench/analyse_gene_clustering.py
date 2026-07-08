@@ -39,7 +39,12 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = PACKAGE_DIR.parents[1]
 DEFAULT_SEEDS = str(PROJECT_ROOT / "data" / "random_numbers.txt")
 
-CLUSTERERS = ["cdhit", "mmseqs2", "diamond", "panaroo"]
+CLUSTERERS = [
+            #"cdhit", 
+            #"mmseqs2", 
+            #"diamond", 
+            "panaroo"
+            ]
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
 DEFAULT_PARAMS = {"st": "nt", "c": 0.9}
@@ -164,6 +169,7 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
 
 
 def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjusted_rand_score, nperm=10000, seed=None):
+    print("here")
     rng = default_rng(seed)
     labels1 = np.asarray(labels1)
     labels2 = np.asarray(labels2)
@@ -284,10 +290,9 @@ def get_df_from_clusterer(clusterer, folderpath):
         panaroo_to_original = dict(
                 zip(
                     gene_data[2],
-                    gene_data[3].astype(str).str.extract(r'(geneid_\d+)')[0]
+                    gene_data[3]
                 )
         )
-        
         listoflists = []
         setofgenes = set()
         listofclusters = []
@@ -302,10 +307,12 @@ def get_df_from_clusterer(clusterer, folderpath):
                 else:
                     panaroo_geneid = line.strip().split(">")[1].split("...")[0]
 
-                    tmpgeneid = panaroo_to_original.get(
+                    tmp = panaroo_to_original.get(
                         panaroo_geneid,
                         panaroo_geneid
                     )
+                    match = re.search(r'geneid_\d+(?:_iso_\d+)?', tmp)
+                    tmpgeneid = match.group(0) if match else None
                     setofgenes.add(tmpgeneid)
                     tmpdict[tmpclusterid][tmpgeneid] = (
                         parse_cdhit_identity(line)
@@ -319,7 +326,10 @@ def get_df_from_clusterer(clusterer, folderpath):
                 row.append(tmpdict[cluster][gene] if gene in tmpdict[cluster] else -1.0)
             listoflists.append(row)
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + listofgenes)
-        return outdf.set_index("cluster_id")
+        outdf = outdf.set_index("cluster_id")
+        print(outdf)
+        print("done")
+        return outdf
 
 
             

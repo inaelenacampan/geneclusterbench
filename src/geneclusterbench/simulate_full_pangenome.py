@@ -557,7 +557,8 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
 
                 GFF_entries[entry.seqid].append(copy.deepcopy(entry))
                 # GFF_entries[entry.seqid][-1].id = entry.id + " geneid_" + str(geneid)
-                feature_id = entry.id + "-" + gene_id # Don't add spaces, some software might not expect them (though they are allowed in GFF3 in principle...)
+                feature_id = entry.id + "-" + gene_id + "-iso_" + str(i)               
+                # Don't add spaces, some software might not expect them (though they are allowed in GFF3 in principle...)
                 GFF_entries[entry.seqid][-1].id = feature_id
                 feature_seq_dict[feature_id] = str(gene_seq_to_save)
 
@@ -570,7 +571,7 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
                 GFF_entries[entry.seqid] = []
 
             GFF_entries[entry.seqid].append(copy.deepcopy(entry))
-            feature_id = entry.id + "-" + original_gene_ids[entry.id]
+            feature_id = entry.id + "-" + original_gene_ids[entry.id]  + "-iso_" + str(i)
             GFF_entries[entry.seqid][-1].id = feature_id
             feature_seq_dict[feature_id] = original_gene_sequences[entry.id]
 
