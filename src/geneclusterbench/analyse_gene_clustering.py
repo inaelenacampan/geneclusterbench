@@ -327,12 +327,8 @@ def get_df_from_clusterer(clusterer, folderpath):
             listoflists.append(row)
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + listofgenes)
         outdf = outdf.set_index("cluster_id")
-        print(outdf)
-        print("done")
         return outdf
 
-
-            
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
 
 def count_singleton_clusters(thedf):
