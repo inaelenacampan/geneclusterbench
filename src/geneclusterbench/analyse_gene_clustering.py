@@ -43,7 +43,8 @@ CLUSTERERS = [
             "cdhit", 
             "mmseqs2", 
             "diamond", 
-            "panaroo"
+            "panaroo",
+            "ppanggolin",
             ]
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
