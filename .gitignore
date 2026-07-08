@@ -6,7 +6,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 software/
-
+temp2/
 # Generated benchmark command files and logs
 execcommands.tsv
 execcommands_copy.tsv

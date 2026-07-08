@@ -40,9 +40,9 @@ PROJECT_ROOT = PACKAGE_DIR.parents[1]
 DEFAULT_SEEDS = str(PROJECT_ROOT / "data" / "random_numbers.txt")
 
 CLUSTERERS = [
-            #"cdhit", 
-            #"mmseqs2", 
-            #"diamond", 
+            "cdhit", 
+            "mmseqs2", 
+            "diamond", 
             "panaroo"
             ]
 SEQTYPES = ["nt", "aa"]
@@ -57,7 +57,7 @@ FANCYDICT = {
     "cdhit/aa": "CD-HIT (AA)",
     "mmseqs2/aa": "MMseqs2 (AA)",
     "diamond/aa" : "Diamond (AA)",
-    "panaroo": "Panaroo",
+    "panaroo/aa": "Panaroo",
     #"panta/aa" : "Panta (AA)",
     #"panta/nt" : "Panta (NT)",
 }
@@ -65,16 +65,16 @@ FANCYDICT = {
 CONFIGDICT = {
     "adj_rand_index": {
         "ylabel": "Adjusted Rand index (adim.)",
-        "ylimits": (0.8, 1.1),
+        "ylimits": (0.1, 1.1),
         "ylimits_c": (0.4, 1.1),
     },
-    "purity": {"ylabel": "Purity (adim.)", "ylimits": (0.85, 1.1), "ylimits_c": (0.4, 1.1)},
+    "purity": {"ylabel": "Purity (adim.)", "ylimits": (0.1, 1.1), "ylimits_c": (0.4, 1.1)},
     "adj_mutual_info": {
         "ylabel": "Adjusted mutual information (adim.)",
-        "ylimits": (0.8, 1.1),
+        "ylimits": (0.1, 1.1),
         "ylimits_c": (0.4, 1.1),
     },
-    "v_measure": {"ylabel": "V-measure (adim.)", "ylimits": (0.8, 1.1)},
+    "v_measure": {"ylabel": "V-measure (adim.)", "ylimits": (0.1, 1.1)},
     "runtime": {"ylabel": "Runtime (s)"},
 }
 
@@ -84,7 +84,7 @@ CONFIGDICT_COLOURS = {
     "mmseqs2/nt": "#5F4E94",
     "mmseqs2/aa": "#A291C7",
     "diamond/aa" : "#82CBEC",
-    "panaroo": "#D94F21",
+    "panaroo/aa": "#D94F21",
     #"panta/aa" : "#FEBD2B" ,
     #"panta/nt" : "#9AAB4B",
 }
@@ -119,8 +119,8 @@ def get_labels_list_from_df(indf):
     labels = []
     for column in indf.columns:
         tmp = indf[indf[column] >= 0.0].index
-        if len(tmp) > 1:
-            print(tmp)
+        #if len(tmp) > 1:
+            #print(tmp)
         labels.append(tmp[0])
     return labels
 
@@ -169,7 +169,6 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
 
 
 def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjusted_rand_score, nperm=10000, seed=None):
-    print("here")
     rng = default_rng(seed)
     labels1 = np.asarray(labels1)
     labels2 = np.asarray(labels2)
@@ -278,7 +277,6 @@ def get_df_from_clusterer(clusterer, folderpath):
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
         return outdf.set_index("cluster_id")
 
-    # to be checked, normally cd hit and panaroo have the same kind of output
     if clusterer == "panaroo":
 
         gene_data = pd.read_csv(
@@ -288,22 +286,26 @@ def get_df_from_clusterer(clusterer, folderpath):
         )
 
         panaroo_to_original = dict(
-                zip(
-                    gene_data[2],
-                    gene_data[3]
-                )
+            zip(
+                gene_data[2],
+                gene_data[3]
+            )
         )
+
         listoflists = []
         setofgenes = set()
         listofclusters = []
         tmpdict = {}
+
         with open(os.path.join(folderpath, "panaroo/combined_protein_cdhit_out.txt.clstr"), "r") as f:
             tmpclusterid = -1
+
             for line in f:
                 if line[0] == ">":
                     tmpclusterid = int(line.replace(">", "").split(" ")[1].strip())
                     tmpdict[tmpclusterid] = {}
                     listofclusters.append(tmpclusterid)
+
                 else:
                     panaroo_geneid = line.strip().split(">")[1].split("...")[0]
 
@@ -311,23 +313,80 @@ def get_df_from_clusterer(clusterer, folderpath):
                         panaroo_geneid,
                         panaroo_geneid
                     )
+
                     match = re.search(r'geneid_\d+(?:_iso_\d+)?', tmp)
                     tmpgeneid = match.group(0) if match else None
+
                     setofgenes.add(tmpgeneid)
                     tmpdict[tmpclusterid][tmpgeneid] = (
                         parse_cdhit_identity(line)
-                    ) if "*" not in line else 2.0
+                        if "*" not in line
+                        else 2.0
+                    )
 
+        # Get all genes
         listofgenes = list(setofgenes)
-        listofgenes.sort(key=lambda x: int(re.search(r"geneid_(\d+)", x).group(1)))
+        listofgenes.sort(
+            key=lambda x: int(re.search(r"geneid_(\d+)", x).group(1))
+        )
+
+        # ---------------------------------------------------------
+        # Add missing gene IDs before creating rows
+        # ---------------------------------------------------------
+        gene_nums = {
+            int(re.search(r"geneid_(\d+)", g).group(1))
+            for g in listofgenes
+        }
+
+        max_gene = max(gene_nums)
+
+        missing = [
+            f"geneid_{i}"
+            for i in range(max_gene + 1)
+            if i not in gene_nums
+        ]
+
+        if missing:
+            listofgenes.extend(missing)
+
+            listofgenes.sort(
+                key=lambda x: int(re.search(r"geneid_(\d+)", x).group(1))
+            )
+
+        # ---------------------------------------------------------
+        # Create normal clusters
+        # ---------------------------------------------------------
         for cluster in listofclusters:
             row = [cluster]
+
             for gene in listofgenes:
-                row.append(tmpdict[cluster][gene] if gene in tmpdict[cluster] else -1.0)
+                row.append(
+                    tmpdict[cluster].get(gene, -1.0)
+                )
+
             listoflists.append(row)
-        outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + listofgenes)
-        outdf = outdf.set_index("cluster_id")
-        return outdf
+
+        # ---------------------------------------------------------
+        # Create one new cluster containing all missing genes
+        # ---------------------------------------------------------
+        if missing:
+            new_cluster_id = max(listofclusters) + 1
+
+            row = [new_cluster_id]
+
+            for gene in listofgenes:
+                row.append(
+                    1.0 if gene in missing else -1.0
+                )
+
+            listoflists.append(row)
+
+        outdf = pd.DataFrame(
+            listoflists,
+            columns=["cluster_id"] + listofgenes
+        )
+
+        return outdf.set_index("cluster_id")
 
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
 
@@ -449,7 +508,7 @@ def get_info_from_folder(theargs):
                 stacklevel=2,
             )
             continue
-        tmpseqtype = paramdict.get("st", DEFAULT_PARAMS["st"])
+        tmpseqtype = paramdict.get("st", "aa" if tmpclusterer in ("panaroo", "ppanggolin") else DEFAULT_PARAMS["st"])
         if tmpclusterer == "diamond" and tmpseqtype == "nt":
             warnings.warn(
                 f"Skipping disabled diamond+nt result folder {folderpath}",
@@ -457,7 +516,13 @@ def get_info_from_folder(theargs):
                 stacklevel=2,
             )
             continue
-
+        if tmpclusterer == "panaroo" and tmpseqtype == "nt":
+            warnings.warn(
+                f"Skipping disabled panaroo+nt result folder {folderpath}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
         if not check_status_of_folder(tmpclusterer, folderpath):
             continue
 
@@ -466,7 +531,10 @@ def get_info_from_folder(theargs):
         n_clusters = len(thedf.index)
         n_singletons = count_singleton_clusters(thedf)
         n_pairs = count_pairs_clusters(thedf)
-        paramlist = [paramdict[el] if el in paramdict else DEFAULT_PARAMS[el] for el in PARAMORDER]
+        paramlist = [
+            paramdict[el] if el in paramdict else (tmpseqtype if el == "st" else DEFAULT_PARAMS[el])
+            for el in PARAMORDER
+        ]
         listoflists.append(
             calculate_values_from_cluster_matrix(
                 (theass, theseed, tmpclusterer), thedf, truthlabels, truthdf
@@ -510,7 +578,11 @@ def plotter(theargs):
 
     for seqtype in SEQTYPES:
         availcl = list(set(list(subdf[subdf["st"] == seqtype].index.get_level_values("clusterer"))))
-        ynams = [el + "/" + seqtype for el in clusterers if el in availcl]
+        ynams = [
+            el + "/" + seqtype
+            for el in clusterers
+            if el in availcl and (el + "/" + seqtype) in FANCYDICT and (el + "/" + seqtype) in CONFIGDICT_COLOURS
+        ]
         ymean = np.zeros((len(ynams), len(xs)))
         ystd = np.zeros((len(ynams), len(xs)))
         ycount = np.zeros((len(ynams), len(xs)), dtype=int)
@@ -574,7 +646,7 @@ def plotter(theargs):
     if outnamescaff!= "runtime" :
         # change to log scale
         ax.set_yscale("log")
-        ax.set_ylim(0.97, 1.001)
+        #ax.set_ylim(0.97, 1.001)
     for label in ax.get_xticklabels() + ax.get_yticklabels():
         label.set_fontproperties(ibmplexsans)
 
@@ -615,8 +687,11 @@ def plotter_pointplots(theargs):
     clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
     x = []
     for clusterer, seqtype in [(c, st) for st in SEQTYPES for c in clusterers]:
+        combo = clusterer + "/" + seqtype
+        if combo not in FANCYDICT or combo not in CONFIGDICT_COLOURS:
+            continue
         if len(list(subdf[(subdf.index.get_level_values("clusterer") == clusterer) & (subdf["st"] == seqtype)][name])):
-            x.append(clusterer + "/" + seqtype)
+            x.append(combo)
 
     if not x:
         warnings.warn(
@@ -743,8 +818,11 @@ def number_of_clusters_violin(theargs):
     clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
     x = []
     for clusterer, seqtype in [(c, st) for st in SEQTYPES for c in clusterers]:
+        combo = clusterer + "/" + seqtype
+        if combo not in FANCYDICT or combo not in CONFIGDICT_COLOURS:
+            continue
         if len(list(subdf[(subdf.index.get_level_values("clusterer") == clusterer) & (subdf["st"] == seqtype)][name])):
-            x.append(clusterer + "/" + seqtype)
+            x.append(combo)
 
     if not x:
         warnings.warn(
@@ -845,11 +923,14 @@ def number_of_clusters_stacked_bar(theargs):
     clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
     x = []
     for clusterer, seqtype in [(c, st) for st in SEQTYPES for c in clusterers]:
+        combo = clusterer + "/" + seqtype
+        if combo not in FANCYDICT or combo not in CONFIGDICT_COLOURS:
+            continue
         if len(list(subdf[
             (subdf.index.get_level_values("clusterer") == clusterer)
             & (subdf["st"] == seqtype)
         ]["n_clusters"])):
-            x.append(clusterer + "/" + seqtype)
+            x.append(combo)
 
     if not x:
         warnings.warn(
@@ -984,11 +1065,14 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
     clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
     x = []
     for clusterer, seqtype in [(c, st) for st in SEQTYPES for c in clusterers]:
+        combo = clusterer + "/" + seqtype
+        if combo not in FANCYDICT or combo not in CONFIGDICT_COLOURS:
+            continue
         if len(list(subdf[
             (subdf.index.get_level_values("clusterer") == clusterer)
             & (subdf["st"] == seqtype)
         ]["n_clusters"])):
-            x.append(clusterer + "/" + seqtype)
+            x.append(combo)
 
     if not x:
         warnings.warn(

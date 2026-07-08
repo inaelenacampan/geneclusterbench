@@ -142,6 +142,8 @@ def get_c_values_for_process(proc, seqtype):
         return [c for c in CRANGE if c >= CDHIT_EST_MIN_C]
     if proc == "diamond" and seqtype == "nt":
         return []
+    if proc == "panaroo" and seqtype == "nt":
+        return []
     return CRANGE
 
 def get_or_write_ppanggolin_anno_list(simdir):
@@ -441,7 +443,7 @@ def main():
     parser.add_argument("--max-simultaneous-cores", "-M", default=2000, type=int)
     parser.add_argument("--preset-timestamp", "-P", default=-1, type=int)
     parser.add_argument("--pretend", "-p", action="store_true")
-    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo,panta,ppanggolin,panx")
+    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo")
     parser.add_argument("--sequence-type", "-st", default="nt,aa")
     parser.add_argument("--softwaredir", default=DEFAULT_SOFTWAREDIR)
     parser.add_argument("--benchmark-runner", default=DEFAULT_RUNNER)
