@@ -506,93 +506,93 @@ def get_df_from_clusterer(clusterer, folderpath):
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
         return outdf.set_index("cluster_id")
 
-        if clusterer == "panta":
-            clusters_file = os.path.join(folderpath, "panta/annotated_clusters.json")
-    
-            if not os.path.isfile(clusters_file):
-                raise RuntimeError(
-                    f"Panta did not create expected file: {clusters_file}"
-                )
-    
-            with open(clusters_file, "r") as f:
-                clusters = json.load(f)
-    
-            def extract_geneid(raw):
-                match = re.search(r"geneid_\d+(?:_iso_\d+)?", raw)
-                return match.group(0) if match else None
-    
-            group_to_genes = {}
-            setofgenes = set()
-            for group, groupinfo in clusters.items():
-                genes_clean = set()
-                for raw_gene in groupinfo["gene_id"]:
-                    geneid_clean = extract_geneid(raw_gene)
-                    if geneid_clean is None:
-                        raise RuntimeError(
-                            f"Could not parse a geneid_ token out of panta gene id: {raw_gene!r}"
-                        )
-                    genes_clean.add(geneid_clean)
-                    setofgenes.add(geneid_clean)
-                group_to_genes[group] = genes_clean
-    
-            # group keys are "groups_N" and are NOT lexically sortable (groups_10 < groups_2)
-            grouplist = sorted(
-                clusters.keys(),
-                key=lambda g: int(re.search(r"\d+", g).group(0)),
+    if clusterer == "panta":
+        clusters_file = os.path.join(folderpath, "panta/annotated_clusters.json")
+
+        if not os.path.isfile(clusters_file):
+            raise RuntimeError(
+                f"Panta did not create expected file: {clusters_file}"
             )
-    
-            genelist = sorted(
-                setofgenes,
-                key=lambda x: int(re.search(r"geneid_(\d+)", x).group(1)),
+
+        with open(clusters_file, "r") as f:
+            clusters = json.load(f)
+
+        def extract_geneid(raw):
+            match = re.search(r"geneid_\d+(?:_iso_\d+)?", raw)
+            return match.group(0) if match else None
+
+        group_to_genes = {}
+        setofgenes = set()
+        for group, groupinfo in clusters.items():
+            genes_clean = set()
+            for raw_gene in groupinfo["gene_id"]:
+                geneid_clean = extract_geneid(raw_gene)
+                if geneid_clean is None:
+                    raise RuntimeError(
+                        f"Could not parse a geneid_ token out of panta gene id: {raw_gene!r}"
+                    )
+                genes_clean.add(geneid_clean)
+                setofgenes.add(geneid_clean)
+            group_to_genes[group] = genes_clean
+
+        # group keys are "groups_N" and are NOT lexically sortable (groups_10 < groups_2)
+        grouplist = sorted(
+            clusters.keys(),
+            key=lambda g: int(re.search(r"\d+", g).group(0)),
+        )
+
+        genelist = sorted(
+            setofgenes,
+            key=lambda x: int(re.search(r"geneid_(\d+)", x).group(1)),
+        )
+
+        # ---------------------------------------------------------
+        # Add missing gene IDs before creating rows (genes panta
+        # dropped/filtered and that never appear in annotated_clusters.json)
+        # ---------------------------------------------------------
+        gene_nums = {
+            int(re.search(r"geneid_(\d+)", g).group(1))
+            for g in genelist
+        }
+
+        max_gene = max(gene_nums)
+
+        missing = [
+            f"geneid_{i}"
+            for i in range(max_gene + 1)
+            if i not in gene_nums
+        ]
+
+        if missing:
+            genelist.extend(missing)
+            genelist.sort(
+                key=lambda x: int(re.search(r"geneid_(\d+)", x).group(1))
             )
-    
-            # ---------------------------------------------------------
-            # Add missing gene IDs before creating rows (genes panta
-            # dropped/filtered and that never appear in annotated_clusters.json)
-            # ---------------------------------------------------------
-            gene_nums = {
-                int(re.search(r"geneid_(\d+)", g).group(1))
-                for g in genelist
-            }
-    
-            max_gene = max(gene_nums)
-    
-            missing = [
-                f"geneid_{i}"
-                for i in range(max_gene + 1)
-                if i not in gene_nums
+
+        # ---------------------------------------------------------
+        # Create normal clusters
+        # ---------------------------------------------------------
+        listoflists = []
+        for cluster_index, group in enumerate(grouplist):
+            genes_in_group = group_to_genes[group]
+            row = [cluster_index] + [
+                1.0 if gene in genes_in_group else -1.0 for gene in genelist
             ]
-    
-            if missing:
-                genelist.extend(missing)
-                genelist.sort(
-                    key=lambda x: int(re.search(r"geneid_(\d+)", x).group(1))
-                )
-    
-            # ---------------------------------------------------------
-            # Create normal clusters
-            # ---------------------------------------------------------
-            listoflists = []
-            for cluster_index, group in enumerate(grouplist):
-                genes_in_group = group_to_genes[group]
-                row = [cluster_index] + [
-                    1.0 if gene in genes_in_group else -1.0 for gene in genelist
-                ]
-                listoflists.append(row)
-    
-            # ---------------------------------------------------------
-            # Create one new cluster containing all missing genes
-            # ---------------------------------------------------------
-            if missing:
-                new_cluster_id = len(grouplist)
-                missingset = set(missing)
-                row = [new_cluster_id] + [
-                    1.0 if gene in missingset else -1.0 for gene in genelist
-                ]
-                listoflists.append(row)
-    
-            outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
-            return outdf.set_index("cluster_id")
+            listoflists.append(row)
+
+        # ---------------------------------------------------------
+        # Create one new cluster containing all missing genes
+        # ---------------------------------------------------------
+        if missing:
+            new_cluster_id = len(grouplist)
+            missingset = set(missing)
+            row = [new_cluster_id] + [
+                1.0 if gene in missingset else -1.0 for gene in genelist
+            ]
+            listoflists.append(row)
+
+        outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
+        return outdf.set_index("cluster_id")
 
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
 
