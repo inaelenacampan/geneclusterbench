@@ -115,6 +115,44 @@ def reverse_complement_text(seq):
     return str(Seq(str(seq)).reverse_complement())
 
 
+def write_genbank(record_list, out_path, organism="simulated organism"):
+    """Write a list of annotated SeqRecords (as already built for the GFF
+    output) directly to a multi-contig GenBank file. Reuses the in-memory
+    records rather than re-parsing the GFF, so no gff->gbk conversion step
+    is needed."""
+    gbk_records = []
+    for record in record_list:
+        # copy so we don't mutate the records still needed for GFF writing
+        rec = copy.deepcopy(record)
+
+        # GenBank requires a molecule type; also set basic annotations
+        rec.annotations["molecule_type"] = "DNA"
+        rec.annotations["organism"] = organism
+        rec.annotations["topology"] = "linear"
+
+        # LOCUS name has a strict 16-character limit in classic GenBank
+        # format; Biopython will raise/truncate ugly otherwise
+        if len(rec.name) > 16 or rec.name in ("", "<unknown name>"):
+            rec.name = rec.id[:16]
+
+        # CDS features need a "translation" qualifier for most downstream
+        # tools (e.g. panX/Prokka-style parsers) to consider them genes
+        for feature in rec.features:
+            if feature.type == "CDS" and "translation" not in feature.qualifiers:
+                try:
+                    feature.qualifiers["translation"] = [
+                        str(feature.extract(rec.seq).translate(table=11, to_stop=True))
+                    ]
+                except Exception:
+                    # don't let a single bad CDS kill the whole export
+                    pass
+
+        gbk_records.append(rec)
+
+    with open(out_path, "w") as f:
+        SeqIO.write(gbk_records, f, "genbank")
+
+
 def validate_no_internal_stop_codons(gene_sequence, entry):
     translated = str(gene_sequence.translate())[:-1]  # drop trailing stop
     stop_positions = [i + 1 for i, aa in enumerate(translated) if aa == "*"]
@@ -689,6 +727,10 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
             GFF.write(record_list, f, include_fasta = True)
         print("# Done!")
 
+        print("# Writing GenBank file per simulated assembly...")
+        write_genbank(record_list, out_name.replace(".fasta", ".gbk"))
+        print("# Done!")
+
     print("> Loop done!")
 
     # Write stupid tsv file without headers and with all the gffs and another one for all the fastas. Some programs require the former, the latter just in case
@@ -704,7 +746,14 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
     with open(prefix + "_gff_file.tsv", "w") as handle:
         handle.write(outtxt)
 
-    # Because of panX, also transform each gff into a genbank annotation file
+    # Because of panX, also list each isolate's genbank annotation file
+    # (the .gbk files themselves are written per-isolate above, straight
+    # from the in-memory SeqRecords used for the GFF output)
+    outtxt = ""
+    for i in range(nisolates):
+        outtxt += prefix.split("/")[-1] + "_iso_" + str(i) + "\t" + prefix + "_iso_" + str(i) + ".gbk\n"
+    with open(prefix + "_gbk_file.tsv", "w") as handle:
+        handle.write(outtxt)
 
 
     # write out database for prokka
