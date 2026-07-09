@@ -7,6 +7,8 @@ __pycache__/
 .ruff_cache/
 software/
 temp2/
+temp_analysis_with_panaroo
+
 # Generated benchmark command files and logs
 execcommands.tsv
 execcommands_copy.tsv
