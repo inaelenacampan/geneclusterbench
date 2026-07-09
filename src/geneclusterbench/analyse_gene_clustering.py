@@ -46,6 +46,7 @@ CLUSTERERS = [
             "diamond", 
             "panaroo",
             "ppanggolin",
+            "panta",
             ]
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
