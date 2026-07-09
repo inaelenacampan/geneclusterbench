@@ -59,7 +59,7 @@ PANTA_SCAFFOLD = (
     "mkdir -p {workdir} && cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
     "{execexec} main -g {inputfile} -o {outdir} "
-    "-i {c} -t {ncores} -a {seq_type}&& "
+    "-i {c} -t {ncores}&& "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
@@ -143,6 +143,8 @@ def get_c_values_for_process(proc, seqtype):
     if proc == "diamond" and seqtype == "nt":
         return []
     if proc == "panaroo" and seqtype == "nt":
+        return []
+    if proc == "panta" and seqtype == "nt":
         return []
     return CRANGE
 
@@ -238,7 +240,6 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
             c = c,
             ncores = nthreads,
             outdir = "./panta",
-            seq_type  = seq_arg,
         )
     
     # ppanggolin method
@@ -322,7 +323,7 @@ def submit_clustering_jobs(args):
                 continue
             for process in args.process:
                 
-                if process in ("panaroo", "ppanggolin"):
+                if process in ("panaroo", "ppanggolin", "panta"):
                     if process == "ppanggolin":
                         infile = get_or_write_ppanggolin_anno_list(simdir)
                     else:
@@ -350,10 +351,8 @@ def submit_clustering_jobs(args):
                         )
                 else:
                     for seqtype in args.sequence_type: # eg ; aa, nt
-                        if process == "panta":
-                            infile = get_sim_iso_gffs(simdir)
-                        else :
-                            infile = get_clustering_fasta(simdir, seqtype)
+                        
+                        infile = get_clustering_fasta(simdir, seqtype)
                         for c_value in get_c_values_for_process(process, seqtype):
                             suffix = f"_st-{seqtype}" + (
                                 f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""

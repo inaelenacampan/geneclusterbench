@@ -64,7 +64,6 @@ FANCYDICT = {
     "panaroo/aa": "Panaroo",
     "ppanggolin/aa" : "Ppanggolin",
     "panta/aa" : "Panta (AA)",
-    "panta/nt" : "Panta (NT)",
 }
 
 CONFIGDICT = {
@@ -92,7 +91,6 @@ CONFIGDICT_COLOURS = {
     "panaroo/aa": "#D94F21",
     "ppanggolin/aa":"#FEBD2B",
     "panta/aa": "#1B9E77",
-    "panta/nt": "#66C2A5",
 }
 
 
@@ -716,7 +714,7 @@ def get_info_from_folder(theargs):
                 stacklevel=2,
             )
             continue
-        tmpseqtype = paramdict.get("st", "aa" if tmpclusterer in ("panaroo", "ppanggolin") else DEFAULT_PARAMS["st"])
+        tmpseqtype = paramdict.get("st", "aa" if tmpclusterer in ("panaroo", "ppanggolin", "panta") else DEFAULT_PARAMS["st"])
         if tmpclusterer == "diamond" and tmpseqtype == "nt":
             warnings.warn(
                 f"Skipping disabled diamond+nt result folder {folderpath}",
@@ -727,6 +725,13 @@ def get_info_from_folder(theargs):
         if tmpclusterer == "panaroo" and tmpseqtype == "nt":
             warnings.warn(
                 f"Skipping disabled panaroo+nt result folder {folderpath}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
+        if tmpclusterer == "panta" and tmpseqtype == "nt":
+            warnings.warn(
+                f"Skipping disabled panta+nt result folder {folderpath}",
                 RuntimeWarning,
                 stacklevel=2,
             )
