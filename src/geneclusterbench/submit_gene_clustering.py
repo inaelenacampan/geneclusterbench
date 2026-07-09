@@ -71,12 +71,11 @@ PPANGGOLIN_SCAFFOLD = (
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
-# to do!!
 PANX_SCAFFOLD = (
     "mkdir -p {workdir} && cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
-    ""
-    ""
+    "for f in {inputfiles}; do ln -sf $f {gbkdir}/$(basename $f); done && "
+    "{execexec} -fn {workdir} -sl {species} -t {ncores} -st 1 && "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
@@ -297,6 +296,17 @@ def get_sim_iso_gffs(simdir):
         raise RuntimeError(f"No GFF files found in {simdir}")
     return " ".join(matches)  # e.g. "path/iso_0.gff path/iso_1.gff ..."
 
+def get_sim_iso_gbks(simdir):
+    matches = [
+        os.path.join(simdir, el) for el in os.listdir(simdir)
+        if el.endswith(".gbk") or el.endswith(".gb")
+    ]
+    if not matches:
+        raise RuntimeError(
+            f"No GenBank (.gbk/.gb) files found in {simdir}; "
+            "panX requires annotated GenBank input, not GFF."
+        )
+    return matches 
 
 def submit_clustering_jobs(args):
     print("> Getting seeds")
@@ -323,9 +333,11 @@ def submit_clustering_jobs(args):
                 continue
             for process in args.process:
                 
-                if process in ("panaroo", "ppanggolin", "panta"):
+                if process in ("panaroo", "ppanggolin", "panta", "panx"):
                     if process == "ppanggolin":
                         infile = get_or_write_ppanggolin_anno_list(simdir)
+                    elif process == "panx":
+                        infile = get_sim_iso_gbks(simdir)
                     else:
                         infile = get_sim_iso_gffs(simdir)
 
@@ -442,7 +454,7 @@ def main():
     parser.add_argument("--max-simultaneous-cores", "-M", default=2000, type=int)
     parser.add_argument("--preset-timestamp", "-P", default=-1, type=int)
     parser.add_argument("--pretend", "-p", action="store_true")
-    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo,ppanggolin,panta")
+    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo,ppanggolin,panta,panx")
     parser.add_argument("--sequence-type", "-st", default="nt,aa")
     parser.add_argument("--softwaredir", default=DEFAULT_SOFTWAREDIR)
     parser.add_argument("--benchmark-runner", default=DEFAULT_RUNNER)
