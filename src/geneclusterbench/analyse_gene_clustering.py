@@ -50,7 +50,8 @@ CLUSTERERS = [
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
 DEFAULT_PARAMS = {"st": "nt", "c": 0.9}
-AXIS_TITLE_FONT_SIZE = 12
+AXIS_TITLE_FONT_SIZE = 10
+BASE_FONT_SIZE = 8
 DOPREM = True
 
 FANCYDICT = {
@@ -60,6 +61,7 @@ FANCYDICT = {
     "mmseqs2/aa": "MMseqs2 (AA)",
     "diamond/aa" : "Diamond (AA)",
     "panaroo/aa": "Panaroo",
+    "ppanggolin/aa" : "Ppanggolin",
     #"panta/aa" : "Panta (AA)",
     #"panta/nt" : "Panta (NT)",
 }
@@ -87,6 +89,7 @@ CONFIGDICT_COLOURS = {
     "mmseqs2/aa": "#A291C7",
     "diamond/aa" : "#82CBEC",
     "panaroo/aa": "#D94F21",
+    "ppanggolin/aa":"#FEBD2B",
     #"panta/aa" : "#FEBD2B" ,
     #"panta/nt" : "#9AAB4B",
 }
@@ -394,18 +397,27 @@ def get_df_from_clusterer(clusterer, folderpath):
         output_dir = os.path.join(folderpath, "ppanggolin_outputs/")
         os.makedirs(output_dir, exist_ok=True)
 
-        subprocess.run(
-            [
-                "ppanggolin",
-                "write_pangenome",
-                "-p",
-                os.path.join(folderpath, "ppanggolin/pangenome.h5"),
-                "-o",
-                output_dir,
-                "--families_tsv",
-            ],
-            check=True,
-        )
+        try:
+            subprocess.run(
+                [
+                    "ppanggolin",
+                    "write_pangenome",
+                    "-p",
+                    os.path.join(folderpath, "ppanggolin/pangenome.h5"),
+                    "-o",
+                    output_dir,
+                    "--families_tsv",
+                    "-f",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(
+                "ppanggolin write_pangenome failed "
+                f"(exit code {exc.returncode}):\n{exc.stderr}"
+            ) from exc
 
         families_file = os.path.join(output_dir, "gene_families.tsv")
 
@@ -414,11 +426,83 @@ def get_df_from_clusterer(clusterer, folderpath):
                 f"PPanGGOLiN did not create expected file: {families_file}"
             )
 
+        # gene_families.tsv has no header, 4 columns:
+        # family_id, gene_id (embedded geneid_N[_iso_M]), an always-empty column, fragment flag ("F"/"")
         families = pd.read_csv(
             families_file,
             sep="\t",
+            header=None,
+            names=["family_id", "gene_id", "_unused", "fragment_flag"],
+            low_memory=False,
         )
 
+        def extract_geneid(raw):
+            match = re.search(r"geneid_\d+(?:_iso_\d+)?", raw)
+            return match.group(0) if match else None
+
+        families["gene_id_clean"] = families["gene_id"].apply(extract_geneid)
+
+        if families["gene_id_clean"].isna().any():
+            missing_raw = families.loc[families["gene_id_clean"].isna(), "gene_id"].unique()
+            raise RuntimeError(
+                "Could not parse a geneid_ token out of some ppanggolin gene ids, "
+                f"e.g.: {list(missing_raw[:5])}"
+            )
+
+        genelist = sorted(
+            families["gene_id_clean"].unique(),
+            key=lambda x: int(re.search(r"geneid_(\d+)", x).group(1)),
+        )
+
+        # ---------------------------------------------------------
+        # Add missing gene IDs before creating rows (genes PPanGGOLiN
+        # dropped/filtered and that never appear in gene_families.tsv)
+        # ---------------------------------------------------------
+        gene_nums = {
+            int(re.search(r"geneid_(\d+)", g).group(1))
+            for g in genelist
+        }
+
+        max_gene = max(gene_nums)
+
+        missing = [
+            f"geneid_{i}"
+            for i in range(max_gene + 1)
+            if i not in gene_nums
+        ]
+
+        if missing:
+            genelist.extend(missing)
+            genelist.sort(
+                key=lambda x: int(re.search(r"geneid_(\d+)", x).group(1))
+            )
+
+        familylist = sorted(families["family_id"].unique())
+        family_to_genes = families.groupby("family_id")["gene_id_clean"].apply(set)
+
+        # ---------------------------------------------------------
+        # Create normal clusters
+        # ---------------------------------------------------------
+        listoflists = []
+        for cluster_index, family in enumerate(familylist):
+            genes_in_family = family_to_genes[family]
+            row = [cluster_index] + [
+                1.0 if gene in genes_in_family else -1.0 for gene in genelist
+            ]
+            listoflists.append(row)
+
+        # ---------------------------------------------------------
+        # Create one new cluster containing all missing genes
+        # ---------------------------------------------------------
+        if missing:
+            new_cluster_id = len(familylist)
+            missingset = set(missing)
+            row = [new_cluster_id] + [
+                1.0 if gene in missingset else -1.0 for gene in genelist
+            ]
+            listoflists.append(row)
+
+        outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
         return outdf.set_index("cluster_id")
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
 
@@ -463,6 +547,8 @@ def check_status_of_folder(clusterer, path):
         #filenam = "panta/annotated_clusters.json"
     elif clusterer == "panaroo":
         filenam = "panaroo/combined_protein_cdhit_out.txt.clstr"
+    elif clusterer == "ppanggolin":
+        filenam = "ppanggolin/pangenome.h5"
 
     else:
         print("Invalid clusterer " + clusterer)
@@ -1320,7 +1406,7 @@ def main():
     parser.add_argument("--font-bold", default=DEFAULT_FONT_BOLD)
     args = parser.parse_args()
 
-    plt.rcParams.update({"figure.max_open_warning": 0})
+    plt.rcParams.update({"figure.max_open_warning": 0, "font.size": BASE_FONT_SIZE})
     font_props = get_font_properties(args)
     seedsfile = args.seeds
 
