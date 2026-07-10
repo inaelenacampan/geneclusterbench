@@ -72,10 +72,11 @@ PPANGGOLIN_SCAFFOLD = (
 )
 
 PANX_SCAFFOLD = (
-    "mkdir -p {workdir} && cd {workdir} && "
+    "mkdir -p {workdir} && mkdir -p {gbkdir} && cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
     "for f in {inputfiles}; do ln -sf $f {gbkdir}/$(basename $f); done && "
-    "{execexec} -fn {workdir} -sl {species} -t {ncores} -st 1 && "
+    "export PATH={envbindir}:$PATH && "
+    "{execexec} -fn {workdir} -sl {species} -t {ncores} -st 1 3 4 5 -dmi {dmi} && "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
@@ -257,10 +258,37 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
     
     # panX method
     if proc == "panx":
-        panxexec = os.path.join(softwaredir, "panX/pan-genome-analysis/panX.py")
+        # panX requires Python 2.7 (#!/usr/bin/env python2 in the script)
+        # plus a dedicated legacy conda env (biopython, diamond, ete2,
+        # fasttree, mafft, mcl, treetime==0.6.*, etc. — see
+        # panX-environment.yml in the panX repo). The sbatch job's shell
+        # won't have any conda env activated, so the shebang's `python2`
+        # lookup fails. Call that env's python interpreter explicitly
+        # instead of executing panX.py directly.
+        panx_python = os.path.join(softwaredir, "panX/bin/python2")
+        panx_script = os.path.join(softwaredir, "panX/panX.py")
+        panxexec = f"{panx_python} {panx_script}"
+        panx_envbin = os.path.join(softwaredir, "panX/bin")
+
+        # panX expects input GenBank files under <workdir>/data/<species>/input_GenBank,
+        # and takes that species label via -sl. Since these are simulated genomes
+        # with no real species name, use a fixed placeholder that must stay
+        # consistent with wherever the analysis script looks for panX output.
+        species = "simulated_species"
+        gbkdir = os.path.join(outfolder, "data", species, "input_GenBank")
 
         return PANX_SCAFFOLD.format(
-            workdir = outfolder,
+            workdir=outfolder,
+            gbkdir=gbkdir,
+            inputfiles=infile,
+            execexec=panxexec,
+            species=species,
+            ncores=nthreads,
+            envbindir=panx_envbin,
+            # -dmi/--diamond_identity is on a 0-100 percentage scale, default
+            # 0 (no restriction), same convention as the diamond clusterer's
+            # --approx-id above.
+            dmi=int(c * 100),
         )
     raise RuntimeError("Process " + proc + " not supported")
 
@@ -306,7 +334,7 @@ def get_sim_iso_gbks(simdir):
             f"No GenBank (.gbk/.gb) files found in {simdir}; "
             "panX requires annotated GenBank input, not GFF."
         )
-    return matches 
+    return " ".join(matches)  # e.g. "path/iso_0.gbk path/iso_1.gbk ..."
 
 def submit_clustering_jobs(args):
     print("> Getting seeds")
