@@ -1,5 +1,5 @@
 # import libraries
-
+from sklearn.preprocessing import LabelEncoder
 import argparse
 import os
 import warnings
@@ -132,12 +132,19 @@ def get_labels_list_from_df(indf):
 # values from 0 to 1 : the higher the better
 
 def get_purity(inlab, truthdf):
-    nclusters = len(set(inlab))
+    # Recode les labels pour qu'ils soient consécutifs
+    le = LabelEncoder()
+    inlab_encoded = le.fit_transform(inlab)
+    nclusters = len(le.classes_)
+
     sumofmaxes = 0
+
     for column in truthdf.columns:
         countlist = [0] * nclusters
         for gene in truthdf[truthdf[column] == True].index:
-            countlist[inlab[int(gene.split("_")[1])]] += 1
+            gene_index = int(gene.split("_")[1])
+            cluster_label = inlab_encoded[gene_index]
+            countlist[cluster_label] += 1
         sumofmaxes += max(countlist)
     return float(sumofmaxes) / float(len(truthdf.index))
 
@@ -603,8 +610,6 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
             ]
             listoflists.append(row)
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
-        print(outdf.shape)
-
         return outdf.set_index("cluster_id")
 
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
