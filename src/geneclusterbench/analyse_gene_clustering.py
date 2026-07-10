@@ -230,7 +230,6 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
                 row.append(tmpdict[cluster][gene] if gene in tmpdict[cluster] else -1.0)
             listoflists.append(row)
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + listofgenes)
-        print(outdf.shape)
         return outdf.set_index("cluster_id")
 
     if clusterer == "mmseqs2":
@@ -257,7 +256,6 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
             listoflists.append(row)
 
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
-        print(outdf.shape)
 
         return outdf.set_index("cluster_id")
     
@@ -289,7 +287,6 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
             listoflists.append(row)
 
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
-        print(outdf.shape)
 
         return outdf.set_index("cluster_id")
 
@@ -403,7 +400,6 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
             listoflists,
             columns=["cluster_id"] + listofgenes
         )
-        print(outdf.shape)
 
         return outdf.set_index("cluster_id")
 
@@ -519,7 +515,6 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
             listoflists.append(row)
 
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
-        print(outdf.shape)
 
         return outdf.set_index("cluster_id")
 
