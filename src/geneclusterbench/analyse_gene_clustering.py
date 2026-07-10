@@ -520,7 +520,6 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
 
     if clusterer == "panta":
         clusters_file = os.path.join(folderpath, "panta/annotated_clusters.json")
-        print("here")
         if not os.path.isfile(clusters_file):
             raise RuntimeError(
                 f"Panta did not create expected file: {clusters_file}"
@@ -686,7 +685,6 @@ def get_info_from_folder(theargs):
     one_hot = pd.get_dummies(truthmatrix["original_gene"])
     truthdf = truthmatrix.drop("original_gene", axis=1)
     truthdf = truthdf.join(one_hot)
-    print(truthdf.shape)
 
     # True upper bound on gene numbering, taken from the ground truth rather
     # than from any individual clusterer's output. Any clusterer's gene list
@@ -695,7 +693,6 @@ def get_info_from_folder(theargs):
     true_max_gene = max(
         int(re.search(r"geneid_(\d+)", g).group(1)) for g in truthdf.index
     )
-    print(true_max_gene)
     print(f"\t- Getting information from {thedir} execution, {theass} assembly, and {theseed} seed")
 
     speciesfile = os.path.join(thedir, str(theass), "assembly_species.txt")
