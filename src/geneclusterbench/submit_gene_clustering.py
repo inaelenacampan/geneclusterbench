@@ -76,8 +76,8 @@ PANX_SCAFFOLD = (
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
     "for f in {inputfiles}; do ln -sf $f {gbkdir}/$(basename $f); done && "
     "export PATH={envbindir}:$PATH && "
-    "{execexec} -fn {workdir} -sl {species} -t {ncores} -st 1 3 4 5 -dmi {dmi} && "
-    "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
+    "{execexec} -fn {workdir} -sl {species} -t {ncores} -dmi {dmi} || exit 1 && "
+    "echo $inittime=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
 SLURM_SCAFFOLD = (
