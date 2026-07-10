@@ -195,7 +195,7 @@ def parse_cdhit_identity(line):
     return float(identity) / 100.0
 
 
-def get_df_from_clusterer(clusterer, folderpath):
+def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
     if clusterer == "cdhit":
         listoflists = []
         setofgenes = set()
@@ -223,6 +223,7 @@ def get_df_from_clusterer(clusterer, folderpath):
                 row.append(tmpdict[cluster][gene] if gene in tmpdict[cluster] else -1.0)
             listoflists.append(row)
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + listofgenes)
+        print(outdf.shape)
         return outdf.set_index("cluster_id")
 
     if clusterer == "mmseqs2":
@@ -249,6 +250,8 @@ def get_df_from_clusterer(clusterer, folderpath):
             listoflists.append(row)
 
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
+        print(outdf.shape)
+
         return outdf.set_index("cluster_id")
     
     if clusterer == "diamond":
@@ -279,6 +282,8 @@ def get_df_from_clusterer(clusterer, folderpath):
             listoflists.append(row)
 
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
+        print(outdf.shape)
+
         return outdf.set_index("cluster_id")
 
     if clusterer == "panaroo":
@@ -343,6 +348,8 @@ def get_df_from_clusterer(clusterer, folderpath):
         }
 
         max_gene = max(gene_nums)
+        if true_max_gene is not None:
+            max_gene = max(max_gene, true_max_gene)
 
         missing = [
             f"geneid_{i}"
@@ -389,6 +396,7 @@ def get_df_from_clusterer(clusterer, folderpath):
             listoflists,
             columns=["cluster_id"] + listofgenes
         )
+        print(outdf.shape)
 
         return outdf.set_index("cluster_id")
 
@@ -463,6 +471,8 @@ def get_df_from_clusterer(clusterer, folderpath):
         }
 
         max_gene = max(gene_nums)
+        if true_max_gene is not None:
+            max_gene = max(max_gene, true_max_gene)
 
         missing = [
             f"geneid_{i}"
@@ -502,11 +512,13 @@ def get_df_from_clusterer(clusterer, folderpath):
             listoflists.append(row)
 
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
+        print(outdf.shape)
+
         return outdf.set_index("cluster_id")
 
     if clusterer == "panta":
         clusters_file = os.path.join(folderpath, "panta/annotated_clusters.json")
-
+        print("here")
         if not os.path.isfile(clusters_file):
             raise RuntimeError(
                 f"Panta did not create expected file: {clusters_file}"
@@ -554,6 +566,8 @@ def get_df_from_clusterer(clusterer, folderpath):
         }
 
         max_gene = max(gene_nums)
+        if true_max_gene is not None:
+            max_gene = max(max_gene, true_max_gene)
 
         missing = [
             f"geneid_{i}"
@@ -588,8 +602,9 @@ def get_df_from_clusterer(clusterer, folderpath):
                 1.0 if gene in missingset else -1.0 for gene in genelist
             ]
             listoflists.append(row)
-
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
+        print(outdf.shape)
+
         return outdf.set_index("cluster_id")
 
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
@@ -671,6 +686,16 @@ def get_info_from_folder(theargs):
     one_hot = pd.get_dummies(truthmatrix["original_gene"])
     truthdf = truthmatrix.drop("original_gene", axis=1)
     truthdf = truthdf.join(one_hot)
+    print(truthdf.shape)
+
+    # True upper bound on gene numbering, taken from the ground truth rather
+    # than from any individual clusterer's output. Any clusterer's gene list
+    # must be padded at least up to this number, or get_purity's lookup
+    # (which indexes by gene number straight from truthdf) can go out of range.
+    true_max_gene = max(
+        int(re.search(r"geneid_(\d+)", g).group(1)) for g in truthdf.index
+    )
+    print(true_max_gene)
     print(f"\t- Getting information from {thedir} execution, {theass} assembly, and {theseed} seed")
 
     speciesfile = os.path.join(thedir, str(theass), "assembly_species.txt")
@@ -739,7 +764,7 @@ def get_info_from_folder(theargs):
         if not check_status_of_folder(tmpclusterer, folderpath):
             continue
 
-        thedf = get_df_from_clusterer(tmpclusterer, folderpath)
+        thedf = get_df_from_clusterer(tmpclusterer, folderpath, true_max_gene)
         runtime = get_time_diff_from_file(os.path.join(folderpath, "timebenchmark.txt"))
         n_clusters = len(thedf.index)
         n_singletons = count_singleton_clusters(thedf)
