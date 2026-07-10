@@ -648,15 +648,22 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
 
 
         record_list = []
+        # panX (and most GenBank-driven tools) identify/extract proteins via
+        # the standard /locus_tag qualifier, not a custom /ID. Use a
+        # per-genome, zero-padded, unique locus_tag ("iso<i>_00001", ...)
+        # so downstream tools can find one CDS per tag as expected.
+        locus_tag_counter = 0
         for iS in temp_seq_dict: # These are the contigs
             record_list.append(SeqRecord(Seq(''.join(temp_seq_dict[iS])), id = iS, description = ""))
             record_list[-1].features = []
             if iS in GFF_entries:
                 GFF_entries[iS].sort(key=lambda gene: (gene.start, gene.stop, gene.id))
                 for iG in GFF_entries[iS]: # And these, the "features" (i.e. the genes)
+                    locus_tag_counter += 1
                     qualifiers = {
                         "source"    : "simulation",
                         "ID"        : iG.id,
+                        "locus_tag" : f"iso{i}_{locus_tag_counter:05d}",
                         "score"     : 1.0,
                     }
                     feature = SeqFeature(

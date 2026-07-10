@@ -77,7 +77,7 @@ PANX_SCAFFOLD = (
     "for f in {inputfiles}; do ln -sf $f {gbkdir}/$(basename $f); done && "
     "export PATH={envbindir}:$PATH && "
     "{execexec} -fn {workdir} -sl {species} -t {ncores} -dmi {dmi} || exit 1 && "
-    "echo $inittime=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
+    "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
 SLURM_SCAFFOLD = (
@@ -270,12 +270,13 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
         panxexec = f"{panx_python} {panx_script}"
         panx_envbin = os.path.join(softwaredir, "panX/bin")
 
-        # panX expects input GenBank files under <workdir>/data/<species>/input_GenBank,
-        # and takes that species label via -sl. Since these are simulated genomes
-        # with no real species name, use a fixed placeholder that must stay
-        # consistent with wherever the analysis script looks for panX output.
+        # panX expects to be pointed (-fn) directly at a folder that
+        # contains input_GenBank/ (see panX docs: ./data/YourSpecies/input_GenBank).
+        # It does NOT walk into a nested data/<species>/ subfolder, so
+        # input_GenBank must live right under outfolder, not under
+        # outfolder/data/<species>/.
         species = "simulated_species"
-        gbkdir = os.path.join(outfolder, "data", species, "input_GenBank")
+        gbkdir = os.path.join(outfolder, "input_GenBank")
 
         return PANX_SCAFFOLD.format(
             workdir=outfolder,
