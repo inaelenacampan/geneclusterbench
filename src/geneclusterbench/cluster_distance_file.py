@@ -119,7 +119,9 @@ def parse_distance_file(path):
 
 
 def fit_tsne(matrix, nthreads):
-    """Embed the precomputed distance matrix into two dimensions with t-SNE."""
+    """Embed the precomputed distance matrix into two dimensions with t-SNE.
+    t-SNE = t-distributed Stochastic Neighbor Embedding
+    """
     perplexity = min(TSNE_PERPLEXITY, max(1, matrix.shape[0] - 1))
     model = TSNE(
         metric="precomputed",
@@ -136,6 +138,7 @@ def fit_tsne(matrix, nthreads):
 
 def fit_umap(matrix, nthreads):
     """Embed the precomputed distance matrix into two dimensions with UMAP."""
+    # umap = Uniform Manifold Approximation and Projection
     # UMAP with precomputed distances is useful for visualising the same distance
     # matrix as HDBSCAN sees it. Parallel UMAP can be non-deterministic.
     model = UMAP(
@@ -151,6 +154,7 @@ def fit_umap(matrix, nthreads):
 
 def fit_hdbscan_dist(matrix, nthreads):
     """Cluster samples directly from the precomputed distance matrix."""
+    # Hierarchical Density-Based Spatial Clustering of Applications with Noise
     model = hdbscan.HDBSCAN(
         min_cluster_size=HDBSCAN_MIN_CLUSTER_SIZE,
         min_samples=HDBSCAN_MIN_SAMPLES,

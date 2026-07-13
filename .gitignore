@@ -11,7 +11,11 @@ temp_analysis_with_panaroo/
 temp-ppanggolin/
 temp-panta/
 temp-panx/
-
+src/geneclusterbench/distance_clustering
+my_fasta_files.tsv
+*.dist
+*.skd
+*.skm
 # Generated benchmark command files and logs
 execcommands.tsv
 execcommands_copy.tsv

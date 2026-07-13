@@ -654,7 +654,8 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
         # so downstream tools can find one CDS per tag as expected.
         locus_tag_counter = 0
         for iS in temp_seq_dict: # These are the contigs
-            record_list.append(SeqRecord(Seq(''.join(temp_seq_dict[iS])), id = iS, description = ""))
+            unique_id = f"iso{i}_{iS}"
+            record_list.append(SeqRecord(Seq(''.join(temp_seq_dict[iS])), id=unique_id, description=""))
             record_list[-1].features = []
             if iS in GFF_entries:
                 GFF_entries[iS].sort(key=lambda gene: (gene.start, gene.stop, gene.id))
