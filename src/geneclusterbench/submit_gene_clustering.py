@@ -423,7 +423,7 @@ def submit_clustering_jobs(args):
                         suffix = f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
                         analysisdir = (
                             os.path.join(
-                                os.path.dirname(os.path.dirname(args.gcb_repo)),
+                                os.path.dirname(args.gcb_repo),
                                 "sketch_analysis",
                                 assembly,
                                 str(seed),
