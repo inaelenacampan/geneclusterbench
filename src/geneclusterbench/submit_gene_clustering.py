@@ -19,6 +19,9 @@ DEFAULT_RUNNER = (
     "/hps/software/users/jlees/campan/assembler_development/"
     "benchmarking/run_benchmark.py"
 )
+# path to the geneclusterbench repo checkout (holds pyproject.toml/uv.lock),
+# used to invoke cluster_distance_file.py via `uv run --project`
+DEFAULT_GCB_REPO = "/hps/software/users/jlees/campan/geneclusterbench"
 PACKAGE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = PACKAGE_DIR.parents[1]
 DEFAULT_SEEDS = str(PROJECT_ROOT / "data" / "random_numbers.txt")
@@ -81,11 +84,14 @@ PANX_SCAFFOLD = (
 )
 
 SKETCH_SCAFFOLD = (
-    "mkdir -p {workdir} && mkdir -p {sketchdir} && cd {workdir} && "
+    "mkdir -p {workdir} && mkdir -p {sketchdir} && mkdir -p {analysisdir} && "
+    "cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
     "{execexec} sketch -f {inputfile} --concat-fasta -o {outputprefix} "
     "-s 64 -k 5 --seq-type aa --threads {ncores} -v && "
     "{execexec} dist {outputprefix} -o {distoutput} -k 5 --threads {ncores} -v && "
+    "uv run --project {gcbrepo} python -m geneclusterbench.cluster_distance_file "
+    "--dist-file {distoutput} --out-dir {analysisdir} --nthreads {ncores} && "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
@@ -174,7 +180,7 @@ def get_or_write_ppanggolin_anno_list(simdir):
     return listpath
 
 
-def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9):
+def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9, analysisdir=None, gcbrepo=None):
     
     if seqtype == "nt" :
         seq_arg = "nucleotide"
@@ -313,10 +319,12 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
         return SKETCH_SCAFFOLD.format(
             workdir=outfolder,
             sketchdir=sketchdir,
+            analysisdir=analysisdir,
             inputfile=infile,
             execexec=sketchexec,
             outputprefix=os.path.join(sketchdir, "sketch"),
             distoutput=os.path.join(sketchdir, "output.dist"),
+            gcbrepo=gcbrepo,
             ncores=nthreads,
         )
     raise RuntimeError("Process " + proc + " not supported")
@@ -413,6 +421,17 @@ def submit_clustering_jobs(args):
 
                     for c_value in get_c_values_for_process(process, "aa"):
                         suffix = f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
+                        analysisdir = (
+                            os.path.join(
+                                os.path.dirname(os.path.dirname(args.gcb_repo)),
+                                "sketch_analysis",
+                                assembly,
+                                str(seed),
+                                "distance_clustering",
+                            )
+                            if process == "sketch"
+                            else None
+                        )
                         jobinfo.append(
                             get_command_for_process(
                                 process,
@@ -429,6 +448,8 @@ def submit_clustering_jobs(args):
                                 args.mem,
                                 args.softwaredir,
                                 c_value,
+                                analysisdir=analysisdir,
+                                gcbrepo=args.gcb_repo,
                             )
                         )
                 else:
@@ -528,6 +549,7 @@ def main():
     parser.add_argument("--sequence-type", "-st", default="nt,aa")
     parser.add_argument("--softwaredir", default=DEFAULT_SOFTWAREDIR)
     parser.add_argument("--benchmark-runner", default=DEFAULT_RUNNER)
+    parser.add_argument("--gcb-repo", default=DEFAULT_GCB_REPO)
     args = parser.parse_args()
 
     args.process = args.process.strip().split(",")
