@@ -80,6 +80,15 @@ PANX_SCAFFOLD = (
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
+SKETCH_SCAFFOLD = (
+    "mkdir -p {workdir} && mkdir -p {sketchdir} && cd {workdir} && "
+    "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
+    "{execexec} sketch -f {inputfile} --concat-fasta -o {outputprefix} "
+    "-s 64 -k 5 --seq-type aa --threads {ncores} -v && "
+    "{execexec} dist {outputprefix} -o {distoutput} -k 5 --threads {ncores} -v && "
+    "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
+)
+
 SLURM_SCAFFOLD = (
     "sbatch --array={arrayvals} -c {nth} -t {timemax} --mem {memmax}G "
     "-J {jobname} -e {logpath}/log.%A.%a.%x.err "
@@ -138,6 +147,10 @@ def get_cdhit_word_size(c, seqtype):
 
 
 def get_c_values_for_process(proc, seqtype):
+    if proc == "sketch":
+        # sketchlib has no identity threshold; run once per seed with the
+        # default "c" value so no _c-suffix is added to the output folder.
+        return [DEFAULT_PARAMS["c"]]
     if proc == "cdhit" and seqtype == "nt":
         return [c for c in CRANGE if c >= CDHIT_EST_MIN_C]
     if proc == "diamond" and seqtype == "nt":
@@ -291,6 +304,21 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
             # --approx-id above.
             dmi=int(c * 100),
         )
+    # sketchlib method (sketch + dist)
+    if proc == "sketch":
+
+        sketchexec = os.path.join(softwaredir, "sketchlib.rust/target/release/sketchlib")
+        sketchdir = os.path.join(outfolder, "sketch")
+
+        return SKETCH_SCAFFOLD.format(
+            workdir=outfolder,
+            sketchdir=sketchdir,
+            inputfile=infile,
+            execexec=sketchexec,
+            outputprefix=os.path.join(sketchdir, "sketch"),
+            distoutput=os.path.join(sketchdir, "output.dist"),
+            ncores=nthreads,
+        )
     raise RuntimeError("Process " + proc + " not supported")
 
 
@@ -313,6 +341,17 @@ def get_clustering_fasta(simdir, seqtype):
     if len(matches) != 1:
         raise RuntimeError(
             f"Expected one {expected} in {simdir}, found {len(matches)}"
+        )
+    return os.path.join(simdir, matches[0])
+
+def get_fasta_file_list(simdir):
+    matches = [
+        el for el in os.listdir(simdir)
+        if el.endswith("_fasta_file.tsv")
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(
+            f"Expected one *_fasta_file.tsv in {simdir}, found {len(matches)}"
         )
     return os.path.join(simdir, matches[0])
 
@@ -362,11 +401,13 @@ def submit_clustering_jobs(args):
                 continue
             for process in args.process:
                 
-                if process in ("panaroo", "ppanggolin", "panta", "panx"):
+                if process in ("panaroo", "ppanggolin", "panta", "panx", "sketch"):
                     if process == "ppanggolin":
                         infile = get_or_write_ppanggolin_anno_list(simdir)
                     elif process == "panx":
                         infile = get_sim_iso_gbks(simdir)
+                    elif process == "sketch":
+                        infile = get_fasta_file_list(simdir)
                     else:
                         infile = get_sim_iso_gffs(simdir)
 
@@ -483,7 +524,7 @@ def main():
     parser.add_argument("--max-simultaneous-cores", "-M", default=2000, type=int)
     parser.add_argument("--preset-timestamp", "-P", default=-1, type=int)
     parser.add_argument("--pretend", "-p", action="store_true")
-    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo,ppanggolin,panta,panx")
+    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo,ppanggolin,panta,panx,sketch")
     parser.add_argument("--sequence-type", "-st", default="nt,aa")
     parser.add_argument("--softwaredir", default=DEFAULT_SOFTWAREDIR)
     parser.add_argument("--benchmark-runner", default=DEFAULT_RUNNER)
