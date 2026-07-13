@@ -1,5 +1,5 @@
 # import libraries
-
+from Bio import SeqIO
 import argparse
 import os
 import time
@@ -372,6 +372,41 @@ def get_sim_iso_gffs(simdir):
         raise RuntimeError(f"No GFF files found in {simdir}")
     return " ".join(matches)  # e.g. "path/iso_0.gff path/iso_1.gff ..."
 
+
+def fix_genbank_metadata(gbk_file):
+    records = []
+
+    for record in SeqIO.parse(gbk_file, "genbank"):
+        source_found = False
+
+        for feature in record.features:
+            if feature.type == "source":
+                source_found = True
+
+                if "organism" not in feature.qualifiers:
+                    feature.qualifiers["organism"] = ["unknown"]
+
+                if "strain" not in feature.qualifiers:
+                    feature.qualifiers["strain"] = ["unknown"]
+
+        # If there was no source feature at all
+        if not source_found:
+            from Bio.SeqFeature import SeqFeature, FeatureLocation
+
+            source = SeqFeature(
+                FeatureLocation(0, len(record)),
+                type="source",
+                qualifiers={
+                    "organism": ["unknown"],
+                    "strain": ["unknown"]
+                }
+            )
+            record.features.insert(0, source)
+
+        records.append(record)
+
+    SeqIO.write(records, gbk_file, "genbank")  # overwrite file
+
 def get_sim_iso_gbks(simdir):
     matches = [
         os.path.join(simdir, el) for el in os.listdir(simdir)
@@ -382,6 +417,8 @@ def get_sim_iso_gbks(simdir):
             f"No GenBank (.gbk/.gb) files found in {simdir}; "
             "panX requires annotated GenBank input, not GFF."
         )
+    for gbk in matches:
+        fix_genbank_metadata(gbk)
     return " ".join(matches)  # e.g. "path/iso_0.gbk path/iso_1.gbk ..."
 
 def submit_clustering_jobs(args):
