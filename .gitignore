@@ -9,6 +9,8 @@ software/
 temp2/
 temp_analysis_with_panaroo/
 temp-ppanggolin/
+temp-panta/
+temp-panx/
 
 # Generated benchmark command files and logs
 execcommands.tsv
