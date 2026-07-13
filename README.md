@@ -26,6 +26,7 @@ uv run python -m geneclusterbench.simulate_full_pangenome --help
 uv run python -m geneclusterbench.submit_simulations --help
 uv run python -m geneclusterbench.submit_gene_clustering --help
 uv run python -m geneclusterbench.analyse_gene_clustering --help
+uv run python -m geneclusterbench.cluster_distance_file --help
 ```
 
 Alternatively, activate the UV-created environment and use `python -m` directly:
@@ -71,4 +72,5 @@ uv run python -m geneclusterbench.submit_gene_clustering --softwaredir /path/to/
 - `src/geneclusterbench/submit_simulations.py`: Slurm launcher for running many pangenome simulations from a seed file.
 - `src/geneclusterbench/submit_gene_clustering.py`: Slurm launcher for CD-HIT and MMseqs2 gene-clustering benchmarks over nucleotide and amino-acid clustering FASTAs.
 - `src/geneclusterbench/analyse_gene_clustering.py`: parses CD-HIT and MMseqs2 outputs, compares clusters to simulator truth labels, computes clustering metrics, and plots results.
+- `src/geneclusterbench/cluster_distance_file.py`: reads a dist file from sketchlib and does simple clustering on it.
 - `docs/simulation_to_analysis_workflow.md`: end-to-end workflow notes for starting from one genome, creating simulations, processing them on Slurm, and analysing outputs.
