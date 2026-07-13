@@ -12,6 +12,7 @@ temp-ppanggolin/
 temp-panta/
 temp-panx/
 src/geneclusterbench/distance_clustering
+sketch_analysis/
 my_fasta_files.tsv
 *.dist
 *.skd

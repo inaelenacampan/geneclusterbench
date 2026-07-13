@@ -21,7 +21,7 @@ DEFAULT_RUNNER = (
 )
 # path to the geneclusterbench repo checkout (holds pyproject.toml/uv.lock),
 # used to invoke cluster_distance_file.py via `uv run --project`
-DEFAULT_GCB_REPO = "/hps/software/users/jlees/campan/geneclusterbench"
+DEFAULT_GCB_REPO = "/hps/software/users/jlees/campan/clustering_benchmarking"
 PACKAGE_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = PACKAGE_DIR.parents[1]
 DEFAULT_SEEDS = str(PROJECT_ROOT / "data" / "random_numbers.txt")
@@ -423,7 +423,7 @@ def submit_clustering_jobs(args):
                         suffix = f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
                         analysisdir = (
                             os.path.join(
-                                os.path.dirname(args.gcb_repo),
+                                args.gcb_repo,
                                 "sketch_analysis",
                                 assembly,
                                 str(seed),
