@@ -93,6 +93,49 @@ def get_codon(index, strand="+"):
         codon = codon.reverse_complement()
     return np.array(list(str(codon)))
 
+from BCBio import GFF
+from Bio import SeqIO
+from Bio.SeqFeature import SeqFeature, FeatureLocation
+
+
+def gff_fasta_to_genbank(
+    gff_file,
+    fasta_file,
+    genbank_file,
+    strain=None
+):
+    from BCBio import GFF
+    from Bio import SeqIO
+    from Bio.SeqFeature import SeqFeature, FeatureLocation
+
+    seq_dict = SeqIO.to_dict(SeqIO.parse(fasta_file, "fasta"))
+    print("success")
+    with open(gff_file) as gff_handle:
+        records = []
+
+        for record in GFF.parse(gff_handle, base_dict=seq_dict):
+
+            record.annotations["organism"] = "unknown"
+            record.annotations["source"] = "unknown"
+            record.annotations["molecule_type"] = "DNA"
+
+            record.features.insert(
+                0,
+                SeqFeature(
+                    FeatureLocation(0, len(record.seq)),
+                    type="source",
+                    qualifiers={
+                        "organism": ["unknown"],
+                        "strain": ["unknown"],
+                        "mol_type": ["genomic DNA"],
+                    },
+                ),
+            )
+
+            records.append(record)
+
+    SeqIO.write(records, genbank_file, "genbank")
+
 
 def clean_gff_string(gff_string):
     # list of strings
@@ -113,64 +156,6 @@ def clean_gff_string(gff_string):
 
 def reverse_complement_text(seq):
     return str(Seq(str(seq)).reverse_complement())
-
-
-def gff_to_genbank(gff_path, fasta_path, out_path, organism="simulated organism"):
-    """Convert an on-disk GFF3 file (+ its companion FASTA) to a GenBank
-    file by actually parsing the GFF with BCBio.GFF, rather than reusing
-    the in-memory SeqRecords that were used to write the GFF in the first
-    place. This exercises a real gff -> genbank conversion step."""
-
-    # BCBio.GFF.parse needs the base sequences to attach features to; it
-    # accepts a dict of {seq_id: SeqRecord} taken straight from the FASTA.
-    seq_dict = SeqIO.to_dict(SeqIO.parse(fasta_path, "fasta"))
-
-    gbk_records = []
-    with open(gff_path) as gff_handle:
-        from Bio.SeqFeature import SeqFeature, FeatureLocation
-
-            for rec in GFF.parse(gff_handle, base_dict=seq_dict):
-
-                rec.annotations["molecule_type"] = "DNA"
-                rec.annotations["organism"] = organism
-                rec.annotations["topology"] = "linear"
-
-                # Give the record a sensible name
-                if len(rec.name) > 16 or rec.name in ("", "<unknown name>"):
-                    rec.name = rec.id[:16]
-
-                # ------------------------------------------------------------------
-                # panX requires a SOURCE feature containing a strain qualifier
-                # ------------------------------------------------------------------
-
-                source_feature = None
-
-                for feature in rec.features:
-                    if feature.type == "source":
-                        source_feature = feature
-                        break
-
-                if source_feature is None:
-                    source_feature = SeqFeature(
-                        FeatureLocation(0, len(rec.seq)),
-                        type="source",
-                        qualifiers={}
-                    )
-                    rec.features.insert(0, source_feature)
-
-                q = source_feature.qualifiers
-
-                q["organism"] = [organism]
-                q["strain"] = [rec.id]
-                q["mol_type"] = ["genomic DNA"]
-                q["host"] = ["unknown"]
-                q["country"] = ["unknown"]
-                q["collection_date"] = ["unknown"]
-
-            gbk_records.append(rec)
-
-    with open(out_path, "w") as f:
-        SeqIO.write(gbk_records, f, "genbank")
 
 
 def validate_no_internal_stop_codons(gene_sequence, entry):
@@ -755,14 +740,6 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
             GFF.write(record_list, f, include_fasta = True)
         print("# Done!")
 
-        print("# Writing GenBank file per simulated assembly (via GFF parsing)...")
-        gff_to_genbank(
-            gff_path=out_name.replace(".fasta", ".gff"),
-            fasta_path=out_name,
-            out_path=out_name.replace(".fasta", ".gbk"),
-        )
-        print("# Done!")
-
     print("> Loop done!")
 
     # Write stupid tsv file without headers and with all the gffs and another one for all the fastas. Some programs require the former, the latter just in case
@@ -779,8 +756,8 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
         handle.write(outtxt)
 
     # Because of panX, also list each isolate's genbank annotation file
-    # (the .gbk files themselves are written per-isolate above, by
-    # parsing each isolate's on-disk .gff/.fasta pair with BCBio.GFF)
+    # (the .gbk files themselves are written per-isolate above, via
+    # gfftk.convert.gff2gbff parsing each isolate's on-disk .gff/.fasta pair)
     outtxt = ""
     for i in range(nisolates):
         outtxt += prefix.split("/")[-1] + "_iso_" + str(i) + "\t" + prefix + "_iso_" + str(i) + ".gbk\n"
