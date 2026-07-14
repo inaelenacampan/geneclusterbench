@@ -47,6 +47,8 @@ CLUSTERERS = [
             "panaroo",
             "ppanggolin",
             "panta",
+            "panx",
+
             ]
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
@@ -63,7 +65,8 @@ FANCYDICT = {
     "diamond/aa" : "Diamond (AA)",
     "panaroo/aa": "Panaroo",
     "ppanggolin/aa" : "Ppanggolin",
-    "panta/aa" : "Panta (AA)",
+    "panta/aa" : "Panta",
+    "panx/aa" : "PanX",
 }
 
 CONFIGDICT = {
@@ -91,6 +94,7 @@ CONFIGDICT_COLOURS = {
     "panaroo/aa": "#D94F21",
     "ppanggolin/aa":"#FEBD2B",
     "panta/aa": "#1B9E77",
+    "panx/aa" : "#66A61E"
 }
 
 
