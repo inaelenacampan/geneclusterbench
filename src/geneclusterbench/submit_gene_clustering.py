@@ -79,7 +79,7 @@ PANX_SCAFFOLD = (
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
     "for f in {inputfiles}; do ln -sf $f {gbkdir}/$(basename $f); done && "
     "export PATH={envbindir}:$PATH && "
-    "{execexec} -fn {workdir} -sl {species} -t {ncores} -dmi {dmi} || exit 1 && "
+    "{execexec} -fn {workdir} -sl {species} -st 1 3 4 5 6 -t {ncores} -dmi {dmi} || exit 1 && "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
@@ -382,30 +382,32 @@ def fix_genbank_metadata(gbk_file):
         for feature in record.features:
             if feature.type == "source":
                 source_found = True
-
                 if "organism" not in feature.qualifiers:
                     feature.qualifiers["organism"] = ["unknown"]
-
                 if "strain" not in feature.qualifiers:
                     feature.qualifiers["strain"] = ["unknown"]
 
-        # If there was no source feature at all
-        if not source_found:
-            from Bio.SeqFeature import SeqFeature, FeatureLocation
+            if feature.type == "CDS":
+                if "product" not in feature.qualifiers:
+                    feature.qualifiers["product"] = ["hypothetical_protein"]
+                if "translation" not in feature.qualifiers:
+                    feature.qualifiers["translation"] = [
+                        str(feature.extract(record.seq).translate())
+                    ]
 
+        if not source_found:
             source = SeqFeature(
                 FeatureLocation(0, len(record)),
                 type="source",
-                qualifiers={
-                    "organism": ["unknown"],
-                    "strain": ["unknown"]
-                }
+                qualifiers={"organism": ["unknown"], "strain": ["unknown"]}
             )
             record.features.insert(0, source)
 
         records.append(record)
 
-    SeqIO.write(records, gbk_file, "genbank")  # overwrite file
+    tmp_file = gbk_file + ".tmp"
+    SeqIO.write(records, tmp_file, "genbank")
+    os.replace(tmp_file, gbk_file)  # atomic on POSIX filesystems
 
 def get_sim_iso_gbks(simdir):
     matches = [

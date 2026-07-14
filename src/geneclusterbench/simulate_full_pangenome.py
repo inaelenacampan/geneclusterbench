@@ -654,6 +654,12 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
 
         record_list = []
         # panX (and most GenBank-driven tools) identify/extract proteins via
+        gff_fasta_to_genbank(
+            gff_path=out_name.replace(".fasta", ".gff"),
+            fasta_path=out_name,
+            out_path=out_name.replace(".fasta", ".gbk"),
+        )
+        print("# Done!")
         # the standard /locus_tag qualifier, not a custom /ID. Use a
         # per-genome, zero-padded, unique locus_tag ("iso<i>_00001", ...)
         # so downstream tools can find one CDS per tag as expected.
