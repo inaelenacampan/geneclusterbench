@@ -47,8 +47,8 @@ CLUSTERERS = [
             "panaroo",
             "ppanggolin",
             "panta",
-            "panx",
-
+            #"panx",
+            "sketch"
             ]
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
@@ -66,7 +66,8 @@ FANCYDICT = {
     "panaroo/aa": "Panaroo",
     "ppanggolin/aa" : "Ppanggolin",
     "panta/aa" : "Panta",
-    "panx/aa" : "PanX",
+    "sketch/aa" : "Sketch"
+    #"panx/aa" : "PanX",
 }
 
 CONFIGDICT = {
@@ -94,7 +95,9 @@ CONFIGDICT_COLOURS = {
     "panaroo/aa": "#D94F21",
     "ppanggolin/aa":"#FEBD2B",
     "panta/aa": "#1B9E77",
-    "panx/aa" : "#66A61E"
+    "sketch/aa" : "#66A61E"
+
+    #"panx/aa" : "#66A61E"
 }
 
 
@@ -609,7 +612,9 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
             listoflists.append(row)
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
         return outdf.set_index("cluster_id")
-
+    
+    if clusterer == "sketch":
+        return
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
 
 def count_singleton_clusters(thedf):
@@ -655,7 +660,8 @@ def check_status_of_folder(clusterer, path):
         filenam = "panaroo/combined_protein_cdhit_out.txt.clstr"
     elif clusterer == "ppanggolin":
         filenam = "ppanggolin/pangenome.h5"
-
+    elif clusterer == "sketch":
+        filenam = "distance_clustering/clusters.tsv"
     else:
         print("Invalid clusterer " + clusterer)
         return False
