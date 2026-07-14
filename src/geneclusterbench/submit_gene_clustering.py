@@ -462,10 +462,11 @@ def submit_clustering_jobs(args):
                         suffix = f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
                         analysisdir = (
                             os.path.join(
-                                args.gcb_repo,
-                                "sketch_analysis",
+                                generaloutdir,
+                                "simulations",
                                 assembly,
                                 str(seed),
+                                "sketch",
                                 "distance_clustering",
                             )
                             if process == "sketch"
