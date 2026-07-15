@@ -179,6 +179,24 @@ def get_or_write_ppanggolin_anno_list(simdir):
                 handle.write(f"{genome_name}\t{os.path.join(simdir, gff)}\n")
     return listpath
 
+def get_gene_list_for_sketch(simdir, seqtype):
+    """Build a sketchlib-style name/path tsv where each 'genome' is really
+    one gene from *_for_clustering(_aa).fasta, so the sketch sample name
+    is exactly the ground-truth gene_id."""
+    fasta_path = get_clustering_fasta(simdir, seqtype)
+
+    genes_dir = os.path.join(simdir, f"sketch_genes_{seqtype}")
+    os.makedirs(genes_dir, exist_ok=True)
+
+    tsv_path = os.path.join(simdir, f"_sketch_gene_list_{seqtype}.tsv")
+    if not os.path.isfile(tsv_path):
+        with open(tsv_path, "w") as tsv:
+            for record in SeqIO.parse(fasta_path, "fasta"):
+                gene_fasta = os.path.join(genes_dir, record.id + ".fasta")
+                if not os.path.isfile(gene_fasta):
+                    SeqIO.write([record], gene_fasta, "fasta")
+                tsv.write(f"{record.id}\t{gene_fasta}\n")
+    return tsv_path
 
 def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9, analysisdir=None, gcbrepo=None):
     
@@ -454,7 +472,7 @@ def submit_clustering_jobs(args):
                     elif process == "panx":
                         infile = get_sim_iso_gbks(simdir)
                     elif process == "sketch":
-                        infile = get_fasta_file_list(simdir)
+                        infile = get_gene_list_for_sketch(simdir, "aa")   # was: get_fasta_file_list(simdir)  
                     else:
                         infile = get_sim_iso_gffs(simdir)
 
