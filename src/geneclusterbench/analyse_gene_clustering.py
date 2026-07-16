@@ -45,7 +45,7 @@ CLUSTERERS = [
             "mmseqs2", 
             "diamond", 
             "panaroo",
-            "ppanggolin",
+            #"ppanggolin",
             "panta",
             #"panx",
             "sketch"
@@ -57,6 +57,10 @@ AXIS_TITLE_FONT_SIZE = 10
 BASE_FONT_SIZE = 8
 DOPREM = True
 
+SKETCH_METHOD_NAMES = ["hdbscan_dist", "hdbscan_tsne", "hdbscan_umap"]
+
+DEFAULT_FIGSIZE = (10, 6.5)
+
 FANCYDICT = {
     "cdhit/nt": "CD-HIT (NT)",
     "mmseqs2/nt": "MMseqs2 (NT)",
@@ -66,9 +70,17 @@ FANCYDICT = {
     "panaroo/aa": "Panaroo",
     "ppanggolin/aa" : "Ppanggolin",
     "panta/aa" : "Panta",
-    "sketch/aa" : "Sketch"
     #"panx/aa" : "PanX",
+    
+    "hdbscan_dist/aa": "Sketch - dist*",
+    "hdbscan_tsne/aa": "Sketch - t-SNE*",
+    "hdbscan_umap/aa": "Sketch - UMAP*",
 }
+
+SKETCH_FOOTNOTE = (
+    "* Sketch/HDBSCAN methods run once per seed on a fixed embedding; "
+    "there is no c (minimum sequence identity) sweep, so no averaging over c is performed."
+)
 
 CONFIGDICT = {
     "adj_rand_index": {
@@ -95,9 +107,11 @@ CONFIGDICT_COLOURS = {
     "panaroo/aa": "#D94F21",
     "ppanggolin/aa":"#FEBD2B",
     "panta/aa": "#1B9E77",
-    "sketch/aa" : "#66A61E"
-
     #"panx/aa" : "#66A61E"
+    
+    "hdbscan_dist/aa": "#66A61E",
+    "hdbscan_tsne/aa": "#3C7A0E",
+    "hdbscan_umap/aa": "#A6D854",
 }
 
 
@@ -614,8 +628,72 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
         return outdf.set_index("cluster_id")
     
     if clusterer == "sketch":
-        return
+        raise RuntimeError(
+            "get_df_from_clusterer('sketch', ...) should not be called directly; "
+            "use get_dfs_from_sketch(), since one sketch folder can contain "
+            "several methods (hdbscan_dist/hdbscan_tsne/hdbscan_umap)."
+        )
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
+
+
+def get_dfs_from_sketch(folderpath, true_max_gene=None):
+    
+    tsv_path = os.path.join(folderpath, "distance_clustering", "clusters.tsv")
+    if not os.path.isfile(tsv_path):
+        return {}
+ 
+    alldf = pd.read_csv(tsv_path, sep="\t")
+    # Gene ids in clustering.tsv look like "geneid_0_1" (an extra isoform-style
+    # suffix); strip that down to "geneid_0" so it matches the plain
+    # "geneid_N" convention used everywhere else in this script.
+    alldf["member"] = alldf["member"].apply(
+        lambda gid: "_".join(gid.split("_")[:2])
+    )
+ 
+    outdict = {}
+    for method_name, methoddf in alldf.groupby("method"):
+        genelist = sorted(
+            set(methoddf["member"]), key=lambda x: int(x.split("_")[1])
+        )
+        gene_nums = {int(g.split("_")[1]) for g in genelist}
+ 
+        max_gene = max(gene_nums) if gene_nums else -1
+        if true_max_gene is not None:
+            max_gene = max(max_gene, true_max_gene)
+ 
+        # Pad with genes sketch never emitted a row for (e.g. filtered out
+        # upstream), same rationale as the panaroo/ppanggolin/panta branches.
+        missing = [
+            f"geneid_{i}" for i in range(max_gene + 1) if i not in gene_nums
+        ]
+        if missing:
+            genelist = genelist + missing
+            genelist.sort(key=lambda x: int(x.split("_")[1]))
+ 
+        cluster_ids = sorted(methoddf["cluster_id"].unique())
+        cluster_to_genes = methoddf.groupby("cluster_id")["member"].apply(set)
+ 
+        listoflists = []
+        for cluster_index, cid in enumerate(cluster_ids):
+            genes_in_cluster = cluster_to_genes[cid]
+            row = [cluster_index] + [
+                1.0 if gene in genes_in_cluster else -1.0 for gene in genelist
+            ]
+            listoflists.append(row)
+ 
+        if missing:
+            missingset = set(missing)
+            new_cluster_id = len(cluster_ids)
+            row = [new_cluster_id] + [
+                1.0 if gene in missingset else -1.0 for gene in genelist
+            ]
+            listoflists.append(row)
+ 
+        outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
+        outdict[method_name] = outdf.set_index("cluster_id")
+ 
+    return outdict
+
 
 def count_singleton_clusters(thedf):
     
@@ -746,7 +824,7 @@ def get_info_from_folder(theargs):
                 stacklevel=2,
             )
             continue
-        tmpseqtype = paramdict.get("st", "aa" if tmpclusterer in ("panaroo", "ppanggolin", "panta") else DEFAULT_PARAMS["st"])
+        tmpseqtype = paramdict.get("st", "aa" if tmpclusterer in ("panaroo", "ppanggolin", "panta", "sketch") else DEFAULT_PARAMS["st"])
         if tmpclusterer == "diamond" and tmpseqtype == "nt":
             warnings.warn(
                 f"Skipping disabled diamond+nt result folder {folderpath}",
@@ -769,6 +847,35 @@ def get_info_from_folder(theargs):
             )
             continue
         if not check_status_of_folder(tmpclusterer, folderpath):
+            continue
+
+        if tmpclusterer == "sketch":
+            sketch_dfs = get_dfs_from_sketch(folderpath, true_max_gene)
+            if not sketch_dfs:
+                warnings.warn(
+                    f"No sketch clusters.tsv files found in {folderpath}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                continue
+            runtime = get_time_diff_from_file(os.path.join(folderpath, "timebenchmark.txt"))
+            for method_name, thedf in sketch_dfs.items():
+                n_clusters = len(thedf.index)
+                n_singletons = count_singleton_clusters(thedf)
+                n_pairs = count_pairs_clusters(thedf)
+                
+                paramlist = [
+                    tmpseqtype if el == "st" else DEFAULT_PARAMS[el]
+                    for el in PARAMORDER
+                ]
+                listoflists.append(
+                    calculate_values_from_cluster_matrix(
+                        (theass, theseed, method_name), thedf, truthlabels, truthdf
+                    )
+                    + [n_clusters, n_singletons, n_pairs]
+                    + paramlist
+                    + [runtime]
+                )
             continue
 
         thedf = get_df_from_clusterer(tmpclusterer, folderpath, true_max_gene)
@@ -815,7 +922,7 @@ def plotter(theargs):
         )
         return
 
-    fig = plt.figure(1, dpi=150)
+    fig = plt.figure(1, dpi=150, figsize=DEFAULT_FIGSIZE)
     ax = fig.subplots()
     xs = list(set(list(subdf["c"].astype(float))))
     xs.sort()
@@ -826,7 +933,10 @@ def plotter(theargs):
         ynams = [
             el + "/" + seqtype
             for el in clusterers
-            if el in availcl and (el + "/" + seqtype) in FANCYDICT and (el + "/" + seqtype) in CONFIGDICT_COLOURS
+            if el in availcl
+            and el not in SKETCH_METHOD_NAMES  # no c sweep for sketch/HDBSCAN methods
+            and (el + "/" + seqtype) in FANCYDICT
+            and (el + "/" + seqtype) in CONFIGDICT_COLOURS
         ]
         ymean = np.zeros((len(ynams), len(xs)))
         ystd = np.zeros((len(ynams), len(xs)))
@@ -961,7 +1071,7 @@ def plotter_pointplots(theargs):
         ycount.append(tmpdf.count())
         ystd.append(tmpdf.std() if tmpdf.count() >= 2 else 0.0)
 
-    fig = plt.figure(1, dpi=150)
+    fig = plt.figure(1, dpi=150, figsize=DEFAULT_FIGSIZE)
     ax = fig.subplots()
     positions = list(range(len(x)))
     bar_width = 0.5
@@ -1031,6 +1141,12 @@ def plotter_pointplots(theargs):
     plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans, horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
     if DOPREM:
         plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold, horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
+    if any(value.split("/")[0] in SKETCH_METHOD_NAMES for value in x):
+        plt.text(
+            0, -0.13, SKETCH_FOOTNOTE,
+            fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
+            horizontalalignment="left", verticalalignment="top", transform=ax.transAxes,
+        )
 
     for ext in ["png", "pdf", "svg"]:
         fig.savefig(
@@ -1089,7 +1205,7 @@ def number_of_clusters_violin(theargs):
         data.append(tmpdf.values)
         counts.append(tmpdf.count())
 
-    fig = plt.figure(1, dpi=150)
+    fig = plt.figure(1, dpi=150, figsize=DEFAULT_FIGSIZE)
     ax = fig.subplots()
     positions = list(range(1, len(x) + 1))
 
@@ -1135,6 +1251,12 @@ def number_of_clusters_violin(theargs):
     plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans, horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
     if DOPREM:
         plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold, horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
+    if any(value.split("/")[0] in SKETCH_METHOD_NAMES for value in x):
+        plt.text(
+            0, -0.13, SKETCH_FOOTNOTE,
+            fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
+            horizontalalignment="left", verticalalignment="top", transform=ax.transAxes,
+        )
 
     outnamescaff = name.replace(" ", "").replace("#", "NumberOf")
     for ext in ["png", "pdf", "svg"]:
@@ -1204,7 +1326,7 @@ def number_of_clusters_stacked_bar(theargs):
     positions = list(range(len(x)))
     bar_width = 0.5
 
-    fig = plt.figure(1, dpi=150, figsize=(max(5, len(x) * 1.4), 5))
+    fig = plt.figure(1, dpi=150, figsize=(max(DEFAULT_FIGSIZE[0], len(x) * 1.6), DEFAULT_FIGSIZE[1]))
     ax = fig.subplots()
 
     import matplotlib.patches as mpatches
@@ -1278,6 +1400,12 @@ def number_of_clusters_stacked_bar(theargs):
         labelspacing=0.3,
         ncol=len(method_handles),       # all in one row
     )
+    if any(value.split("/")[0] in SKETCH_METHOD_NAMES for value in x):
+        plt.text(
+            0.5, -0.30, SKETCH_FOOTNOTE,
+            fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
+            horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
+        )
 
     for ext in ["png", "pdf", "svg"]:
         fig.savefig(
@@ -1310,6 +1438,8 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
     clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
     x = []
     for clusterer, seqtype in [(c, st) for st in SEQTYPES for c in clusterers]:
+        if clusterer in SKETCH_METHOD_NAMES:
+            continue  
         combo = clusterer + "/" + seqtype
         if combo not in FANCYDICT or combo not in CONFIGDICT_COLOURS:
             continue
@@ -1356,7 +1486,7 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
             mean_pairs[m_idx, c_idx]      = p
             mean_rest[m_idx, c_idx]       = t - s - p
 
-    fig = plt.figure(1, dpi=150, figsize=(max(8, n_c * n_methods * 0.55), 5))
+    fig = plt.figure(1, dpi=150, figsize=(max(DEFAULT_FIGSIZE[0], n_c * n_methods * 0.65), DEFAULT_FIGSIZE[1]))
     ax = fig.subplots()
 
     group_positions = np.arange(n_c) * group_spacing
