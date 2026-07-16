@@ -45,7 +45,7 @@ CLUSTERERS = [
             "mmseqs2", 
             "diamond", 
             "panaroo",
-            #"ppanggolin",
+            "ppanggolin",
             "panta",
             #"panx",
             "sketch"
