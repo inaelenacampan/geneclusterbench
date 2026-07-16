@@ -654,18 +654,12 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
 
         record_list = []
         # panX (and most GenBank-driven tools) identify/extract proteins via
-        gff_fasta_to_genbank(
-            gff_path=out_name.replace(".fasta", ".gff"),
-            fasta_path=out_name,
-            out_path=out_name.replace(".fasta", ".gbk"),
-        )
-        print("# Done!")
         # the standard /locus_tag qualifier, not a custom /ID. Use a
         # per-genome, zero-padded, unique locus_tag ("iso<i>_00001", ...)
         # so downstream tools can find one CDS per tag as expected.
         locus_tag_counter = 0
         for iS in temp_seq_dict: # These are the contigs
-            unique_id = f"iso{i}_{iS}"
+            unique_id = f"{iS}"
             record_list.append(SeqRecord(Seq(''.join(temp_seq_dict[iS])), id=unique_id, description=""))
             record_list[-1].features = []
             if iS in GFF_entries:
@@ -744,6 +738,16 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
         print("# Writing GFF files per simulated assembly...")
         with open(out_name.replace(".fasta", ".gff"), "w") as f:
             GFF.write(record_list, f, include_fasta = True)
+        print("# Done!")
+
+        # panX (and most GenBank-driven tools) identify/extract proteins via
+        # the standard /locus_tag qualifier, not a custom /ID.
+        print("# Writing GenBank file...")
+        gff_fasta_to_genbank(
+            gff_path=out_name.replace(".fasta", ".gff"),
+            fasta_path=out_name,
+            out_path=out_name.replace(".fasta", ".gbk"),
+        )
         print("# Done!")
 
     print("> Loop done!")
