@@ -101,7 +101,7 @@ from Bio.SeqFeature import SeqFeature, FeatureLocation
 def gff_fasta_to_genbank(
     gff_file,
     fasta_file,
-    genbank_file,
+    out_file,
     strain=None
 ):
     from BCBio import GFF
@@ -134,7 +134,7 @@ def gff_fasta_to_genbank(
 
             records.append(record)
 
-    SeqIO.write(records, genbank_file, "genbank")
+    SeqIO.write(records, out_file, "genbank")
 
 
 def clean_gff_string(gff_string):
@@ -669,7 +669,8 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
                     qualifiers = {
                         "source"    : "simulation",
                         "ID"        : iG.id,
-                        "locus_tag" : f"iso{i}_{locus_tag_counter:05d}",
+                        #"locus_tag" : f"iso{i}_{locus_tag_counter:05d}",
+                        "locus_tag" : iG.id,
                         "score"     : 1.0,
                     }
                     feature = SeqFeature(
@@ -744,9 +745,9 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
         # the standard /locus_tag qualifier, not a custom /ID.
         print("# Writing GenBank file...")
         gff_fasta_to_genbank(
-            gff_path=out_name.replace(".fasta", ".gff"),
-            fasta_path=out_name,
-            out_path=out_name.replace(".fasta", ".gbk"),
+            gff_file=out_name.replace(".fasta", ".gff"),
+            fasta_file=out_name,
+            out_file=out_name.replace(".fasta", ".gbk"),
         )
         print("# Done!")
 
