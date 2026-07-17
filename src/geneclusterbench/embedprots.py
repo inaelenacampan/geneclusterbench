@@ -18,10 +18,10 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 print("> Loading models")
 # Load the tokenizer
-tokenizer = T5Tokenizer.from_pretrained('Rostlab/ProstT5', do_lower_case=False, legacy = True, cache_dir = "/hps/nobackup/jlees/vrbouza/cache/huggingface")
+tokenizer = T5Tokenizer.from_pretrained('Rostlab/ProstT5', do_lower_case=False, legacy = True, cache_dir = "/hps/nobackup/jlees/campan/cache/huggingface")
 
 # Load the model
-model = T5EncoderModel.from_pretrained("Rostlab/ProstT5", cache_dir = "/hps/nobackup/jlees/vrbouza/cache/huggingface").to(device)
+model = T5EncoderModel.from_pretrained("Rostlab/ProstT5", cache_dir = "/hps/nobackup/jlees/campan/cache/huggingface").to(device)
 
 # only GPUs support half-precision currently; if you want to run on CPU use full-precision (not recommended, much slower)
 model.float() if device.type=='cpu' else model.half()
@@ -36,7 +36,7 @@ listofids   = []
 #### Let's start first with only one file
 
 print("> Reading proteins")
-thefile = "/nfs/research/jlees/vrbouza/data/2024_12_10_AtBSamDataset/mmseqs2_batch_13.faa"
+thefile = "/nfs/research/jlees/campan/proteins.faa"
 # maxprots = 5000
 #maxprots = 30000
 maxprots = 1000000
@@ -114,10 +114,10 @@ outembeds = []
 for iP in listofprots:
     print("> Tokenising protein")
     # tokenize sequences and pad up to the longest sequence in the batch
-    ids = tokenizer.batch_encode_plus([iP],
-                                      add_special_tokens = True,
-                                      padding = "longest",
-                                      return_tensors = 'pt').to(device)
+    ids = tokenizer([iP],
+                     add_special_tokens = True,
+                     padding = "longest",
+                     return_tensors = 'pt').to(device)
 
     print("> Generating embedding")
     # generate embeddings
@@ -133,7 +133,12 @@ for iP in listofprots:
     # print(embedding_rpr)
     # sys.exit()
 
-    outembeds.append(embedding_rpr.last_hidden_state[0, 1:6].mean(dim = 0).cpu().numpy())
+    # number of real (non-padded) tokens for this sequence, including the
+    # prepended <AA2fold>/<fold2AA> token and the trailing </s> token
+    seq_len = int(ids.attention_mask[0].sum().item())
+    # drop position 0 (prefix token) and the final token (EOS) so we only
+    # average over the actual amino-acid / 3Di residue positions
+    outembeds.append(embedding_rpr.last_hidden_state[0, 1:seq_len - 1].mean(dim = 0).cpu().numpy())
     del ids,embedding_rpr
 
 
