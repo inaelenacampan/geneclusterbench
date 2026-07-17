@@ -79,7 +79,7 @@ PANX_SCAFFOLD = (
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
     "for f in {inputfiles}; do ln -sf $f {gbkdir}/$(basename $f); done && "
     "export PATH={envbindir}:$PATH && "
-    "{execexec} -fn {workdir} -sl {species} -st 1 3 4 5 6 -t {ncores} -dmi {dmi} || exit 1 && "
+    "{execexec} -fn {workdir} -sl {species} -st 1 3 4 5 6 -t {ncores} -dmi {dmi} && "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
@@ -597,7 +597,7 @@ def main():
     parser.add_argument("--seeds", "-s", default=DEFAULT_SEEDS)
     parser.add_argument("--outdir", "-o", default="./")
     parser.add_argument("--temp-outdir", "-to", default="/hps/nobackup/jlees/campan/tmp/")
-    parser.add_argument("--threads", "-j", default=4, type=int)
+    parser.add_argument("--threads", "-j", default=8, type=int)
     parser.add_argument("--time", "-t", default="1-12:00:00")
     parser.add_argument("--mem", "-m", default="48")
     parser.add_argument("--max-simultaneous-cores", "-M", default=2000, type=int)

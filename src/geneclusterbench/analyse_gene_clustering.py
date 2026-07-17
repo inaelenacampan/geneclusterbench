@@ -47,7 +47,7 @@ CLUSTERERS = [
             "panaroo",
             "ppanggolin",
             "panta",
-            #"panx",
+            "panx",
             "sketch"
             ]
 SEQTYPES = ["nt", "aa"]
@@ -70,7 +70,7 @@ FANCYDICT = {
     "panaroo/aa": "Panaroo",
     "ppanggolin/aa" : "Ppanggolin",
     "panta/aa" : "Panta",
-    #"panx/aa" : "PanX",
+    "panx/aa" : "PanX",
     
     "hdbscan_dist/aa": "Sketch - dist*",
     "hdbscan_tsne/aa": "Sketch - t-SNE*",
@@ -107,7 +107,7 @@ CONFIGDICT_COLOURS = {
     "panaroo/aa": "#D94F21",
     "ppanggolin/aa":"#FEBD2B",
     "panta/aa": "#1B9E77",
-    #"panx/aa" : "#66A61E"
+    "panx/aa" : "#7570B3",
     
     "hdbscan_dist/aa": "#66A61E",
     "hdbscan_tsne/aa": "#3C7A0E",
@@ -633,6 +633,96 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
             "use get_dfs_from_sketch(), since one sketch folder can contain "
             "several methods (hdbscan_dist/hdbscan_tsne/hdbscan_umap)."
         )
+
+    if clusterer == "panx":
+        clusters_file = os.path.join(folderpath, "protein_faa/diamond_matches/allclusters_final.tsv")
+        if not os.path.isfile(clusters_file):
+            raise RuntimeError(
+                f"PanX did not create expected file: {clusters_file}"
+            )
+ 
+        def extract_geneid(raw):
+            match = re.search(r"geneid_\d+(?:_iso_\d+)?", raw)
+            return match.group(0) if match else None
+ 
+        listofclusters = []
+        cluster_to_genes = {}
+        setofgenes = set()
+ 
+        with open(clusters_file, "r") as f:
+            for cluster_index, line in enumerate(f):
+                line = line.strip()
+                if not line:
+                    continue
+                fields = line.split("\t")
+                genes_in_cluster = set()
+                for field in fields:
+                    geneid_clean = extract_geneid(field)
+                    if geneid_clean is None:
+                        raise RuntimeError(
+                            f"Could not parse a geneid_ token out of panx gene id: {field!r}"
+                        )
+                    genes_in_cluster.add(geneid_clean)
+                    setofgenes.add(geneid_clean)
+                listofclusters.append(cluster_index)
+                cluster_to_genes[cluster_index] = genes_in_cluster
+ 
+        genelist = sorted(
+            setofgenes,
+            key=lambda x: int(re.search(r"geneid_(\d+)", x).group(1)),
+        )
+ 
+        # ---------------------------------------------------------
+        # Add missing gene IDs before creating rows (genes panx
+        # dropped/filtered and that never appear in allclusters.tsv)
+        # ---------------------------------------------------------
+        gene_nums = {
+            int(re.search(r"geneid_(\d+)", g).group(1))
+            for g in genelist
+        }
+ 
+        max_gene = max(gene_nums) if gene_nums else -1
+        if true_max_gene is not None:
+            max_gene = max(max_gene, true_max_gene)
+ 
+        missing = [
+            f"geneid_{i}"
+            for i in range(max_gene + 1)
+            if i not in gene_nums
+        ]
+ 
+        if missing:
+            genelist.extend(missing)
+            genelist.sort(
+                key=lambda x: int(re.search(r"geneid_(\d+)", x).group(1))
+            )
+ 
+        # ---------------------------------------------------------
+        # Create normal clusters
+        # ---------------------------------------------------------
+        listoflists = []
+        for cluster_index in listofclusters:
+            genes_in_cluster = cluster_to_genes[cluster_index]
+            row = [cluster_index] + [
+                1.0 if gene in genes_in_cluster else -1.0 for gene in genelist
+            ]
+            listoflists.append(row)
+ 
+        # ---------------------------------------------------------
+        # Create one new cluster containing all missing genes
+        # ---------------------------------------------------------
+        if missing:
+            new_cluster_id = len(listofclusters)
+            missingset = set(missing)
+            row = [new_cluster_id] + [
+                1.0 if gene in missingset else -1.0 for gene in genelist
+            ]
+            listoflists.append(row)
+ 
+        outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
+ 
+        return outdf.set_index("cluster_id")
+
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
 
 
@@ -740,6 +830,8 @@ def check_status_of_folder(clusterer, path):
         filenam = "ppanggolin/pangenome.h5"
     elif clusterer == "sketch":
         filenam = "distance_clustering/clusters.tsv"
+    elif clusterer == "panx":
+        filenam = "protein_faa/diamond_matches/allclusters_final.tsv"
     else:
         print("Invalid clusterer " + clusterer)
         return False
@@ -824,7 +916,7 @@ def get_info_from_folder(theargs):
                 stacklevel=2,
             )
             continue
-        tmpseqtype = paramdict.get("st", "aa" if tmpclusterer in ("panaroo", "ppanggolin", "panta", "sketch") else DEFAULT_PARAMS["st"])
+        tmpseqtype = paramdict.get("st", "aa" if tmpclusterer in ("panaroo", "ppanggolin", "panta", "sketch", "panx") else DEFAULT_PARAMS["st"])
         if tmpclusterer == "diamond" and tmpseqtype == "nt":
             warnings.warn(
                 f"Skipping disabled diamond+nt result folder {folderpath}",
@@ -842,6 +934,13 @@ def get_info_from_folder(theargs):
         if tmpclusterer == "panta" and tmpseqtype == "nt":
             warnings.warn(
                 f"Skipping disabled panta+nt result folder {folderpath}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
+        if tmpclusterer == "panx" and tmpseqtype == "nt":
+            warnings.warn(
+                f"Skipping disabled panx+nt result folder {folderpath}",
                 RuntimeWarning,
                 stacklevel=2,
             )
