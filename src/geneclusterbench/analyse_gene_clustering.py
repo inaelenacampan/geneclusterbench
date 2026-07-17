@@ -648,24 +648,39 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
         listofclusters = []
         cluster_to_genes = {}
         setofgenes = set()
+        n_skipped_lines = 0
  
         with open(clusters_file, "r") as f:
-            for cluster_index, line in enumerate(f):
-                line = line.strip()
+            for line_number, raw_line in enumerate(f, start=1):
+                line = raw_line.strip()
                 if not line:
                     continue
                 fields = line.split("\t")
                 genes_in_cluster = set()
+                corrupted = False
                 for field in fields:
                     geneid_clean = extract_geneid(field)
                     if geneid_clean is None:
-                        raise RuntimeError(
-                            f"Could not parse a geneid_ token out of panx gene id: {field!r}"
-                        )
+                        corrupted = True
+                        break
                     genes_in_cluster.add(geneid_clean)
-                    setofgenes.add(geneid_clean)
+ 
+                if corrupted:
+                    n_skipped_lines += 1
+                    continue
+ 
+                setofgenes.update(genes_in_cluster)
+                cluster_index = len(listofclusters)
                 listofclusters.append(cluster_index)
                 cluster_to_genes[cluster_index] = genes_in_cluster
+ 
+        if n_skipped_lines:
+            warnings.warn(
+                f"panx: skipped {n_skipped_lines} corrupted cluster line(s) "
+                f"(missing geneid_ token) in {clusters_file}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
  
         genelist = sorted(
             setofgenes,
@@ -722,6 +737,7 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
  
         return outdf.set_index("cluster_id")
+
 
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
 
