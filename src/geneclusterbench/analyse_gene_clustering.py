@@ -72,9 +72,13 @@ FANCYDICT = {
     "panta/aa" : "Panta",
     "panx/aa" : "PanX",
     
-    "hdbscan_dist/aa": "Sketch - dist*",
-    "hdbscan_tsne/aa": "Sketch - t-SNE*",
-    "hdbscan_umap/aa": "Sketch - UMAP*",
+    "hdbscan_dist/aa": "Sketch - dist* (AA)",
+    "hdbscan_tsne/aa": "Sketch - t-SNE* (AA)",
+    "hdbscan_umap/aa": "Sketch - UMAP* (AA)",
+
+    "hdbscan_dist/nt": "Sketch - dist* (NT)",
+    "hdbscan_tsne/nt": "Sketch - t-SNE* (NT)",
+    "hdbscan_umap/nt": "Sketch - UMAP* (NT)",
 }
 
 SKETCH_FOOTNOTE = (
@@ -99,19 +103,29 @@ CONFIGDICT = {
 }
 
 CONFIGDICT_COLOURS = {
-    "cdhit/nt": "#900C3F",
-    "cdhit/aa": "#182B55",
-    "mmseqs2/nt": "#5F4E94",
-    "mmseqs2/aa": "#A291C7",
-    "diamond/aa" : "#82CBEC",
-    "panaroo/aa": "#D94F21",
-    "ppanggolin/aa":"#FEBD2B",
-    "panta/aa": "#1B9E77",
-    "panx/aa" : "#7570B3",
-    
-    "hdbscan_dist/aa": "#66A61E",
-    "hdbscan_tsne/aa": "#3C7A0E",
-    "hdbscan_umap/aa": "#A6D854",
+    "cdhit/aa":        "#FF6B9A",
+    "cdhit/nt":        "#C73E72",
+
+    "mmseqs2/aa":      "#A78BFA",
+    "mmseqs2/nt":      "#7C5CE0",
+
+    "diamond/aa":      "#67B7F7",
+
+    "panaroo/aa":      "#FF8A5B",
+
+    "ppanggolin/aa":   "#FFCF5A",
+
+    "panta/aa":        "#4ECDC4",
+
+    "panx/aa":         "#B39DDB",
+
+    "hdbscan_dist/aa": "#7BC043",
+    "hdbscan_tsne/aa": "#4C9A2A",
+    "hdbscan_umap/aa": "#A3D977",
+
+    "hdbscan_dist/nt": "#5DA12F",
+    "hdbscan_tsne/nt": "#34751B",
+    "hdbscan_umap/nt": "#7FBE5A",
 }
 
 
@@ -757,9 +771,9 @@ def get_dfs_from_sketch(folderpath, true_max_gene=None):
     # suffix); strip that down to "geneid_0" so it matches the plain
     # "geneid_N" convention used everywhere else in this script.
     alldf["member"] = alldf["member"].apply(
-        lambda gid: "_".join(gid.split("_")[:2])
+        lambda gid: "_".join(gid.split("_")[:2]) if gid.count("_") >= 2 else gid
     )
- 
+    
     outdict = {}
     for method_name, methoddf in alldf.groupby("method"):
         genelist = sorted(
@@ -936,7 +950,7 @@ def get_info_from_folder(theargs):
                 stacklevel=2,
             )
             continue
-        tmpseqtype = paramdict.get("st", "aa" if tmpclusterer in ("panaroo", "ppanggolin", "panta", "sketch", "panx") else DEFAULT_PARAMS["st"])
+        tmpseqtype = paramdict.get("st", "aa" if tmpclusterer in ("panaroo", "ppanggolin", "panta", "panx") else DEFAULT_PARAMS["st"])
         if tmpclusterer == "diamond" and tmpseqtype == "nt":
             warnings.warn(
                 f"Skipping disabled diamond+nt result folder {folderpath}",

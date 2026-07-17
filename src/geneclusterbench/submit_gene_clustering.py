@@ -4,6 +4,7 @@ import argparse
 import os
 import time
 from pathlib import Path
+import glob
 
 # new data paths
 DEFAULT_DATAPATH = (
@@ -83,15 +84,28 @@ PANX_SCAFFOLD = (
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
-SKETCH_SCAFFOLD = (
-    "mkdir -p {workdir} && mkdir -p {sketchdir} && mkdir -p {analysisdir} && "
+# removed concat fasta? good / bad idea?
+SKETCH_SCAFFOLD_AA = (
+    "mkdir -p {workdir} && mkdir -p {sketchdir} && "
     "cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
-    "{execexec} sketch -f {inputfile} --concat-fasta -o {outputprefix} "
+    "{execexec} sketch -f {inputfile} -o {outputprefix} "
     "-s 64 -k 5 --seq-type aa --threads {ncores} -v && "
     "{execexec} dist {outputprefix} -o {distoutput} -k 5 --threads {ncores} -v && "
     "uv run --project {gcbrepo} python -m geneclusterbench.cluster_distance_file "
-    "--dist-file {distoutput} --out-dir {analysisdir} --nthreads {ncores} && "
+    "--dist-file {distoutput} --nthreads {ncores} && "
+    "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
+)
+
+SKETCH_SCAFFOLD_NT = (
+    "mkdir -p {workdir} && mkdir -p {sketchdir} && "
+    "cd {workdir} && "
+    "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
+    "{execexec} sketch -f {inputfile} -o {outputprefix} "
+    "-s 64 -k 5 --seq-type dna --threads {ncores} -v && "
+    "{execexec} dist {outputprefix} -o {distoutput} -k 5 --threads {ncores} -v && "
+    "uv run --project {gcbrepo} python -m geneclusterbench.cluster_distance_file "
+    "--dist-file {distoutput} --nthreads {ncores} && "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
@@ -179,10 +193,19 @@ def get_or_write_ppanggolin_anno_list(simdir):
                 handle.write(f"{genome_name}\t{os.path.join(simdir, gff)}\n")
     return listpath
 
+def write_scketch_list(simdir):
+    listpath = os.path.join(simdir, "scketch_nt_list.tsv")
+    if not os.path.isfile(listpath):
+        gffs = sorted(glob.glob(os.path.join(simdir, "*iso_*.fasta")))
+        if not gffs:
+            raise RuntimeError(f"No fasta files found in {simdir}")
+        with open(listpath, "w") as handle:
+            for gff in gffs:
+                genome_name = os.path.splitext(gff)[0]
+                handle.write(f"{genome_name}\t{os.path.join(simdir, gff)}\n")
+    return listpath
+
 def get_gene_list_for_sketch(simdir, seqtype):
-    """Build a sketchlib-style name/path tsv where each 'genome' is really
-    one gene from *_for_clustering(_aa).fasta, so the sketch sample name
-    is exactly the ground-truth gene_id."""
     fasta_path = get_clustering_fasta(simdir, seqtype)
 
     genes_dir = os.path.join(simdir, f"sketch_genes_{seqtype}")
@@ -198,7 +221,7 @@ def get_gene_list_for_sketch(simdir, seqtype):
                 tsv.write(f"{record.id}\t{gene_fasta}\n")
     return tsv_path
 
-def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9, analysisdir=None, gcbrepo=None):
+def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9, gcbrepo=None):
     
     if seqtype == "nt" :
         seq_arg = "nucleotide"
@@ -334,17 +357,31 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
         sketchexec = os.path.join(softwaredir, "sketchlib.rust/target/release/sketchlib")
         sketchdir = os.path.join(outfolder, "sketch")
 
-        return SKETCH_SCAFFOLD.format(
-            workdir=outfolder,
-            sketchdir=sketchdir,
-            analysisdir=analysisdir,
-            inputfile=infile,
-            execexec=sketchexec,
-            outputprefix=os.path.join(sketchdir, "sketch"),
-            distoutput=os.path.join(sketchdir, "output.dist"),
-            gcbrepo=gcbrepo,
-            ncores=nthreads,
-        )
+        if seqtype == "nt" :
+            return SKETCH_SCAFFOLD_NT.format(
+                workdir=outfolder,
+                sketchdir=sketchdir,
+                #analysisdir=analysisdir,
+                inputfile=infile,
+                execexec=sketchexec,
+                outputprefix=os.path.join(sketchdir, "sketch"),
+                distoutput=os.path.join(sketchdir, "output.dist"),
+                gcbrepo=gcbrepo,
+                ncores=nthreads,
+            )
+        else :
+            return SKETCH_SCAFFOLD_AA.format(
+                workdir=outfolder,
+                sketchdir=sketchdir,
+                #analysisdir=analysisdir,
+                inputfile=infile,
+                execexec=sketchexec,
+                outputprefix=os.path.join(sketchdir, "sketch"),
+                distoutput=os.path.join(sketchdir, "output.dist"),
+                gcbrepo=gcbrepo,
+                ncores=nthreads,
+            )
+        
     raise RuntimeError("Process " + proc + " not supported")
 
 
@@ -466,30 +503,16 @@ def submit_clustering_jobs(args):
                 continue
             for process in args.process:
                 
-                if process in ("panaroo", "ppanggolin", "panta", "panx", "sketch"):
+                if process in ("panaroo", "ppanggolin", "panta", "panx"):
                     if process == "ppanggolin":
                         infile = get_or_write_ppanggolin_anno_list(simdir)
                     elif process == "panx":
                         infile = get_sim_iso_gbks(simdir)
-                    elif process == "sketch":
-                        infile = get_gene_list_for_sketch(simdir, "aa")   # was: get_fasta_file_list(simdir)  
                     else:
                         infile = get_sim_iso_gffs(simdir)
 
                     for c_value in get_c_values_for_process(process, "aa"):
                         suffix = f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
-                        analysisdir = (
-                            os.path.join(
-                                generaloutdir,
-                                "simulations",
-                                assembly,
-                                str(seed),
-                                "sketch",
-                                "distance_clustering",
-                            )
-                            if process == "sketch"
-                            else None
-                        )
                         jobinfo.append(
                             get_command_for_process(
                                 process,
@@ -506,14 +529,18 @@ def submit_clustering_jobs(args):
                                 args.mem,
                                 args.softwaredir,
                                 c_value,
-                                analysisdir=analysisdir,
                                 gcbrepo=args.gcb_repo,
                             )
                         )
                 else:
                     for seqtype in args.sequence_type: # eg ; aa, nt
-                        
-                        infile = get_clustering_fasta(simdir, seqtype)
+                        if process == "sketch":
+                            if seqtype == "aa":
+                                infile = get_gene_list_for_sketch(simdir, "aa")
+                            else :
+                                infile = get_gene_list_for_sketch(simdir, "nt")
+                        else :
+                            infile = get_clustering_fasta(simdir, seqtype)
                         for c_value in get_c_values_for_process(process, seqtype):
                             suffix = f"_st-{seqtype}" + (
                                 f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
@@ -534,6 +561,7 @@ def submit_clustering_jobs(args):
                                     args.mem,
                                     args.softwaredir,
                                     c_value,
+                                    gcbrepo=args.gcb_repo
                                 )
                             )
 

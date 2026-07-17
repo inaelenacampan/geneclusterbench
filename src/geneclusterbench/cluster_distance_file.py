@@ -180,7 +180,7 @@ def fit_hdbscan_embedding(coords, nthreads):
     """Cluster samples from two-dimensional embedding coordinates."""
     model = hdbscan.HDBSCAN(
         algorithm="boruvka_balltree",
-        min_cluster_size=HDBSCAN_MIN_CLUSTER_SIZE,
+        #min_cluster_size=HDBSCAN_MIN_CLUSTER_SIZE,
         min_samples=HDBSCAN_MIN_SAMPLES,
         cluster_selection_epsilon=HDBSCAN_CLUSTER_SELECTION_EPSILON,
         allow_single_cluster=True,
