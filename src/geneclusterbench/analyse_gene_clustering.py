@@ -54,12 +54,12 @@ SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
 DEFAULT_PARAMS = {"st": "nt", "c": 0.9}
 AXIS_TITLE_FONT_SIZE = 10
-BASE_FONT_SIZE = 8
+BASE_FONT_SIZE = 7
 DOPREM = True
 
 SKETCH_METHOD_NAMES = ["hdbscan_dist", "hdbscan_tsne", "hdbscan_umap"]
 
-DEFAULT_FIGSIZE = (10, 6.5)
+DEFAULT_FIGSIZE = (14, 6.5)
 
 FANCYDICT = {
     "cdhit/nt": "CD-HIT (NT)",
@@ -634,6 +634,9 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
             "several methods (hdbscan_dist/hdbscan_tsne/hdbscan_umap)."
         )
 
+    
+        return outdf.set_index("cluster_id")
+
     if clusterer == "panx":
         clusters_file = os.path.join(folderpath, "protein_faa/diamond_matches/allclusters_final.tsv")
         if not os.path.isfile(clusters_file):
@@ -642,7 +645,7 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
             )
  
         def extract_geneid(raw):
-            match = re.search(r"geneid_\d+(?:_iso_\d+)?", raw)
+            match = re.search(r"geneid_\d+", raw)
             return match.group(0) if match else None
  
         listofclusters = []
@@ -673,7 +676,7 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
                 cluster_index = len(listofclusters)
                 listofclusters.append(cluster_index)
                 cluster_to_genes[cluster_index] = genes_in_cluster
- 
+        """
         if n_skipped_lines:
             warnings.warn(
                 f"panx: skipped {n_skipped_lines} corrupted cluster line(s) "
@@ -681,6 +684,7 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
                 RuntimeWarning,
                 stacklevel=2,
             )
+        """
  
         genelist = sorted(
             setofgenes,
@@ -735,7 +739,7 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
             listoflists.append(row)
  
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
- 
+    
         return outdf.set_index("cluster_id")
 
 
