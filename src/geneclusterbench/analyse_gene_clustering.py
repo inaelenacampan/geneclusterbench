@@ -81,6 +81,24 @@ FANCYDICT = {
     "hdbscan_umap/nt": "Sketch - UMAP* (NT)",
 }
 
+COMBO_ORDER = [
+    "cdhit/aa",
+    "cdhit/nt",
+    "mmseqs2/aa",
+    "mmseqs2/nt",
+    "diamond/aa",
+    "panaroo/aa",
+    "ppanggolin/aa",
+    "panta/aa",
+    "panx/aa",
+    "hdbscan_dist/aa",
+    "hdbscan_tsne/aa",
+    "hdbscan_umap/aa",
+    "hdbscan_dist/nt",
+    "hdbscan_tsne/nt",
+    "hdbscan_umap/nt",
+]
+
 SKETCH_FOOTNOTE = (
     "* Sketch/HDBSCAN methods run once per seed on a fixed embedding; "
     "there is no c (minimum sequence identity) sweep, so no averaging over c is performed."
@@ -1420,10 +1438,9 @@ def number_of_clusters_stacked_bar(theargs):
         )
         return
 
-    clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
     x = []
-    for clusterer, seqtype in [(c, st) for st in SEQTYPES for c in clusterers]:
-        combo = clusterer + "/" + seqtype
+    for combo in COMBO_ORDER:
+        clusterer, seqtype = combo.split("/")
         if combo not in FANCYDICT or combo not in CONFIGDICT_COLOURS:
             continue
         if len(list(subdf[
@@ -1489,7 +1506,7 @@ def number_of_clusters_stacked_bar(theargs):
     ax.set_xlim(-0.6, len(x) - 0.4)
     ax.set_ylim(0, np.nanmax(mean_total) * 1.2)
     ax.set_xticks(positions)
-    ax.set_xticklabels(x_fancy)
+    ax.set_xticklabels(x_fancy, rotation=35, ha="right", rotation_mode="anchor")
     ax.set_xlabel("Clusterer", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
     ax.set_ylabel("Number of clusters (adim.)", fontproperties=ibmplexsans, loc="top", fontsize=AXIS_TITLE_FONT_SIZE)
 
@@ -1512,6 +1529,25 @@ def number_of_clusters_stacked_bar(theargs):
         plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold,
                  horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
 
+    # bracket under the sketching methods, so readers see they're one family
+    sketch_idx = [i for i, val in enumerate(x) if val.split("/")[0] in SKETCH_METHOD_NAMES]
+    if sketch_idx:
+        lo, hi = min(sketch_idx), max(sketch_idx)
+        x0 = positions[lo] - bar_width / 2
+        x1 = positions[hi] + bar_width / 2
+        y_top = -0.22
+        y_bottom = -0.24
+        trans = ax.get_xaxis_transform()  # x in data coords, y in axes-fraction coords
+        ax.plot(
+            [x0, x0, x1, x1], [y_top, y_bottom, y_bottom, y_top],
+            transform=trans, color="black", linewidth=0.8, clip_on=False,
+        )
+        ax.text(
+            (x0 + x1) / 2, y_bottom - 0.015, "Sketching methods",
+            transform=trans, ha="center", va="top",
+            fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1, clip_on=False,
+        )
+
     # legend: method colours + segment shading, all in one block
     method_handles = [
         mpatches.Patch(facecolor=CONFIGDICT_COLOURS[k], label=FANCYDICT[k]) for k in x
@@ -1525,7 +1561,7 @@ def number_of_clusters_stacked_bar(theargs):
         handles=method_handles,
         labels=[h.get_label() for h in method_handles],
         loc="upper center",
-        bbox_to_anchor=(0.5, -0.18),   # below the x-axis
+        bbox_to_anchor=(0.5, -0.38),   # below the x-axis labels and the bracket
         frameon=False,
         prop=ibmplexsans,
         handlelength=0.8,
@@ -1535,7 +1571,7 @@ def number_of_clusters_stacked_bar(theargs):
     )
     if any(value.split("/")[0] in SKETCH_METHOD_NAMES for value in x):
         plt.text(
-            0.5, -0.30, SKETCH_FOOTNOTE,
+            0.5, -0.50, SKETCH_FOOTNOTE,
             fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
             horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
@@ -1568,12 +1604,11 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
         return
 
     xs = sorted(set(subdf["c"].astype(float)))
-    clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
     x = []
-    for clusterer, seqtype in [(c, st) for st in SEQTYPES for c in clusterers]:
+    for combo in COMBO_ORDER:
+        clusterer, seqtype = combo.split("/")
         if clusterer in SKETCH_METHOD_NAMES:
-            continue  
-        combo = clusterer + "/" + seqtype
+            continue
         if combo not in FANCYDICT or combo not in CONFIGDICT_COLOURS:
             continue
         if len(list(subdf[
@@ -1702,6 +1737,129 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
     for ext in ["png", "pdf", "svg"]:
         fig.savefig(
             os.path.join(outfolder, "_".join(["plot_stackedbar_c", datatype, assembly, "n_clusters"]) + "." + ext),
+            bbox_inches="tight",
+        )
+    fig.clf()
+    del fig, ax
+
+
+def methods_comparison_heatmap(theargs):
+    """Heatmap comparing all clustering methods side by side across the main
+    agreement-with-truth metrics (mean over seeds, at the default c). This is
+    the 'contingency-style' comparison view: rows = methods (in the requested
+    order), columns = metrics, colour = mean score."""
+    name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
+    ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
+
+    print(f"\t- Plotting method-comparison heatmap for simulations of {namedict[assembly]}")
+    subdf = datadf[
+        (datadf.index.get_level_values("assembly") == assembly)
+        & (datadf.index.get_level_values("simulations") == (datatype == "simulations"))
+        & (datadf["c"] == DEFAULT_PARAMS["c"])
+    ]
+
+    if subdf.empty:
+        warnings.warn(
+            f"No rows available for {assembly}/{datatype}; skipping method-comparison heatmap",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    metric_cols = ["adj_rand_index", "purity", "adj_mutual_info", "v_measure"]
+    metric_labels = ["Adjusted Rand\nindex", "Purity", "Adjusted mutual\ninformation", "V-measure"]
+
+    x = []
+    for combo in COMBO_ORDER:
+        clusterer, seqtype = combo.split("/")
+        if combo not in FANCYDICT:
+            continue
+        if len(subdf[
+            (subdf.index.get_level_values("clusterer") == clusterer)
+            & (subdf["st"] == seqtype)
+        ]):
+            x.append(combo)
+
+    if not x:
+        warnings.warn(
+            f"No clusterer/sequence-type rows available for {assembly}/{datatype}; "
+            "skipping method-comparison heatmap",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    mat = np.full((len(x), len(metric_cols)), np.nan)
+    for i, combo in enumerate(x):
+        clusterer, seqtype = combo.split("/")
+        tmpdf = subdf[
+            (subdf.index.get_level_values("clusterer") == clusterer)
+            & (subdf["st"] == seqtype)
+        ]
+        for j, metric_col in enumerate(metric_cols):
+            mat[i, j] = tmpdf[metric_col].astype(float).mean()
+
+    row_labels = [
+        FANCYDICT[c] + (" *" if c.split("/")[0] in SKETCH_METHOD_NAMES else "") for c in x
+    ]
+
+    fig = plt.figure(
+        1, dpi=150,
+        figsize=(max(6.0, len(metric_cols) * 1.6 + 2.0), max(4.0, len(x) * 0.42 + 1.5)),
+    )
+    ax = fig.subplots()
+    im = ax.imshow(mat, cmap="viridis", vmin=0, vmax=1, aspect="auto")
+
+    ax.set_xticks(range(len(metric_cols)))
+    ax.set_xticklabels(metric_labels, rotation=30, ha="right", rotation_mode="anchor")
+    ax.set_yticks(range(len(x)))
+    ax.set_yticklabels(row_labels)
+
+    for i in range(len(x)):
+        for j in range(len(metric_cols)):
+            val = mat[i, j]
+            if np.isnan(val):
+                continue
+            txt_color = "white" if val < 0.5 else "black"
+            ax.text(
+                j, i, f"{val:.2f}",
+                ha="center", va="center",
+                fontsize=BASE_FONT_SIZE, color=txt_color,
+                fontproperties=ibmplexsans,
+            )
+
+    ax.set_xticks(np.arange(len(metric_cols) + 1) - 0.5, minor=True)
+    ax.set_yticks(np.arange(len(x) + 1) - 0.5, minor=True)
+    ax.grid(which="minor", color="white", linewidth=1.5)
+    ax.tick_params(which="minor", bottom=False, left=False)
+    ax.tick_params(which="major", bottom=False, left=False)
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(ibmplexsans)
+
+    cbar = fig.colorbar(im, ax=ax, fraction=0.035, pad=0.03)
+    cbar.set_label("Mean score vs ground truth (adim.)", fontproperties=ibmplexsans)
+    for label in cbar.ax.get_yticklabels():
+        label.set_fontproperties(ibmplexsans)
+
+    plt.text(0, 1.03, namedict[assembly], fontproperties=ibmplexsansitalics,
+             horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
+    plt.text(1, 1.03, "Simulations", fontproperties=ibmplexsans,
+             horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
+    if DOPREM:
+        plt.text(0.5, 1.03, "Preliminary", fontproperties=ibmplexsansbold,
+                 horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
+
+    if any(value.split("/")[0] in SKETCH_METHOD_NAMES for value in x):
+        plt.text(
+            0.5, -0.14, SKETCH_FOOTNOTE,
+            fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
+            horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
+        )
+
+    for ext in ["png", "pdf", "svg"]:
+        fig.savefig(
+            os.path.join(outfolder, "_".join(["plot_heatmap_methodcomparison", datatype, assembly]) + "." + ext),
             bbox_inches="tight",
         )
     fig.clf()
@@ -1875,6 +2033,11 @@ def main():
         ("n_clusters", outdf, namedict, args.outfolder, assembly, "simulations", font_props)
         for assembly in assemblies
     ]
+
+    plottingtasks_heatmap = [
+        ("method_comparison", outdf, namedict, args.outfolder, assembly, "simulations", font_props)
+        for assembly in assemblies
+    ]
     print("\n> Plotting...")
     if args.nthreads <= 1:
         for task in plottingtasks_pointplots:
@@ -1887,6 +2050,8 @@ def main():
             number_of_clusters_stacked_bar(task)
         for task in plottingtasks_stackedbar_c:
             number_of_clusters_stacked_bar_vs_c(task)
+        for task in plottingtasks_heatmap:
+            methods_comparison_heatmap(task)
 
     else:
         pool = Pool(args.nthreads)
@@ -1895,6 +2060,7 @@ def main():
         pool.map(number_of_clusters_violin, plottingtasks_violin)
         pool.map(number_of_clusters_stacked_bar, plottingtasks_stackedbar)
         pool.map(number_of_clusters_stacked_bar_vs_c, plottingtasks_stackedbar_c)
+        pool.map(methods_comparison_heatmap, plottingtasks_heatmap)
         pool.close()
         pool.join()
     

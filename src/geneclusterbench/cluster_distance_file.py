@@ -441,30 +441,45 @@ def write_cdhit_like_tsv(path, samples, matrix, label_sets):
         )
 
         for method, labels in label_sets.items():
+            # Highest existing cluster ID (ignoring -1)
+            next_cluster_id = max([x for x in set(labels) if x != -1], default=-1) + 1
+
             for cluster_id in sorted(set(labels)):
+
                 member_indices = np.where(labels == cluster_id)[0]
 
-                # Noise points (-1) didn't cohere into a real cluster, so a
-                # "most central member" isn't a meaningful representative.
                 if cluster_id == -1:
-                    representative = None
-                    representative_index = None
+                    # Give every noise point its own singleton cluster
+                    for member_index in member_indices:
+                        writer.writerow(
+                            [
+                                method,
+                                next_cluster_id,
+                                samples[member_index],      # representative
+                                samples[member_index],      # member
+                                member_index,
+                                1,                          # cluster size
+                                True,                       # representative
+                            ]
+                        )
+                        next_cluster_id += 1
+
                 else:
                     representative_index = representative_for_cluster(member_indices, matrix)
                     representative = samples[representative_index]
 
-                for member_index in member_indices:
-                    writer.writerow(
-                        [
-                            method,
-                            cluster_id,
-                            representative,
-                            samples[member_index],
-                            member_index,
-                            len(member_indices),
-                            member_index == representative_index,
-                        ]
-                    )
+                    for member_index in member_indices:
+                        writer.writerow(
+                            [
+                                method,
+                                cluster_id,
+                                representative,
+                                samples[member_index],
+                                member_index,
+                                len(member_indices),
+                                member_index == representative_index,
+                            ]
+                        )
 
 
 def write_timings(out_dir, timings):
