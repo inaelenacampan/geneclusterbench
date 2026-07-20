@@ -2,6 +2,7 @@ import argparse
 import csv
 import json
 import pickle
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -22,15 +23,32 @@ TSNE_MAX_ITER = 3000
 
 UMAP_NEIGHBOURS = 5
 UMAP_EPOCHS = 400
+UMAP_MIN_DIST = 0.0  # lower = tighter packing in embedding space, easier to find many small clusters
 
+# These are now only fallback defaults for fit_hdbscan_dist/fit_hdbscan_embedding
+# when called without explicit values (e.g. from other code). main() no longer
+# reads these directly -- it uses whatever (min_cluster_size, min_samples) the
+# sweep's choose_best_combination() selects, every run.
 HDBSCAN_MIN_CLUSTER_SIZE = 2
-HDBSCAN_MIN_SAMPLES = 5
+HDBSCAN_MIN_SAMPLES = 2
 HDBSCAN_CLUSTER_SELECTION_EPSILON = 0.1
 
 # These are only used by the commented alternative clustering methods below.
 KMEANS_N_CLUSTERS = 8
 AGGLOMERATIVE_N_CLUSTERS = 8
 GMM_N_COMPONENTS = 8
+
+# Grid used by --sweep. Edit these directly to widen/narrow the search.
+SWEEP_MIN_CLUSTER_SIZES = (2, 3, 5, 8, 12)
+SWEEP_MIN_SAMPLES = (1, 2, 3, 5)
+
+# Combos with min_cluster_size above this are excluded from the "best combo"
+# selection: real gene families are frequently small (near-singleton), so a
+# large min_cluster_size systematically throws away genuine small families as
+# noise rather than reflecting anything about clustering quality. They are
+# still run and reported in the sweep output for transparency, just not
+# eligible to be picked.
+SWEEP_MAX_ELIGIBLE_MIN_CLUSTER_SIZE = 8
 
 
 def parse_args():
@@ -63,6 +81,19 @@ def parse_args():
         choices=("png", "pdf"),
         default=("png", "pdf"),
         help="Plot formats to write.",
+    )
+    parser.add_argument(
+        "--sweep",
+        action="store_true",
+        help=(
+            "Stop after the parameter sweep instead of continuing to the full "
+            "pipeline. The sweep itself (grid of HDBSCAN min_cluster_size/"
+            "min_samples on the precomputed distance matrix, no UMAP/t-SNE, "
+            "no plots) now always runs regardless of this flag, since the "
+            "full pipeline needs its chosen combination to proceed. Without "
+            "this flag, the full pipeline (UMAP/t-SNE, plots, stats, TSV) "
+            "runs afterwards using the combination the sweep selected."
+        ),
     )
     return parser.parse_args()
 
@@ -118,6 +149,120 @@ def parse_distance_file(path):
     return samples, matrix
 
 
+def sweep_hdbscan_params(
+    matrix,
+    nthreads,
+    min_cluster_sizes=SWEEP_MIN_CLUSTER_SIZES,
+    min_samples_list=SWEEP_MIN_SAMPLES,
+):
+    """Try a grid of HDBSCAN params directly on the precomputed distance matrix
+    and report cluster counts / noise fraction / internal validity for each
+    combination. This skips UMAP/t-SNE and plotting, so it's cheap enough to
+    run every time before committing to a final pair of parameters.
+
+    relative_validity_ is HDBSCAN's built-in, fast approximation of DBCV
+    (Density-Based Clustering Validation). It needs no ground truth, so it's
+    usable both here (where we happen to have simulated ground truth to
+    sanity-check against) and later on real data (where we won't). Higher is
+    better. cluster_persistence_ is also logged (mean across clusters) as a
+    secondary stability signal: it reflects how long each cluster survives
+    across the density hierarchy rather than being an artifact of one cut.
+    """
+    results = []
+    print(
+        f"{'min_cluster_size':>17} {'min_samples':>12} {'n_clusters':>11} "
+        f"{'noise_frac':>11} {'rel_validity':>13} {'mean_persist':>13}"
+    )
+    for mcs in min_cluster_sizes:
+        for ms in min_samples_list:
+            model = hdbscan.HDBSCAN(
+                min_cluster_size=mcs,
+                min_samples=ms,
+                cluster_selection_epsilon=HDBSCAN_CLUSTER_SELECTION_EPSILON,
+                allow_single_cluster=True,
+                core_dist_n_jobs=nthreads,
+                metric="precomputed",
+                gen_min_span_tree=True,  # required for relative_validity_
+            )
+            labels = model.fit_predict(matrix)
+            n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+            noise_frac = float(np.mean(labels == -1))
+
+            # relative_validity_ is only meaningful with >=2 real clusters;
+            # HDBSCAN can still return it in degenerate cases (e.g. a single
+            # cluster), so guard against NaN/errors defensively.
+            try:
+                relative_validity = float(model.relative_validity_)
+            except (AttributeError, ValueError):
+                relative_validity = float("nan")
+
+            if model.cluster_persistence_.size:
+                mean_persistence = float(np.mean(model.cluster_persistence_))
+            else:
+                mean_persistence = float("nan")
+
+            results.append(
+                {
+                    "min_cluster_size": mcs,
+                    "min_samples": ms,
+                    "n_clusters": n_clusters,
+                    "noise_fraction": round(noise_frac, 3),
+                    "relative_validity": round(relative_validity, 4)
+                    if relative_validity == relative_validity  # NaN check
+                    else None,
+                    "mean_cluster_persistence": round(mean_persistence, 4)
+                    if mean_persistence == mean_persistence
+                    else None,
+                }
+            )
+            print(
+                f"{mcs:>17} {ms:>12} {n_clusters:>11} {noise_frac:>10.1%} "
+                f"{relative_validity:>13.4f} {mean_persistence:>13.4f}"
+            )
+    return results
+
+
+def choose_best_combination(
+    results, max_eligible_min_cluster_size=SWEEP_MAX_ELIGIBLE_MIN_CLUSTER_SIZE
+):
+    """Pick the (min_cluster_size, min_samples) combo to actually cluster with.
+
+    Selection is purely intrinsic (no ground truth needed, so this works the
+    same way on real data as on simulated data):
+      1. Rule out combos with min_cluster_size above the eligible threshold
+         (biology: real gene families are often small, so large thresholds
+         just discard genuine small families as noise).
+      2. Among the survivors, pick the highest relative_validity_ (HDBSCAN's
+         internal DBCV approximation). Ties are broken by higher mean
+         cluster persistence, then by lower noise fraction.
+    """
+    eligible = [
+        r
+        for r in results
+        if r["min_cluster_size"] <= max_eligible_min_cluster_size
+        and r["relative_validity"] is not None
+    ]
+    if not eligible:
+        raise RuntimeError(
+            "No eligible HDBSCAN parameter combination found in the sweep "
+            f"(min_cluster_size <= {max_eligible_min_cluster_size} with a "
+            "valid relative_validity_ score)."
+        )
+
+    best = max(
+        eligible,
+        key=lambda r: (
+            r["relative_validity"],
+            r["mean_cluster_persistence"] or float("-inf"),
+            -r["noise_fraction"],
+        ),
+    )
+    return best
+
+
+
+
+
 def fit_tsne(matrix, nthreads):
     """Embed the precomputed distance matrix into two dimensions with t-SNE.
     t-SNE = t-distributed Stochastic Neighbor Embedding
@@ -146,18 +291,24 @@ def fit_umap(matrix, nthreads):
         n_jobs=nthreads,
         verbose=True,
         n_neighbors=UMAP_NEIGHBOURS,
+        min_dist=UMAP_MIN_DIST,
         n_epochs=UMAP_EPOCHS,
     )
     coords = model.fit_transform(matrix)
     return model, coords
 
 
-def fit_hdbscan_dist(matrix, nthreads):
+def fit_hdbscan_dist(
+    matrix,
+    nthreads,
+    min_cluster_size=HDBSCAN_MIN_CLUSTER_SIZE,
+    min_samples=HDBSCAN_MIN_SAMPLES,
+):
     """Cluster samples directly from the precomputed distance matrix."""
     # Hierarchical Density-Based Spatial Clustering of Applications with Noise
     model = hdbscan.HDBSCAN(
-        min_cluster_size=HDBSCAN_MIN_CLUSTER_SIZE,
-        min_samples=HDBSCAN_MIN_SAMPLES,
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
         cluster_selection_epsilon=HDBSCAN_CLUSTER_SELECTION_EPSILON,
         allow_single_cluster=True,
         core_dist_n_jobs=nthreads,
@@ -176,12 +327,17 @@ def fit_hdbscan_dist(matrix, nthreads):
     return model, labels
 
 
-def fit_hdbscan_embedding(coords, nthreads):
+def fit_hdbscan_embedding(
+    coords,
+    nthreads,
+    min_cluster_size=HDBSCAN_MIN_CLUSTER_SIZE,
+    min_samples=HDBSCAN_MIN_SAMPLES,
+):
     """Cluster samples from two-dimensional embedding coordinates."""
     model = hdbscan.HDBSCAN(
         algorithm="boruvka_balltree",
-        #min_cluster_size=HDBSCAN_MIN_CLUSTER_SIZE,
-        min_samples=HDBSCAN_MIN_SAMPLES,
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
         cluster_selection_epsilon=HDBSCAN_CLUSTER_SELECTION_EPSILON,
         allow_single_cluster=True,
         core_dist_n_jobs=nthreads,
@@ -207,31 +363,18 @@ def plot_clusters(coords, labels, output_stem, formats):
     """Draw one scatter plot for a set of coordinates coloured by cluster label."""
     fig = plt.figure(1, dpi=150)
     ax = fig.subplots()
-    ax.set_prop_cycle(
-        color=[
-            "orange",
-            "green",
-            "red",
-            "purple",
-            "brown",
-            "pink",
-            "blue",
-            "olive",
-            "cyan",
-            "lightcoral",
-            "darkred",
-            "khaki",
-            "peru",
-            "gold",
-            "greenyellow",
-            "aquamarine",
-            "deepskyblue",
-            "fuchsia",
-            "hotpink",
-        ]
-    )
 
     label_values = sorted(set(labels))
+    n_real_clusters = len(label_values) - (1 if label_values and label_values[0] == -1 else 0)
+
+    # tab20 + tab20b + tab20c gives 60 visually distinct colours, which scales
+    # much better than a fixed 19-colour list once you have "a lot" of clusters.
+    cmap_names = ["tab20", "tab20b", "tab20c"]
+    palette = []
+    for name in cmap_names:
+        palette.extend([plt.get_cmap(name)(i) for i in range(20)])
+    ax.set_prop_cycle(color=palette[: max(n_real_clusters, 1)])
+
     if label_values and label_values[0] == -1:
         ax.scatter(
             coords[labels == -1, 0],
@@ -249,6 +392,11 @@ def plot_clusters(coords, labels, output_stem, formats):
             s=1,
             label=f"Cluster {label}",
         )
+
+    # Skip drawing a legend when there are too many clusters for it to be
+    # readable; it would otherwise dominate the figure.
+    if n_real_clusters <= 30:
+        ax.legend(markerscale=10, fontsize=6, loc="best")
 
     for fmt in formats:
         fig.savefig(output_stem.with_suffix(f".{fmt}"))
@@ -295,8 +443,15 @@ def write_cdhit_like_tsv(path, samples, matrix, label_sets):
         for method, labels in label_sets.items():
             for cluster_id in sorted(set(labels)):
                 member_indices = np.where(labels == cluster_id)[0]
-                representative_index = representative_for_cluster(member_indices, matrix)
-                representative = samples[representative_index]
+
+                # Noise points (-1) didn't cohere into a real cluster, so a
+                # "most central member" isn't a meaningful representative.
+                if cluster_id == -1:
+                    representative = None
+                    representative_index = None
+                else:
+                    representative_index = representative_for_cluster(member_indices, matrix)
+                    representative = samples[representative_index]
 
                 for member_index in member_indices:
                     writer.writerow(
@@ -310,6 +465,21 @@ def write_cdhit_like_tsv(path, samples, matrix, label_sets):
                             member_index == representative_index,
                         ]
                     )
+
+
+def write_timings(out_dir, timings):
+    """Write a per-stage timing breakdown to time.txt.
+
+    `timings` is an ordered dict/list of (label, seconds) pairs. Stage timings
+    (sweep, embeddings, individual HDBSCAN fits) and per-method totals
+    (dist-only vs. embedding+HDBSCAN combined) are both written, so the file
+    directly answers "how long did method X take" as well as "where did the
+    time go within method X".
+    """
+    lines = []
+    for label, seconds in timings:
+        lines.append(f"{label}: {seconds:.3f}s")
+    (out_dir / "time_per_method.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def matrix_stats(matrix):
@@ -358,38 +528,127 @@ def write_stats(out_dir, samples, matrix, label_sets):
 
 
 def main():
-    """Run the full load, embedding, clustering, plotting, and reporting workflow."""
+    """Run the full load, sweep, embedding, clustering, plotting, and
+    reporting workflow.
+
+    The parameter sweep now always runs (not just with --sweep): it's cheap
+    relative to the rest of the pipeline, and the full pipeline needs a
+    (min_cluster_size, min_samples) pair to run with anyway. --sweep is kept
+    as a flag to stop after the sweep, e.g. for inspecting sweep.json by hand
+    before trusting the automatic choice.
+
+    Timing: every stage is timed individually and written to time.txt. This
+    is a breakdown *within* this script only (loading, sweep, embeddings,
+    each HDBSCAN fit) -- it does not include the upstream `sketch`/`dist`
+    steps run by the submit script, which are timed separately via
+    timebenchmark.txt in the SLURM scaffold. To get "sketch + method" time,
+    add the relevant time.txt entry here to the sketch+dist portion of that
+    external timing.
+    """
     args = parse_args()
-    model_dir = args.out_dir / "models"
-    plot_dir = args.out_dir / "plots"
-    model_dir.mkdir(parents=True, exist_ok=True)
-    plot_dir.mkdir(parents=True, exist_ok=True)
+    run_start = time.time()
+    timings = []
 
     np.random.seed(RANDOM_SEED)
     plt.rcParams.update({"figure.max_open_warning": 0})
 
     print(f"Loading distances from {args.dist_file}")
+    t0 = time.time()
     samples, matrix = parse_distance_file(args.dist_file)
+    timings.append(("load_distance_matrix", time.time() - t0))
+
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Sweeping HDBSCAN parameters on {len(samples)} samples")
+    t0 = time.time()
+    sweep_results = sweep_hdbscan_params(matrix, args.nthreads)
+    best_combo = choose_best_combination(sweep_results)
+    timings.append(("sweep_total", time.time() - t0))
+    print(
+        "Chosen combination: min_cluster_size="
+        f"{best_combo['min_cluster_size']}, min_samples={best_combo['min_samples']} "
+        f"(relative_validity={best_combo['relative_validity']}, "
+        f"noise_fraction={best_combo['noise_fraction']})"
+    )
+
+    sweep_output = {
+        "sweep": sweep_results,
+        "chosen_combination": {
+            "min_cluster_size": best_combo["min_cluster_size"],
+            "min_samples": best_combo["min_samples"],
+            "selection_metric": "relative_validity",
+            "relative_validity": best_combo["relative_validity"],
+            "mean_cluster_persistence": best_combo["mean_cluster_persistence"],
+            "noise_fraction": best_combo["noise_fraction"],
+            "n_clusters": best_combo["n_clusters"],
+            "max_eligible_min_cluster_size": SWEEP_MAX_ELIGIBLE_MIN_CLUSTER_SIZE,
+        },
+    }
+    with (args.out_dir / "sweep.json").open("w", encoding="utf-8") as handle:
+        json.dump(sweep_output, handle, indent=2)
+    print(f"Sweep results written to {args.out_dir / 'sweep.json'}")
+
+    if args.sweep:
+        timings.append(("total", time.time() - run_start))
+        write_timings(args.out_dir, timings)
+        return
+
+    min_cluster_size = best_combo["min_cluster_size"]
+    min_samples = best_combo["min_samples"]
+
+    model_dir = args.out_dir / "models"
+    plot_dir = args.out_dir / "plots"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    plot_dir.mkdir(parents=True, exist_ok=True)
 
     print("Training t-SNE")
+    t0 = time.time()
     tsne_model, tsne_coords = fit_tsne(matrix, args.nthreads)
+    tsne_embed_time = time.time() - t0
+    timings.append(("tsne_embedding", tsne_embed_time))
     save_pickle(model_dir / "tsne.pk", model=tsne_model, coords=tsne_coords)
 
     print("Training UMAP")
+    t0 = time.time()
     umap_model, umap_coords = fit_umap(matrix, args.nthreads)
+    umap_embed_time = time.time() - t0
+    timings.append(("umap_embedding", umap_embed_time))
     save_pickle(model_dir / "umap.pk", model=umap_model, coords=umap_coords)
 
     print("Clustering precomputed distances")
-    hdbs_dist_model, hdbs_dist_labels = fit_hdbscan_dist(matrix, args.nthreads)
+    t0 = time.time()
+    hdbs_dist_model, hdbs_dist_labels = fit_hdbscan_dist(
+        matrix, args.nthreads, min_cluster_size, min_samples
+    )
+    hdbs_dist_time = time.time() - t0
+    timings.append(("hdbscan_dist_fit", hdbs_dist_time))
     save_pickle(model_dir / "hdbs_dist.pk", model=hdbs_dist_model, labels=hdbs_dist_labels)
 
     print("Clustering t-SNE coordinates")
-    hdbs_tsne_model, hdbs_tsne_labels = fit_hdbscan_embedding(tsne_coords, args.nthreads)
+    t0 = time.time()
+    hdbs_tsne_model, hdbs_tsne_labels = fit_hdbscan_embedding(
+        tsne_coords, args.nthreads, min_cluster_size, min_samples
+    )
+    hdbs_tsne_time = time.time() - t0
+    timings.append(("hdbscan_tsne_fit", hdbs_tsne_time))
     save_pickle(model_dir / "hdbs_tsne.pk", model=hdbs_tsne_model, labels=hdbs_tsne_labels)
 
     print("Clustering UMAP coordinates")
-    hdbs_umap_model, hdbs_umap_labels = fit_hdbscan_embedding(umap_coords, args.nthreads)
+    t0 = time.time()
+    hdbs_umap_model, hdbs_umap_labels = fit_hdbscan_embedding(
+        umap_coords, args.nthreads, min_cluster_size, min_samples
+    )
+    hdbs_umap_time = time.time() - t0
+    timings.append(("hdbscan_umap_fit", hdbs_umap_time))
     save_pickle(model_dir / "hdbs_umap.pk", model=hdbs_umap_model, labels=hdbs_umap_labels)
+
+    # Per-method totals: "method" here means one of the three ways of getting
+    # from the distance matrix to a final clustering. hdbscan_dist has no
+    # embedding step, so its total is just its own fit time; the other two
+    # methods pay for their embedding as well as their HDBSCAN fit.
+    timings.append(("method_hdbscan_dist_total", hdbs_dist_time))
+    timings.append(("method_hdbscan_tsne_total", tsne_embed_time + hdbs_tsne_time))
+    timings.append(("method_hdbscan_umap_total", umap_embed_time + hdbs_umap_time))
 
     label_sets = {
         "hdbscan_dist": hdbs_dist_labels,
@@ -398,6 +657,7 @@ def main():
     }
 
     print("Writing plots")
+    t0 = time.time()
     plot_clusters(
         tsne_coords,
         hdbs_dist_labels,
@@ -422,10 +682,16 @@ def main():
         plot_dir / "cluster_UMAP_HDBSCAN",
         args.formats,
     )
+    timings.append(("plotting", time.time() - t0))
 
     print("Writing statistics and cluster TSV")
+    t0 = time.time()
     write_stats(args.out_dir, samples, matrix, label_sets)
     write_cdhit_like_tsv(args.out_dir / "clusters.tsv", samples, matrix, label_sets)
+    timings.append(("stats_and_tsv", time.time() - t0))
+
+    timings.append(("total", time.time() - run_start))
+    write_timings(args.out_dir, timings)
 
     print(f"Finished. Outputs written to {args.out_dir}")
 
