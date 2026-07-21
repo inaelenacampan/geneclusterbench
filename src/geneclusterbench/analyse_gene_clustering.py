@@ -919,6 +919,25 @@ def get_time_diff_from_file(inpath):
     return (time1 - time0).total_seconds()
 
 
+def parse_time_per_method_file(inpath):
+    """Parses a time_per_method.txt file such as:
+        load_distance_matrix: 2690.072s sweep_total: 15.786s tsne_embedding: 29.435s
+        umap_embedding: 8.882s hdbscan_dist_fit: 0.787s hdbscan_tsne_fit: 0.106s
+        hdbscan_umap_fit: 0.105s method_hdbscan_dist_total: 0.787s
+        method_hdbscan_tsne_total: 29.542s method_hdbscan_umap_total: 8.986s
+        plotting: 11.166s stats_and_tsv: 0.367s total: 2756.783s
+    Returns a dict mapping each key (e.g. "method_hdbscan_tsne_total") to its
+    value in seconds (float). Works regardless of whether entries are spread
+    over multiple lines or all on one line.
+    """
+    outdict = {}
+    with open(inpath, "r") as f:
+        content = f.read()
+    for key, value in re.findall(r"(\S+):\s*([\d.]+)s", content):
+        outdict[key] = float(value)
+    return outdict
+
+
 def get_species_name(inpath):
     with open(inpath, "r") as f:
         for line in f:
@@ -1069,6 +1088,18 @@ def get_info_from_folder(theargs):
                 )
                 continue
             runtime = get_time_diff_from_file(os.path.join(folderpath, "timebenchmark.txt"))
+
+            # Per-method runtimes (load_distance_matrix, embeddings, hdbscan fit, ...)
+            # are broken down in distance_clustering/time_per_method.txt; use the
+            # "method_<name>_total" entry for each sketch/HDBSCAN method instead of
+            # the single whole-folder runtime, so each method's plotted runtime
+            # reflects the time actually spent on that specific method (embedding +
+            # hdbscan fit) rather than the total sketch folder runtime.
+            time_per_method_path = os.path.join(folderpath, "distance_clustering", "time_per_method.txt")
+            method_runtimes = {}
+            if os.path.isfile(time_per_method_path):
+                method_runtimes = parse_time_per_method_file(time_per_method_path)
+
             for method_name, thedf in sketch_dfs.items():
                 n_clusters = len(thedf.index)
                 n_singletons = count_singleton_clusters(thedf)
@@ -1078,13 +1109,16 @@ def get_info_from_folder(theargs):
                     tmpseqtype if el == "st" else DEFAULT_PARAMS[el]
                     for el in PARAMORDER
                 ]
+                method_runtime = method_runtimes.get(
+                    f"method_{method_name}_total", runtime
+                )
                 listoflists.append(
                     calculate_values_from_cluster_matrix(
                         (theass, theseed, method_name), thedf, truthlabels, truthdf
                     )
                     + [n_clusters, n_singletons, n_pairs]
                     + paramlist
-                    + [runtime]
+                    + [method_runtime]
                 )
             continue
 
@@ -1189,6 +1223,7 @@ def plotter(theargs):
             for el in clusterers
             if el in availcl
             and el not in SKETCH_METHOD_NAMES  # no c sweep for sketch/HDBSCAN methods
+            and not (name == "runtime" and el == "panx")  # panx is a runtime outlier
             and (el + "/" + seqtype) in FANCYDICT
             and (el + "/" + seqtype) in CONFIGDICT_COLOURS
         ]
@@ -1295,6 +1330,8 @@ def plotter_pointplots(theargs):
 
     clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
     x = build_ordered_combo_list(subdf, name)
+    if name == "runtime":
+        x = [combo for combo in x if combo.split("/")[0] != "panx"]  # panx is a runtime outlier
 
     if not x:
         warnings.warn(
@@ -1478,7 +1515,7 @@ def number_of_clusters_violin(theargs):
 
     ax.set_xticks(positions)
     ax.set_xticklabels(x_fancy, rotation=35, ha="right", rotation_mode="anchor")
-    ax.set_ylim(1500, 2500)
+    ax.set_ylim(100, 3000)
 
     ax.set_xlabel("Clusterer", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
     ax.set_ylabel("Number of clusters (adim.)", fontproperties=ibmplexsans, loc="top", fontsize=AXIS_TITLE_FONT_SIZE)

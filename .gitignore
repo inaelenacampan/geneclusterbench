@@ -18,6 +18,7 @@ my_fasta_files.tsv
 *.skd
 *.skm
 test*/
+all-*/
 # Generated benchmark command files and logs
 execcommands.tsv
 execcommands_copy.tsv
