@@ -104,10 +104,16 @@ def load_model(cache_dir, device):
     print("before model")
     print("MODEL_NAME =", MODEL_NAME)
     print("cache_dir =", cache_dir)
-    model = T5EncoderModel.from_pretrained(
-        MODEL_NAME,
-        cache_dir=cache_dir,
-    )
+    try:
+        model = T5EncoderModel.from_pretrained(
+            MODEL_NAME,
+            cache_dir=cache_dir,
+            low_cpu_mem_usage=True,
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise
     print("after model")
 
     print("before to(device)")
