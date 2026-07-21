@@ -17,6 +17,7 @@ from sklearn.metrics.cluster import adjusted_mutual_info_score
 from numpy.random import default_rng
 import re
 import subprocess
+import copy
 
 # keep in mind to install the needed packages for fonts
 
@@ -173,30 +174,50 @@ def get_param_dict_from_splits(thesplits):
 
 
 def get_labels_list_from_df(indf):
+    """Returns (genes, labels): for each gene (column) that was actually
+    assigned to a cluster by this clusterer, its gene id and the cluster
+    label it was assigned to. Genes with no cluster assignment at all
+    (e.g. dropped/filtered by the clusterer, left as -1 everywhere) are
+    simply skipped rather than forced into a fake cluster."""
+    genes = []
     labels = []
     for column in indf.columns:
         tmp = indf[indf[column] >= 0.0].index
         #if len(tmp) > 1:
             #print(tmp)
+        if len(tmp) == 0:
+            continue
+        genes.append(column)
         labels.append(tmp[0])
-    return labels
+    return genes, labels
 
 # counting how many genes belonging to that true class fall into each predicted cluster
 # values from 0 to 1 : the higher the better
 
-def get_purity(inlab, truthdf):
+def get_purity(inlab, truthdf, gene_ids=None):
     # Recode les labels pour qu'ils soient consécutifs
     le = LabelEncoder()
     inlab_encoded = le.fit_transform(inlab)
     nclusters = len(le.classes_)
+
+    # gene_ids gives the gene id that each entry of inlab/inlab_encoded refers
+    # to. Previously this function assumed inlab was positionally aligned to
+    # gene number (position i == geneid_i), which only held because every
+    # clusterer's matrix was padded to the full contiguous 0..N gene range.
+    # Now that we only keep genes actually present in both tables (see
+    # calculate_values_from_cluster_matrix), we look genes up explicitly by id.
+    if gene_ids is None:
+        gene_ids = list(truthdf.index)
+    gene_to_encoded = dict(zip(gene_ids, inlab_encoded))
 
     sumofmaxes = 0
 
     for column in truthdf.columns:
         countlist = [0] * nclusters
         for gene in truthdf[truthdf[column] == True].index:
-            gene_index = int(gene.split("_")[1])
-            cluster_label = inlab_encoded[gene_index]
+            if gene not in gene_to_encoded:
+                continue
+            cluster_label = gene_to_encoded[gene]
             countlist[cluster_label] += 1
         sumofmaxes += max(countlist)
     return float(sumofmaxes) / float(len(truthdf.index))
@@ -208,12 +229,38 @@ def get_purity(inlab, truthdf):
 # for mathematical expression see documentation
 
 def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
-    
-    probelab = get_labels_list_from_df(indf)
+
+    genes_present, probelab = get_labels_list_from_df(indf)
+
+    # ---------------------------------------------------------------
+    # Shape matching between predicted clustering and ground truth
+    # ---------------------------------------------------------------
+    # Some clusterers (panaroo, ppanggolin, panta, ...) drop/filter some
+    # genes, so `genes_present` can end up smaller than truthdf's genes.
+    # Instead of lumping all the missing genes into one artificial "bin"
+    # cluster to force matching sizes (see the now-commented-out code in
+    # get_df_from_clusterer), we instead take a deepcopy of the ground
+    # truth and restrict it down to exactly the genes this clusterer
+    # actually assigned to a cluster, so the comparison is like-for-like.
+    if set(genes_present) != set(truthdf.index):
+        gene_to_truthlabel = dict(zip(truthdf.index, truthlab))
+
+        # keep only genes that exist in both tables, in probelab's order
+        matched_genes = [g for g in genes_present if g in gene_to_truthlabel]
+
+        gene_to_probelabel = dict(zip(genes_present, probelab))
+        probelab_matched = [gene_to_probelabel[g] for g in matched_genes]
+        truthlab_matched = [gene_to_truthlabel[g] for g in matched_genes]
+        truthdf_matched = copy.deepcopy(truthdf).loc[matched_genes]
+    else:
+        matched_genes = genes_present
+        probelab_matched = probelab
+        truthlab_matched = truthlab
+        truthdf_matched = truthdf
 
     _, ari_p = permutation_test_agreement(
-        truthlab,
-        probelab,
+        truthlab_matched,
+        probelab_matched,
         metrics.adjusted_rand_score,
         nperm=10000
     )
@@ -223,12 +270,12 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
         infotuple[0],
         infotuple[1],
         infotuple[2],
-        float(metrics.adjusted_rand_score(truthlab, probelab)),
-        get_purity(probelab, truthdf),
-        float(adjusted_mutual_info_score(truthlab, probelab)),
+        float(metrics.adjusted_rand_score(truthlab_matched, probelab_matched)),
+        get_purity(probelab_matched, truthdf_matched, matched_genes),
+        float(adjusted_mutual_info_score(truthlab_matched, probelab_matched)),
         ari_p,
     ]
-    outlist += [float(el) for el in metrics.homogeneity_completeness_v_measure(truthlab, probelab)]
+    outlist += [float(el) for el in metrics.homogeneity_completeness_v_measure(truthlab_matched, probelab_matched)]
     return outlist
 
 
@@ -437,17 +484,23 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
         # ---------------------------------------------------------
         # Create one new cluster containing all missing genes
         # ---------------------------------------------------------
-        if missing:
-            new_cluster_id = max(listofclusters) + 1
-
-            row = [new_cluster_id]
-
-            for gene in listofgenes:
-                row.append(
-                    1.0 if gene in missing else -1.0
-                )
-
-            listoflists.append(row)
+        # NOTE: no longer done -- genes panaroo drops are now simply left
+        # unassigned (all -1 across every row) and excluded from the
+        # metrics comparison (see get_labels_list_from_df /
+        # calculate_values_from_cluster_matrix), rather than being lumped
+        # together into one artificial cluster. Kept here, commented out,
+        # for reference.
+        # if missing:
+        #     new_cluster_id = max(listofclusters) + 1
+        #
+        #     row = [new_cluster_id]
+        #
+        #     for gene in listofgenes:
+        #         row.append(
+        #             1.0 if gene in missing else -1.0
+        #         )
+        #
+        #     listoflists.append(row)
 
         outdf = pd.DataFrame(
             listoflists,
@@ -559,13 +612,15 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
         # ---------------------------------------------------------
         # Create one new cluster containing all missing genes
         # ---------------------------------------------------------
-        if missing:
-            new_cluster_id = len(familylist)
-            missingset = set(missing)
-            row = [new_cluster_id] + [
-                1.0 if gene in missingset else -1.0 for gene in genelist
-            ]
-            listoflists.append(row)
+        # NOTE: no longer done -- see equivalent note in the panaroo branch
+        # above. Kept here, commented out, for reference.
+        # if missing:
+        #     new_cluster_id = len(familylist)
+        #     missingset = set(missing)
+        #     row = [new_cluster_id] + [
+        #         1.0 if gene in missingset else -1.0 for gene in genelist
+        #     ]
+        #     listoflists.append(row)
 
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
 
@@ -649,13 +704,15 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
         # ---------------------------------------------------------
         # Create one new cluster containing all missing genes
         # ---------------------------------------------------------
-        if missing:
-            new_cluster_id = len(grouplist)
-            missingset = set(missing)
-            row = [new_cluster_id] + [
-                1.0 if gene in missingset else -1.0 for gene in genelist
-            ]
-            listoflists.append(row)
+        # NOTE: no longer done -- see equivalent note in the panaroo branch
+        # above. Kept here, commented out, for reference.
+        # if missing:
+        #     new_cluster_id = len(grouplist)
+        #     missingset = set(missing)
+        #     row = [new_cluster_id] + [
+        #         1.0 if gene in missingset else -1.0 for gene in genelist
+        #     ]
+        #     listoflists.append(row)
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
         return outdf.set_index("cluster_id")
     
@@ -762,13 +819,15 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
         # ---------------------------------------------------------
         # Create one new cluster containing all missing genes
         # ---------------------------------------------------------
-        if missing:
-            new_cluster_id = len(listofclusters)
-            missingset = set(missing)
-            row = [new_cluster_id] + [
-                1.0 if gene in missingset else -1.0 for gene in genelist
-            ]
-            listoflists.append(row)
+        # NOTE: no longer done -- see equivalent note in the panaroo branch
+        # above. Kept here, commented out, for reference.
+        # if missing:
+        #     new_cluster_id = len(listofclusters)
+        #     missingset = set(missing)
+        #     row = [new_cluster_id] + [
+        #         1.0 if gene in missingset else -1.0 for gene in genelist
+        #     ]
+        #     listoflists.append(row)
  
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
     
@@ -1056,6 +1115,50 @@ def get_info_from_folder(theargs):
 
 # plot idea : how does this metric vary with the clustering threshold, averaged over random seeds, for this assembly
 
+def build_ordered_combo_list(subdf, name=None):
+    """Return the clusterer/seqtype combos present in subdf, in the nice,
+    consistent COMBO_ORDER order (rather than whatever order set() happens
+    to give), skipping combos with no data and combos missing from
+    FANCYDICT/CONFIGDICT_COLOURS."""
+    x = []
+    for combo in COMBO_ORDER:
+        clusterer, seqtype = combo.split("/")
+        if combo not in FANCYDICT or combo not in CONFIGDICT_COLOURS:
+            continue
+        mask = (
+            (subdf.index.get_level_values("clusterer") == clusterer)
+            & (subdf["st"] == seqtype)
+        )
+        tmpdf = subdf[mask]
+        if name is not None:
+            tmpdf = tmpdf[name]
+        if len(tmpdf):
+            x.append(combo)
+    return x
+
+
+def add_sketch_bracket(ax, x, positions, bar_width=0.5, y_top=-0.16, y_bottom=-0.18,
+                        fontprops=None, fontsize=None):
+    """Draw a small bracket + 'Sketching methods' label under the sketch/HDBSCAN
+    columns, so readers can see at a glance that they're one family of methods."""
+    sketch_idx = [i for i, val in enumerate(x) if val.split("/")[0] in SKETCH_METHOD_NAMES]
+    if not sketch_idx:
+        return
+    lo, hi = min(sketch_idx), max(sketch_idx)
+    x0 = positions[lo] - bar_width / 2
+    x1 = positions[hi] + bar_width / 2
+    trans = ax.get_xaxis_transform()  # x in data coords, y in axes-fraction coords
+    ax.plot(
+        [x0, x0, x1, x1], [y_top, y_bottom, y_bottom, y_top],
+        transform=trans, color="black", linewidth=0.8, clip_on=False,
+    )
+    ax.text(
+        (x0 + x1) / 2, y_bottom - 0.015, "Sketching methods",
+        transform=trans, ha="center", va="top",
+        fontproperties=fontprops, fontsize=fontsize, clip_on=False,
+    )
+
+
 def plotter(theargs):
     name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
@@ -1191,13 +1294,7 @@ def plotter_pointplots(theargs):
         return
 
     clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
-    x = []
-    for clusterer, seqtype in [(c, st) for st in SEQTYPES for c in clusterers]:
-        combo = clusterer + "/" + seqtype
-        if combo not in FANCYDICT or combo not in CONFIGDICT_COLOURS:
-            continue
-        if len(list(subdf[(subdf.index.get_level_values("clusterer") == clusterer) & (subdf["st"] == seqtype)][name])):
-            x.append(combo)
+    x = build_ordered_combo_list(subdf, name)
 
     if not x:
         warnings.warn(
@@ -1262,7 +1359,7 @@ def plotter_pointplots(theargs):
                 )
 
     ax.set_xticks(positions)
-    ax.set_xticklabels(x_fancy)
+    ax.set_xticklabels(x_fancy, rotation=35, ha="right", rotation_mode="anchor")
 
     if name in CONFIGDICT and "ylimits" in CONFIGDICT[name]:
         ax.set_ylim(CONFIGDICT[name]["ylimits"][0], CONFIGDICT[name]["ylimits"][1])
@@ -1292,11 +1389,15 @@ def plotter_pointplots(theargs):
     plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans, horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
     if DOPREM:
         plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold, horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
+
+    # bracket under the sketching methods, so readers see they're one family
+    add_sketch_bracket(ax, x, positions, bar_width=bar_width, fontprops=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1)
+
     if any(value.split("/")[0] in SKETCH_METHOD_NAMES for value in x):
         plt.text(
-            0, -0.13, SKETCH_FOOTNOTE,
+            0.5, -0.30, SKETCH_FOOTNOTE,
             fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
-            horizontalalignment="left", verticalalignment="top", transform=ax.transAxes,
+            horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
 
     for ext in ["png", "pdf", "svg"]:
@@ -1328,13 +1429,7 @@ def number_of_clusters_violin(theargs):
         return
 
     clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
-    x = []
-    for clusterer, seqtype in [(c, st) for st in SEQTYPES for c in clusterers]:
-        combo = clusterer + "/" + seqtype
-        if combo not in FANCYDICT or combo not in CONFIGDICT_COLOURS:
-            continue
-        if len(list(subdf[(subdf.index.get_level_values("clusterer") == clusterer) & (subdf["st"] == seqtype)][name])):
-            x.append(combo)
+    x = build_ordered_combo_list(subdf, name)
 
     if not x:
         warnings.warn(
@@ -1382,7 +1477,7 @@ def number_of_clusters_violin(theargs):
             ax.plot(p, d[0], "o", c=CONFIGDICT_COLOURS[key])
 
     ax.set_xticks(positions)
-    ax.set_xticklabels(x_fancy)
+    ax.set_xticklabels(x_fancy, rotation=35, ha="right", rotation_mode="anchor")
     ax.set_ylim(1500, 2500)
 
     ax.set_xlabel("Clusterer", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
@@ -1402,11 +1497,15 @@ def number_of_clusters_violin(theargs):
     plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans, horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
     if DOPREM:
         plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold, horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
+
+    # bracket under the sketching methods, so readers see they're one family
+    add_sketch_bracket(ax, x, positions, bar_width=0.5, fontprops=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1)
+
     if any(value.split("/")[0] in SKETCH_METHOD_NAMES for value in x):
         plt.text(
-            0, -0.13, SKETCH_FOOTNOTE,
+            0.5, -0.30, SKETCH_FOOTNOTE,
             fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
-            horizontalalignment="left", verticalalignment="top", transform=ax.transAxes,
+            horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
 
     outnamescaff = name.replace(" ", "").replace("#", "NumberOf")
