@@ -109,6 +109,18 @@ SKETCH_SCAFFOLD_NT = (
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
+# ProstT5 embeddings + HDBSCAN/UMAP/t-SNE clustering. Only sensible for AA
+# input (ProstT5 expects amino-acid, or lower-case 3Di, sequences).
+EMBEDDINGS_SCAFFOLD = (
+    "mkdir -p {workdir} && mkdir -p {embeddir} && cd {workdir} && "
+    "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
+    "uv run --project {gcbrepo} python -m geneclusterbench.embedprots "
+    "--input-fasta {inputfile} --out-pk {pkoutput} --nthreads {ncores} && "
+    "uv run --project {gcbrepo} python -m geneclusterbench.cluster_embeddings_file "
+    "--embeddings-file {pkoutput} --nthreads {ncores} --out-dir {clusterdir} && "
+    "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
+)
+
 SLURM_SCAFFOLD = (
     "sbatch --array={arrayvals} -c {nth} -t {timemax} --mem {memmax}G "
     "-J {jobname} -e {logpath}/log.%A.%a.%x.err "
@@ -170,6 +182,13 @@ def get_c_values_for_process(proc, seqtype):
     if proc == "sketch":
         # sketchlib has no identity threshold; run once per seed with the
         # default "c" value so no _c-suffix is added to the output folder.
+        return [DEFAULT_PARAMS["c"]]
+    if proc == "embeddings":
+        # ProstT5 embeddings only make sense for AA input, and (like sketch)
+        # there is no identity threshold, so run once per seed with the
+        # default "c" value and skip nt entirely.
+        if seqtype != "aa":
+            return []
         return [DEFAULT_PARAMS["c"]]
     if proc == "cdhit" and seqtype == "nt":
         return [c for c in CRANGE if c >= CDHIT_EST_MIN_C]
@@ -382,6 +401,21 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
                 ncores=nthreads,
             )
         
+    # ProstT5 embeddings method (embedprots + cluster_embeddings_file)
+    if proc == "embeddings":
+
+        embeddir = os.path.join(outfolder, "embeddings")
+
+        return EMBEDDINGS_SCAFFOLD.format(
+            workdir=outfolder,
+            embeddir=embeddir,
+            inputfile=infile,
+            pkoutput=os.path.join(embeddir, "embeddings.pk"),
+            clusterdir=os.path.join(outfolder, "clustering"),
+            gcbrepo=gcbrepo,
+            ncores=nthreads,
+        )
+
     raise RuntimeError("Process " + proc + " not supported")
 
 
@@ -631,7 +665,7 @@ def main():
     parser.add_argument("--max-simultaneous-cores", "-M", default=2000, type=int)
     parser.add_argument("--preset-timestamp", "-P", default=-1, type=int)
     parser.add_argument("--pretend", "-p", action="store_true")
-    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo,ppanggolin,panta,panx,sketch")
+    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo,ppanggolin,panta,panx,sketch,embeddings")
     parser.add_argument("--sequence-type", "-st", default="nt,aa")
     parser.add_argument("--softwaredir", default=DEFAULT_SOFTWAREDIR)
     parser.add_argument("--benchmark-runner", default=DEFAULT_RUNNER)

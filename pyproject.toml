@@ -32,6 +32,12 @@ dependencies = [
     "tqdm",
     "hdbscan",
     "umap-learn",
+    "torch",
+    "transformers",
+    "tiktoken",
+    "sentencepiece",
+    "protobuf",
+
 ]
 
 [tool.setuptools.packages.find]

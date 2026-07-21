@@ -1,153 +1,191 @@
-import os, sys, re
-from transformers import T5Tokenizer, T5EncoderModel
-import torch
-import matplotlib.pyplot as plt
-import numpy as np
-from multiprocessing import Pool
-import pandas as pd
+import argparse
 import pickle as pk
+import re
+import time
+from pathlib import Path
 
-#####################################################################################
-nthreads = 8
+import numpy as np
+import torch
+from transformers import T5EncoderModel, T5Tokenizer
 
-print("> Initialising PyTorch")
+MODEL_NAME = "Rostlab/ProstT5"
+DEFAULT_CACHE_DIR = "/hps/nobackup/jlees/campan/cache/huggingface"
 
-torch.set_num_threads(nthreads)
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-# device = torch.device('cpu')
 
-print("> Loading models")
-# Load the tokenizer
-tokenizer = T5Tokenizer.from_pretrained('Rostlab/ProstT5', do_lower_case=False, legacy = True, cache_dir = "/hps/nobackup/jlees/campan/cache/huggingface")
+def parse_args():
+    """Read command-line options describing the input FASTA, output pickle,
+    and execution resources for the ProstT5 embedding step."""
+    parser = argparse.ArgumentParser(
+        description="Embed protein sequences from a FASTA file with ProstT5."
+    )
+    parser.add_argument(
+        "--input-fasta",
+        required=True,
+        type=Path,
+        help="Amino-acid FASTA file to embed (e.g. *_for_clustering_aa.fasta).",
+    )
+    parser.add_argument(
+        "--out-pk",
+        type=Path,
+        default=Path("./embeddings.pk"),
+        help="Path to write the pickled {ids, prots, embd} dict to.",
+    )
+    parser.add_argument(
+        "--nthreads",
+        "-j",
+        type=int,
+        default=8,
+        help="Number of CPU threads passed to torch.set_num_threads.",
+    )
+    parser.add_argument(
+        "--cache-dir",
+        default=DEFAULT_CACHE_DIR,
+        help="HuggingFace cache directory for the ProstT5 tokenizer/model.",
+    )
+    parser.add_argument(
+        "--max-prots",
+        type=int,
+        default=1_000_000,
+        help="Stop reading the FASTA file after this many records.",
+    )
+    return parser.parse_args()
 
-# Load the model
-model = T5EncoderModel.from_pretrained("Rostlab/ProstT5", cache_dir = "/hps/nobackup/jlees/campan/cache/huggingface").to(device)
 
-# only GPUs support half-precision currently; if you want to run on CPU use full-precision (not recommended, much slower)
-model.float() if device.type=='cpu' else model.half()
-# model.half()
-
-# prepare your protein sequences/structures as a list.
-# Amino acid sequences are expected to be upper-case ("PRTEINO" below)
-# while 3Di-sequences need to be lower-case ("strctr" below).
-# listofprots = ["PRTEINO", "strct"]
-listofprots = []
-listofids   = []
-#### Let's start first with only one file
-
-print("> Reading proteins")
-thefile = "/nfs/research/jlees/campan/proteins.faa"
-# maxprots = 5000
-#maxprots = 30000
-maxprots = 1000000
-with open(thefile, "r") as f:
-    protid  = ""
+def read_fasta(path, max_prots):
+    """Read a FASTA file into parallel lists of ids and sequences."""
+    listofids = []
+    listofprots = []
+    protid = ""
     protseq = ""
-    for line in f:
-        if ">" in line:
-            # New prot!
-            if protid != "":
-                listofprots.append(protseq.replace("\n", "").replace("*", ""))
-                listofids.append(protid)
-                protseq = ""
-
-            protid = line.split(" ")[0].replace(">", "")
-        else:
-            protseq += line
-        if len(listofprots) > maxprots: break
-
-# print(listofprots)
-
-# replace all rare/ambiguous amino acids by X (3Di sequences do not have those) and introduce white-space between all sequences (AAs and 3Di)
-listofprots = [" ".join(list(re.sub(r"[UZOB]", "X", sequence))) for sequence in listofprots]
-
-# print(listofprots)
-# The direction of the translation is indicated by two special tokens:
-# if you go from AAs to 3Di (or if you want to embed AAs), you need to prepend "<AA2fold>"
-# if you go from 3Di to AAs (or if you want to embed 3Di), you need to prepend "<fold2AA>"
-listofprots = [ "<AA2fold>" + " " + s if s.isupper() else "<fold2AA>" + " " + s # this expects 3Di sequences to be already lower-case
-                      for s in listofprots
-                    ]
+    with path.open("r") as handle:
+        for line in handle:
+            if ">" in line:
+                if protid != "":
+                    listofprots.append(protseq.replace("\n", "").replace("*", ""))
+                    listofids.append(protid)
+                    protseq = ""
+                protid = line.split(" ")[0].replace(">", "").strip()
+            else:
+                protseq += line
+            if len(listofprots) > max_prots:
+                break
+    # flush the last record
+    if protid != "" and (not listofprots or listofids[-1] != protid):
+        listofprots.append(protseq.replace("\n", "").replace("*", ""))
+        listofids.append(protid)
+    return listofids, listofprots
 
 
-#### All list processing
-# listofprots = [listofprots[0]]
-# print("> Tokenising proteins")
-# # tokenize sequences and pad up to the longest sequence in the batch
-# ids = tokenizer.batch_encode_plus(listofprots,
-#                                   add_special_tokens = True,
-#                                   padding = "longest",
-#                                   return_tensors = 'pt').to(device)
-#
-# print("> Generating embeddings")
-# # generate embeddings
-#
-# print(ids)
-# print(ids.input_ids)
-# # sys.exit()
-# with torch.no_grad():
-#     embedding_rpr = model(
-#               ids.input_ids,
-#               attention_mask=ids.attention_mask
-#               )
-# print(embedding_rpr)
-# sys.exit()
-# # extract residue embeddings for the first ([0,:]) sequence in the batch and remove padded & special tokens, incl. prefix ([0,1:8])
-# emb_0 = embedding_rpr.last_hidden_state[0, :] # shape (7 x 1024)
-# # same for the second ([1,:]) sequence but taking into account different sequence lengths ([1,:6])
-# emb_1 = embedding_rpr.last_hidden_state[1, 1:6] # shape (5 x 1024)
-#
-# # if you want to derive a single representation (per-protein embedding) for the whole protein
-# emb_0_per_protein = emb_0.mean(dim = 0) # shape (1024)
-#
-# print(emb_0, emb_0.shape)
-# print(emb_1, emb_1.shape)
-# print(emb_0_per_protein, emb_0_per_protein.shape)
-
-# listofembds = [embedding_rpr.last_hidden_state[i, 1:6].mean(dim = 0).cpu().numpy() for i in range(len(listofprots))]
-# print(listofembds)
-# matrixofembds = np.vstack(listofembds)
-
-#### Individual protein processing
-# listofprots = [listofprots[0]]
-outembeds = []
-for iP in listofprots:
-    print("> Tokenising protein")
-    # tokenize sequences and pad up to the longest sequence in the batch
-    ids = tokenizer([iP],
-                     add_special_tokens = True,
-                     padding = "longest",
-                     return_tensors = 'pt').to(device)
-
-    print("> Generating embedding")
-    # generate embeddings
-
-    # print(ids)
-    # print(ids.input_ids)
-    # sys.exit()
-    with torch.no_grad():
-        embedding_rpr = model(
-                  ids.input_ids,
-                  attention_mask=ids.attention_mask
-                  )
-    # print(embedding_rpr)
-    # sys.exit()
-
-    # number of real (non-padded) tokens for this sequence, including the
-    # prepended <AA2fold>/<fold2AA> token and the trailing </s> token
-    seq_len = int(ids.attention_mask[0].sum().item())
-    # drop position 0 (prefix token) and the final token (EOS) so we only
-    # average over the actual amino-acid / 3Di residue positions
-    outembeds.append(embedding_rpr.last_hidden_state[0, 1:seq_len - 1].mean(dim = 0).cpu().numpy())
-    del ids,embedding_rpr
+def prepare_sequences(listofprots):
+    """Replace rare/ambiguous amino acids with X, add whitespace between
+    residues, and prepend the ProstT5 direction token (<AA2fold> for
+    amino-acid sequences, <fold2AA> for lower-case 3Di sequences)."""
+    listofprots = [
+        " ".join(list(re.sub(r"[UZOB]", "X", sequence))) for sequence in listofprots
+    ]
+    listofprots = [
+        "<AA2fold>" + " " + s if s.isupper() else "<fold2AA>" + " " + s
+        for s in listofprots
+    ]
+    return listofprots
 
 
-matrixofembds = np.vstack(outembeds)
-outdict = {
-    "ids"   : listofids,
-    "prots" : listofprots,
-    "embd"  : matrixofembds,
-}
+def load_model(cache_dir, device):
 
-with open("./embeddings.pk", "wb") as f:
-    pk.dump(outdict, f)
+    print("before tokenizer")
+    tokenizer = T5Tokenizer.from_pretrained(
+        MODEL_NAME,
+        do_lower_case=False,
+        legacy=True,
+        cache_dir=cache_dir,
+    )
+    print("after tokenizer")
+
+    print("before model")
+    print("MODEL_NAME =", MODEL_NAME)
+    print("cache_dir =", cache_dir)
+    model = T5EncoderModel.from_pretrained(
+        MODEL_NAME,
+        cache_dir=cache_dir,
+    )
+    print("after model")
+
+    print("before to(device)")
+    model = model.to(device)
+    print("after to(device)")
+
+    print("before precision")
+    model.float() if device.type == "cpu" else model.half()
+    print("after precision")
+
+    model.eval()
+    print("after eval")
+
+    return tokenizer, model
+
+
+def embed_sequences(listofprots, tokenizer, model, device):
+    """Embed each prepared sequence individually and mean-pool over residue
+    positions (excluding the prefix token and the trailing EOS token) to get
+    one fixed-length vector per protein."""
+    outembeds = []
+    for i, iP in enumerate(listofprots):
+        print(f"> Embedding protein {i + 1}/{len(listofprots)}")
+        ids = tokenizer(
+            [iP], add_special_tokens=True, padding="longest", return_tensors="pt"
+        ).to(device)
+
+        with torch.no_grad():
+            embedding_rpr = model(
+                ids.input_ids, attention_mask=ids.attention_mask
+            )
+
+        # number of real (non-padded) tokens for this sequence, including the
+        # prepended <AA2fold>/<fold2AA> token and the trailing </s> token
+        seq_len = int(ids.attention_mask[0].sum().item())
+        # drop position 0 (prefix token) and the final token (EOS) so we only
+        # average over the actual amino-acid / 3Di residue positions
+        outembeds.append(
+            embedding_rpr.last_hidden_state[0, 1 : seq_len - 1].mean(dim=0).cpu().numpy()
+        )
+        del ids, embedding_rpr
+
+    return np.vstack(outembeds)
+
+
+def main():
+    args = parse_args()
+    run_start = time.time()
+
+    print("> Initialising PyTorch")
+    torch.set_num_threads(args.nthreads)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(device)
+    print(f"> Reading proteins from {args.input_fasta}")
+    listofids, listofprots = read_fasta(args.input_fasta, args.max_prots)
+    print(f"> Got {len(listofids)} proteins")
+
+    print("> Loading model")
+    tokenizer, model = load_model(args.cache_dir, device)
+    print("here")
+    prepared = prepare_sequences(listofprots)
+
+    print("> Generating embeddings")
+    matrixofembds = embed_sequences(prepared, tokenizer, model, device)
+
+    outdict = {
+        "ids": listofids,
+        "prots": prepared,
+        "embd": matrixofembds,
+    }
+
+    args.out_pk.parent.mkdir(parents=True, exist_ok=True)
+    with args.out_pk.open("wb") as f:
+        pk.dump(outdict, f)
+
+    print(f"> Wrote {matrixofembds.shape} embedding matrix to {args.out_pk}")
+    print(f"> Done in {time.time() - run_start:.1f}s")
+
+
+if __name__ == "__main__":
+    main()
