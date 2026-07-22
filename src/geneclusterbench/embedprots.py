@@ -9,7 +9,7 @@ import torch
 from transformers import T5EncoderModel, T5Tokenizer
 
 MODEL_NAME = "Rostlab/ProstT5"
-DEFAULT_CACHE_DIR = "/hps/nobackup/jlees/campan/cache/huggingface"
+DEFAULT_CACHE_DIR = "/nfs/research/jlees/campan/cache/huggingface"
 
 
 def parse_args():
@@ -108,7 +108,6 @@ def load_model(cache_dir, device):
         model = T5EncoderModel.from_pretrained(
             MODEL_NAME,
             cache_dir=cache_dir,
-            low_cpu_mem_usage=True,
         )
     except Exception as e:
         import traceback

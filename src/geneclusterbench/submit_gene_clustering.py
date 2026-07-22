@@ -116,7 +116,7 @@ EMBEDDINGS_SCAFFOLD = (
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
     "uv run --project {gcbrepo} python -m geneclusterbench.embedprots "
     "--input-fasta {inputfile} --out-pk {pkoutput} --nthreads {ncores} && "
-    "uv run --project {gcbrepo} python -m geneclusterbench.cluster_embeddings_file "
+    "uv run --project {gcbrepo} python -m geneclusterbench.cluster_embeddings "
     "--embeddings-file {pkoutput} --nthreads {ncores} --out-dir {clusterdir} && "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
@@ -661,7 +661,7 @@ def main():
     parser.add_argument("--temp-outdir", "-to", default="/hps/nobackup/jlees/campan/tmp/")
     parser.add_argument("--threads", "-j", default=8, type=int)
     parser.add_argument("--time", "-t", default="1-12:00:00")
-    parser.add_argument("--mem", "-m", default="48")
+    parser.add_argument("--mem", "-m", default="256")
     parser.add_argument("--max-simultaneous-cores", "-M", default=2000, type=int)
     parser.add_argument("--preset-timestamp", "-P", default=-1, type=int)
     parser.add_argument("--pretend", "-p", action="store_true")
