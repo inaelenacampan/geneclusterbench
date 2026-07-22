@@ -114,8 +114,6 @@ SKETCH_SCAFFOLD_NT = (
 EMBEDDINGS_SCAFFOLD = (
     "mkdir -p {workdir} && mkdir -p {embeddir} && cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
-    "uv run --project {gcbrepo} python -m geneclusterbench.embedprots "
-    "--input-fasta {inputfile} --out-pk {pkoutput} --nthreads {ncores} && "
     "uv run --project {gcbrepo} python -m geneclusterbench.cluster_embeddings "
     "--embeddings-file {pkoutput} --nthreads {ncores} --out-dir {clusterdir} && "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
@@ -240,7 +238,7 @@ def get_gene_list_for_sketch(simdir, seqtype):
                 tsv.write(f"{record.id}\t{gene_fasta}\n")
     return tsv_path
 
-def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9, gcbrepo=None):
+def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9, gcbrepo=None, pkfile=None):
     
     if seqtype == "nt" :
         seq_arg = "nucleotide"
@@ -406,11 +404,14 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
 
         embeddir = os.path.join(outfolder, "embeddings")
 
+        if pkfile is None:
+            raise RuntimeError("embeddings process requires a resolved pkfile")
+
         return EMBEDDINGS_SCAFFOLD.format(
             workdir=outfolder,
             embeddir=embeddir,
             inputfile=infile,
-            pkoutput=os.path.join(embeddir, "embeddings.pk"),
+            pkoutput=pkfile,
             clusterdir=os.path.join(outfolder, "clustering"),
             gcbrepo=gcbrepo,
             ncores=nthreads,
@@ -440,6 +441,18 @@ def get_clustering_fasta(simdir, seqtype):
             f"Expected one {expected} in {simdir}, found {len(matches)}"
         )
     return os.path.join(simdir, matches[0])
+
+def get_embeddings_pk(simdir):
+    # .pk files should live inside simdir (datapath/simulations/<assembly>/<seed>/)
+    # so the lookup is scoped to a single (assembly, seed) pair and can't
+    # accidentally grab another assembly's embeddings that happens to share
+    # the same seed.
+    matches = glob.glob(os.path.join(simdir, "*.pk"))
+    if len(matches) != 1:
+        raise RuntimeError(
+            f"Expected exactly one .pk file in {simdir}, found {len(matches)}: {matches}"
+        )
+    return matches[0]
 
 def get_fasta_file_list(simdir):
     matches = [
@@ -575,6 +588,11 @@ def submit_clustering_jobs(args):
                                 infile = get_gene_list_for_sketch(simdir, "nt")
                         else :
                             infile = get_clustering_fasta(simdir, seqtype)
+
+                        pkfile = (
+                            get_embeddings_pk(simdir) if process == "embeddings" else None
+                        )
+
                         for c_value in get_c_values_for_process(process, seqtype):
                             suffix = f"_st-{seqtype}" + (
                                 f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
@@ -595,7 +613,8 @@ def submit_clustering_jobs(args):
                                     args.mem,
                                     args.softwaredir,
                                     c_value,
-                                    gcbrepo=args.gcb_repo
+                                    gcbrepo=args.gcb_repo,
+                                    pkfile=pkfile,
                                 )
                             )
 
@@ -665,7 +684,7 @@ def main():
     parser.add_argument("--max-simultaneous-cores", "-M", default=2000, type=int)
     parser.add_argument("--preset-timestamp", "-P", default=-1, type=int)
     parser.add_argument("--pretend", "-p", action="store_true")
-    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo,ppanggolin,panta,panx,sketch")
+    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo,ppanggolin,panta,panx,sketch,embeddings")
     parser.add_argument("--sequence-type", "-st", default="nt,aa")
     parser.add_argument("--softwaredir", default=DEFAULT_SOFTWAREDIR)
     parser.add_argument("--benchmark-runner", default=DEFAULT_RUNNER)
