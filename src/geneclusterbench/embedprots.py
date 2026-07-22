@@ -104,15 +104,11 @@ def load_model(cache_dir, device):
     print("before model")
     print("MODEL_NAME =", MODEL_NAME)
     print("cache_dir =", cache_dir)
-    try:
-        model = T5EncoderModel.from_pretrained(
-            MODEL_NAME,
-            cache_dir=cache_dir,
-        )
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise
+
+    model = T5EncoderModel.from_pretrained(
+        MODEL_NAME,
+        cache_dir=cache_dir,
+    )
     print("after model")
 
     print("before to(device)")
@@ -135,7 +131,7 @@ def embed_sequences(listofprots, tokenizer, model, device):
     one fixed-length vector per protein."""
     outembeds = []
     for i, iP in enumerate(listofprots):
-        print(f"> Embedding protein {i + 1}/{len(listofprots)}")
+        #print(f"> Embedding protein {i + 1}/{len(listofprots)}")
         ids = tokenizer(
             [iP], add_special_tokens=True, padding="longest", return_tensors="pt"
         ).to(device)
