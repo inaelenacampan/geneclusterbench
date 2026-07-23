@@ -60,8 +60,11 @@ BASE_FONT_SIZE = 7
 DOPREM = True
 
 SKETCH_METHOD_NAMES = ["hdbscan_dist", "hdbscan_tsne", "hdbscan_umap"]
-EMBED_METHOD_NAMES = ["embed_hdbscan_dist", "embed_hdbscan_tsne", "embed_hdbscan_umap"]
 
+EMBED_METHOD_NAMES = ["embed_hdbscan_raw", "embed_hdbscan_tsne", "embed_hdbscan_umap"]
+
+# Every "family" of methods that gets its own bracket + footnote in the
+# per-clusterer bar/violin/heatmap plots (sketch and embeddings today).
 FAMILY_METHOD_NAMES = {
     "Sketching methods": SKETCH_METHOD_NAMES,
     "Embeddings methods": EMBED_METHOD_NAMES,
@@ -88,7 +91,7 @@ FANCYDICT = {
     "hdbscan_tsne/nt": "Sketch - t-SNE* (NT)",
     "hdbscan_umap/nt": "Sketch - UMAP* (NT)",
 
-    "embed_hdbscan_dist/aa": "Embeddings - dist* (AA)",
+    "embed_hdbscan_raw/aa": "Embeddings - dist* (AA)",
     "embed_hdbscan_tsne/aa": "Embeddings - t-SNE* (AA)",
     "embed_hdbscan_umap/aa": "Embeddings - UMAP* (AA)",
 }
@@ -109,7 +112,7 @@ COMBO_ORDER = [
     "hdbscan_dist/nt",
     "hdbscan_tsne/nt",
     "hdbscan_umap/nt",
-    "embed_hdbscan_dist/aa",
+    "embed_hdbscan_raw/aa",
     "embed_hdbscan_tsne/aa",
     "embed_hdbscan_umap/aa",
 ]
@@ -170,7 +173,7 @@ CONFIGDICT_COLOURS = {
     "hdbscan_tsne/nt": "#34751B",
     "hdbscan_umap/nt": "#7FBE5A",
 
-    "embed_hdbscan_dist/aa": "#F2A03D",
+    "embed_hdbscan_raw/aa": "#F2A03D",
     "embed_hdbscan_tsne/aa": "#D9770B",
     "embed_hdbscan_umap/aa": "#F7C177",
 }
@@ -938,7 +941,9 @@ def get_dfs_from_embeddings(folderpath, true_max_gene=None):
         return {}
 
     alldf = pd.read_csv(tsv_path, sep="\t")
-
+    # Gene ids in clusters.tsv look like "geneid_0_1" (an extra isoform-style
+    # suffix); strip that down to "geneid_0" so it matches the plain
+    # "geneid_N" convention used everywhere else in this script.
     alldf["member"] = alldf["member"].apply(
         lambda gid: "_".join(gid.split("_")[:2]) if gid.count("_") >= 2 else gid
     )
@@ -954,6 +959,8 @@ def get_dfs_from_embeddings(folderpath, true_max_gene=None):
         if true_max_gene is not None:
             max_gene = max(max_gene, true_max_gene)
 
+        # Pad with genes embeddings/HDBSCAN never emitted a row for (e.g.
+        # filtered out upstream), same rationale as the sketch branch.
         missing = [
             f"geneid_{i}" for i in range(max_gene + 1) if i not in gene_nums
         ]
