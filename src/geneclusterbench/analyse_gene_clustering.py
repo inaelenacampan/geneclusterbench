@@ -2188,7 +2188,10 @@ def methods_comparison_heatmap(theargs):
 
 
 def build_pairwise_ari_matrix(combo_list, labels_by_seed):
-    
+    # Matrix is symmetric (ARI(i,j) == ARI(j,i)), so we only ever compute and
+    # store the lower triangle (mat[j, i] with j > i). The upper triangle is
+    # left as NaN on purpose; plot_pairwise_ari_heatmap masks NaNs to white so
+    # only a lower-triangle heatmap is drawn instead of the redundant full grid.
     n = len(combo_list)
     mat = np.full((n, n), np.nan)
 
@@ -2215,11 +2218,126 @@ def build_pairwise_ari_matrix(combo_list, labels_by_seed):
                 seed_aris.append(float(ari))
 
             if seed_aris:
-                mean_ari = float(np.mean(seed_aris))
-                mat[i, j] = mean_ari
-                mat[j, i] = mean_ari
+                mat[j, i] = float(np.mean(seed_aris))
 
     return mat
+
+
+def build_pairwise_f1_matrix(combo_list, labels_by_seed):
+    """Pairwise agreement between methods on *which genes they kept*.
+
+    Several clusterers drop/filter genes rather than forcing every gene into
+    a cluster (see get_labels_list_from_df). For a pair of methods, treat the
+    set of genes each one retained as a set and compute the F1 score (a.k.a.
+    Dice coefficient) between the two retained-gene sets:
+
+        F1 = 2 * |kept_i ∩ kept_j| / (|kept_i| + |kept_j|)
+
+    This is symmetric in i/j (no method is "ground truth"), so exactly like
+    the ARI matrix we only need to compute and store the lower triangle.
+    """
+    n = len(combo_list)
+    mat = np.full((n, n), np.nan)
+
+    for i, combo_i in enumerate(combo_list):
+        mat[i, i] = 1.0
+        for j in range(i + 1, len(combo_list)):
+            combo_j = combo_list[j]
+            seed_f1s = []
+            for seed, combo_dict in labels_by_seed.items():
+                if combo_i not in combo_dict or combo_j not in combo_dict:
+                    continue
+                kept_i = set(combo_dict[combo_i].keys())
+                kept_j = set(combo_dict[combo_j].keys())
+
+                denom = len(kept_i) + len(kept_j)
+                if denom == 0:
+                    continue
+
+                f1 = 2 * len(kept_i & kept_j) / denom
+                seed_f1s.append(float(f1))
+
+            if seed_f1s:
+                mat[j, i] = float(np.mean(seed_f1s))
+
+    return mat
+
+
+def _plot_triangular_pairwise_heatmap(
+    mat, x, labels, namedict, outfolder, assembly, datatype, font_props,
+    cbar_label, filename_prefix,
+):
+    """Shared plotting code for the lower-triangle method-vs-method heatmaps
+    (pairwise ARI and pairwise gene-retention F1). `mat` is expected to
+    already have its upper triangle (j > i) set to NaN."""
+    ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
+
+    fig = plt.figure(
+        1, dpi=150,
+        figsize=(max(6.0, len(x) * 0.5 + 2.0), max(6.0, len(x) * 0.5 + 2.0)),
+    )
+    ax = fig.subplots()
+
+    masked_mat = np.ma.masked_invalid(mat)
+    cmap = copy.copy(plt.get_cmap("YlGnBu"))
+    cmap.set_bad(color="white")
+    im = ax.imshow(masked_mat, cmap=cmap, vmin=0, vmax=1, aspect="auto")
+
+    ax.set_xticks(range(len(x)))
+    ax.set_xticklabels(labels, rotation=45, ha="right", rotation_mode="anchor")
+    ax.set_yticks(range(len(x)))
+    ax.set_yticklabels(labels)
+
+    for i in range(len(x)):
+        for j in range(len(x)):
+            val = mat[i, j]
+            if np.isnan(val):
+                continue
+            txt_color = "white" if val < 0.5 else "black"
+            ax.text(
+                j, i, f"{val:.2f}",
+                ha="center", va="center",
+                fontsize=BASE_FONT_SIZE, color=txt_color,
+                fontproperties=ibmplexsans,
+            )
+
+    ax.set_xticks(np.arange(len(x) + 1) - 0.5, minor=True)
+    ax.set_yticks(np.arange(len(x) + 1) - 0.5, minor=True)
+    ax.grid(which="minor", color="white", linewidth=1.5)
+    ax.tick_params(which="minor", bottom=False, left=False)
+    ax.tick_params(which="major", bottom=False, left=False)
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(ibmplexsans)
+
+    cbar = fig.colorbar(im, ax=ax, fraction=0.035, pad=0.03)
+    cbar.set_label(cbar_label, fontproperties=ibmplexsans)
+    for label in cbar.ax.get_yticklabels():
+        label.set_fontproperties(ibmplexsans)
+
+    plt.text(0, 1.03, namedict[assembly], fontproperties=ibmplexsansitalics,
+             horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
+    plt.text(1, 1.03, "Simulations", fontproperties=ibmplexsans,
+             horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
+    if DOPREM:
+        plt.text(0.5, 1.03, "Preliminary", fontproperties=ibmplexsansbold,
+                 horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
+
+    family_footnote = get_family_footnote(x)
+    if family_footnote is not None:
+        plt.text(
+            0.5, -0.2, family_footnote,
+            fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
+            horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
+        )
+
+    for ext in ["png", "pdf", "svg"]:
+        fig.savefig(
+            os.path.join(outfolder, "_".join([filename_prefix, datatype, assembly]) + "." + ext),
+            bbox_inches="tight",
+        )
+    fig.clf()
+    del fig, ax
 
 
 def plot_pairwise_ari_heatmap(theargs):
@@ -2260,68 +2378,58 @@ def plot_pairwise_ari_heatmap(theargs):
         for c in x
     ]
 
-    fig = plt.figure(
-        1, dpi=150,
-        figsize=(max(6.0, len(x) * 0.5 + 2.0), max(6.0, len(x) * 0.5 + 2.0)),
+    _plot_triangular_pairwise_heatmap(
+        mat, x, labels, namedict, outfolder, assembly, datatype, font_props,
+        cbar_label="Adjusted Rand index between methods (adim.)",
+        filename_prefix="plot_heatmap_pairwise_ari",
     )
-    ax = fig.subplots()
-    im = ax.imshow(mat, cmap="YlGnBu", vmin=0, vmax=1, aspect="auto")
 
-    ax.set_xticks(range(len(x)))
-    ax.set_xticklabels(labels, rotation=45, ha="right", rotation_mode="anchor")
-    ax.set_yticks(range(len(x)))
-    ax.set_yticklabels(labels)
 
-    for i in range(len(x)):
-        for j in range(len(x)):
-            val = mat[i, j]
-            if np.isnan(val):
-                continue
-            txt_color = "white" if val < 0.5 else "black"
-            ax.text(
-                j, i, f"{val:.2f}",
-                ha="center", va="center",
-                fontsize=BASE_FONT_SIZE, color=txt_color,
-                fontproperties=ibmplexsans,
-            )
+def plot_pairwise_f1_heatmap(theargs):
+    """Lower-triangle heatmap of the pairwise gene-retention F1 score
+    (Dice coefficient) between methods: how much agreement there is between
+    two methods' sets of *kept* (non-deleted/non-filtered) genes."""
 
-    ax.set_xticks(np.arange(len(x) + 1) - 0.5, minor=True)
-    ax.set_yticks(np.arange(len(x) + 1) - 0.5, minor=True)
-    ax.grid(which="minor", color="white", linewidth=1.5)
-    ax.tick_params(which="minor", bottom=False, left=False)
-    ax.tick_params(which="major", bottom=False, left=False)
+    labels_by_seed, namedict, outfolder, assembly, datatype, font_props = theargs
 
-    for label in ax.get_xticklabels() + ax.get_yticklabels():
-        label.set_fontproperties(ibmplexsans)
+    print(f"\t- Plotting pairwise gene-retention F1 heatmap for simulations of {namedict[assembly]}")
 
-    cbar = fig.colorbar(im, ax=ax, fraction=0.035, pad=0.03)
-    cbar.set_label("Adjusted Rand index between methods (adim.)", fontproperties=ibmplexsans)
-    for label in cbar.ax.get_yticklabels():
-        label.set_fontproperties(ibmplexsans)
-
-    plt.text(0, 1.03, namedict[assembly], fontproperties=ibmplexsansitalics,
-             horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
-    plt.text(1, 1.03, "Simulations", fontproperties=ibmplexsans,
-             horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
-    if DOPREM:
-        plt.text(0.5, 1.03, "Preliminary", fontproperties=ibmplexsansbold,
-                 horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
-
-    family_footnote = get_family_footnote(x)
-    if family_footnote is not None:
-        plt.text(
-            0.5, -0.2, family_footnote,
-            fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
-            horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
+    if not labels_by_seed:
+        warnings.warn(
+            f"No per-method label data available for {assembly}/{datatype}; "
+            "skipping pairwise gene-retention F1 heatmap",
+            RuntimeWarning,
+            stacklevel=2,
         )
+        return
 
-    for ext in ["png", "pdf", "svg"]:
-        fig.savefig(
-            os.path.join(outfolder, "_".join(["plot_heatmap_pairwise_ari", datatype, assembly]) + "." + ext),
-            bbox_inches="tight",
+    combos_present = set()
+    for combo_dict in labels_by_seed.values():
+        combos_present.update(combo_dict.keys())
+
+    x = [combo for combo in COMBO_ORDER if combo in combos_present and combo in FANCYDICT]
+
+    if not x:
+        warnings.warn(
+            f"No clusterer/sequence-type combos available for {assembly}/{datatype}; "
+            "skipping pairwise gene-retention F1 heatmap",
+            RuntimeWarning,
+            stacklevel=2,
         )
-    fig.clf()
-    del fig, ax
+        return
+
+    mat = build_pairwise_f1_matrix(x, labels_by_seed)
+
+    labels = [
+        FANCYDICT[c] + (" *" if c.split("/")[0] in SKETCH_METHOD_NAMES or c.split("/")[0] in EMBED_METHOD_NAMES else "")
+        for c in x
+    ]
+
+    _plot_triangular_pairwise_heatmap(
+        mat, x, labels, namedict, outfolder, assembly, datatype, font_props,
+        cbar_label="Gene-retention F1 score between methods (adim.)",
+        filename_prefix="plot_heatmap_pairwise_gene_retention_f1",
+    )
 
 
 def load_seeds(seedsfile):
@@ -2506,6 +2614,11 @@ def main():
         (method_labels_by_assembly.get(assembly, {}), namedict, args.outfolder, assembly, "simulations", font_props)
         for assembly in assemblies
     ]
+
+    plottingtasks_pairwise_f1 = [
+        (method_labels_by_assembly.get(assembly, {}), namedict, args.outfolder, assembly, "simulations", font_props)
+        for assembly in assemblies
+    ]
     print("\n> Plotting...")
     if args.nthreads <= 1:
         for task in plottingtasks_pointplots:
@@ -2522,6 +2635,8 @@ def main():
             methods_comparison_heatmap(task)
         for task in plottingtasks_pairwise_ari:
             plot_pairwise_ari_heatmap(task)
+        for task in plottingtasks_pairwise_f1:
+            plot_pairwise_f1_heatmap(task)
 
     else:
         pool = Pool(args.nthreads)
@@ -2532,6 +2647,7 @@ def main():
         pool.map(number_of_clusters_stacked_bar_vs_c, plottingtasks_stackedbar_c)
         pool.map(methods_comparison_heatmap, plottingtasks_heatmap)
         pool.map(plot_pairwise_ari_heatmap, plottingtasks_pairwise_ari)
+        pool.map(plot_pairwise_f1_heatmap, plottingtasks_pairwise_f1)
         pool.close()
         pool.join()
     
@@ -2547,4 +2663,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main(
