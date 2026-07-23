@@ -4,6 +4,7 @@ import os
 import glob
 import argparse
 import re
+import itertools
 
 import numpy as np
 import pandas as pd
@@ -18,9 +19,33 @@ from scipy.optimize import curve_fit
 from sklearn.decomposition import PCA
 
 
+# List of the 30 simulation seeds. Used to reliably pull the seed
+# out of a file path even if other numeric folders appear on the way.
+SEEDS = [
+    34, 53144, 40547, 60207, 21708, 31001, 54634, 29492, 6032, 30354,
+    5319, 46118, 1681, 27347, 14928, 14557, 62092, 49444, 25172, 25913,
+    31375, 13478, 14720, 1274, 11998, 5455, 56065, 35787, 28734, 1894,
+]
+SEED_STRS = {str(s) for s in SEEDS}
+
+
 # ---------------------------------------------------------
 # FILE HANDLING
 # ---------------------------------------------------------
+
+def extract_seed(path):
+    """
+    Pull the seed out of a path by matching against the known SEEDS list.
+    Looks at every path component (folder names and filename), returns
+    the first one that matches a known seed. Returns None if not found.
+    """
+    parts = re.split(r"[\\/]", path)
+    for part in parts:
+        for token in re.findall(r"\d+", part):
+            if token in SEED_STRS:
+                return int(token)
+    return None
+
 
 def find_files(folder):
     return glob.glob(
@@ -71,6 +96,166 @@ def read_gff(gff_file):
             })
 
     return pd.DataFrame(rows)
+
+
+def read_gff_sequence(gff_file):
+    """
+    Prokka/GFF3 files often carry the genome sequence itself after a
+    '##FASTA' directive at the end of the file. Extract and concatenate
+    it (all contigs) into one string. Returns "" if no FASTA block found.
+    """
+    seq_lines = []
+    in_fasta = False
+
+    with open(gff_file) as fh:
+        for line in fh:
+            if line.startswith("##FASTA"):
+                in_fasta = True
+                continue
+            if in_fasta:
+                if line.startswith(">"):
+                    continue
+                seq_lines.append(line.strip())
+
+    return "".join(seq_lines).upper()
+
+
+def kmer_minhash(seq, k=21, sketch_size=1000):
+    """
+    Very small MinHash sketch of a sequence's k-mers, used as a fast
+    proxy for whole-genome similarity (same idea as Mash).
+    """
+    if len(seq) < k:
+        return set()
+
+    hashes = (
+        hash(seq[i:i + k])
+        for i in range(len(seq) - k + 1)
+    )
+
+    # keep the sketch_size smallest hashes -> MinHash sketch
+    return set(sorted(hashes)[:sketch_size])
+
+
+def mash_distance(sketch_a, sketch_b, k=21):
+    """
+    Approximate nucleotide divergence between two genomes from their
+    MinHash sketches. This is NOT nucleotide diversity (pi) in the
+    strict population-genetics sense -- it doesn't require alignment
+    or orthology calls, and is a widely used fast proxy for average
+    pairwise sequence divergence (Ondov et al. 2016, Mash).
+    """
+    if not sketch_a or not sketch_b:
+        return np.nan
+
+    intersection = len(sketch_a & sketch_b)
+    union = len(sketch_a | sketch_b)
+
+    if union == 0:
+        return np.nan
+
+    jaccard = intersection / union
+
+    if jaccard == 0:
+        return 1.0  # maximally divergent within sketch resolution
+
+    # Mash distance formula: d = -1/k * ln(2j / (1+j))
+    return -1.0 / k * np.log((2 * jaccard) / (1 + jaccard))
+
+
+def seed_nucleotide_diversity(seed_gff_files, k=21, sketch_size=1000):
+    """
+    Given the GFF files for all isolates of one seed, sketch each genome
+    and return the mean pairwise Mash distance -- a proxy for that
+    population's nucleotide diversity.
+    """
+    sketches = []
+
+    for gff_file in seed_gff_files:
+        seq = read_gff_sequence(gff_file)
+        if seq:
+            sketches.append(kmer_minhash(seq, k=k, sketch_size=sketch_size))
+
+    if len(sketches) < 2:
+        return np.nan
+
+    dists = [
+        mash_distance(a, b, k=k)
+        for a, b in combinations(sketches, 2)
+    ]
+
+    dists = [d for d in dists if not np.isnan(d)]
+
+    return float(np.mean(dists)) if dists else np.nan
+
+
+def compute_diversity_across_seeds(
+    diversity_root,
+    seeds,
+    k=21,
+    sketch_size=1000
+):
+    """
+    For every known seed, find its GFF files under diversity_root and
+    compute a mean pairwise Mash-distance (nucleotide diversity proxy).
+    Returns a DataFrame with columns: seed, n_isolates, nucleotide_diversity_proxy.
+    """
+    rows = []
+
+    all_gffs = find_gffs(diversity_root)
+    all_gffs = [g for g in all_gffs if "iso" in os.path.basename(g).lower()]
+
+    for seed in seeds:
+        seed_gffs = [g for g in all_gffs if extract_seed(g) == seed]
+
+        if not seed_gffs:
+            continue
+
+        print(f"Seed {seed}: {len(seed_gffs)} GFFs -> sketching")
+
+        div = seed_nucleotide_diversity(
+            seed_gffs, k=k, sketch_size=sketch_size
+        )
+
+        rows.append({
+            "seed": seed,
+            "n_isolates": len(seed_gffs),
+            "nucleotide_diversity_proxy": div
+        })
+
+    return pd.DataFrame(rows)
+
+
+def plot_nucleotide_diversity(diversity_df, out):
+
+    if diversity_df.empty:
+        print("No diversity data to plot.")
+        return
+
+    diversity_df = diversity_df.sort_values("nucleotide_diversity_proxy")
+
+    plt.figure(figsize=(10, 6))
+
+    sns.barplot(
+        data=diversity_df,
+        x="seed",
+        y="nucleotide_diversity_proxy",
+        order=diversity_df["seed"].astype(str),
+        color="steelblue"
+    )
+
+    plt.xticks(rotation=90, fontsize=7)
+    plt.xlabel("Seed")
+    plt.ylabel("Mean pairwise Mash distance\n(nucleotide diversity proxy)")
+    plt.title("Nucleotide diversity across simulated populations")
+
+    plt.tight_layout()
+    plt.savefig(
+        os.path.join(out, "nucleotide_diversity_by_seed.png"),
+        dpi=300
+    )
+    plt.close()
+
 
 # ---------------------------------------------------------
 # BASIC METRICS
@@ -338,7 +523,7 @@ def jaccard_distribution(mat):
 # RAREFACTION CLOUD
 # ---------------------------------------------------------
 
-def plot_rarefaction_cloud(accumulations, out):
+def plot_rarefaction_cloud(accumulations, out, seeds=None):
 
     arr = np.array(accumulations)
 
@@ -349,14 +534,20 @@ def plot_rarefaction_cloud(accumulations, out):
 
     plt.figure(figsize=(8, 6))
 
-    for curve in arr:
-        plt.plot(x, curve, alpha=0.20)
+    if seeds is not None:
+        palette = sns.color_palette("husl", len(seeds))
+        for curve, seed, colour in zip(arr, seeds, palette):
+            plt.plot(x, curve, alpha=0.35, color=colour, label=str(seed))
+    else:
+        for curve in arr:
+            plt.plot(x, curve, alpha=0.20)
 
     plt.plot(
         x,
         mean,
         color="black",
-        linewidth=3
+        linewidth=3,
+        label="Mean"
     )
 
     plt.fill_between(
@@ -366,9 +557,18 @@ def plot_rarefaction_cloud(accumulations, out):
         alpha=0.3
     )
 
+    if seeds is not None:
+        plt.legend(
+            title="Seed",
+            fontsize=6,
+            ncol=2,
+            bbox_to_anchor=(1.02, 1),
+            loc="upper left"
+        )
+
     plt.xlabel("Number of isolates")
     plt.ylabel("Pangenome size")
-    plt.title("Pangenome rarefaction")
+    plt.title("Pangenome rarefaction (per seed)")
 
     plt.tight_layout()
     plt.savefig(
@@ -383,7 +583,7 @@ def plot_rarefaction_cloud(accumulations, out):
 # CORE DECAY
 # ---------------------------------------------------------
 
-def plot_core_decay(core_curves, out):
+def plot_core_decay(core_curves, out, seeds=None):
 
     arr = np.array(core_curves)
 
@@ -394,14 +594,20 @@ def plot_core_decay(core_curves, out):
 
     plt.figure(figsize=(8, 6))
 
-    for curve in arr:
-        plt.plot(x, curve, alpha=0.2)
+    if seeds is not None:
+        palette = sns.color_palette("husl", len(seeds))
+        for curve, seed, colour in zip(arr, seeds, palette):
+            plt.plot(x, curve, alpha=0.35, color=colour, label=str(seed))
+    else:
+        for curve in arr:
+            plt.plot(x, curve, alpha=0.2)
 
     plt.plot(
         x,
         mean,
         color="black",
-        lw=3
+        lw=3,
+        label="Mean"
     )
 
     plt.fill_between(
@@ -411,9 +617,18 @@ def plot_core_decay(core_curves, out):
         alpha=0.3
     )
 
+    if seeds is not None:
+        plt.legend(
+            title="Seed",
+            fontsize=6,
+            ncol=2,
+            bbox_to_anchor=(1.02, 1),
+            loc="upper left"
+        )
+
     plt.xlabel("Number of isolates")
     plt.ylabel("Core genes")
-    plt.title("Core genome decay")
+    plt.title("Core genome decay (per seed)")
 
     plt.tight_layout()
     plt.savefig(
@@ -678,16 +893,25 @@ def estimate_heaps(accumulations):
     return alphas
 
 
-def plot_openness(accumulations, out):
+def plot_openness(accumulations, out, seeds=None):
 
     alphas = estimate_heaps(accumulations)
 
     plt.figure(figsize=(6, 6))
 
-    sns.violinplot(y=alphas)
+    sns.violinplot(y=alphas, inner=None, color="lightgrey")
+    sns.stripplot(y=alphas, color="black", size=5, jitter=0.05)
+
+    if seeds is not None and len(seeds) == len(alphas):
+        for seed, a in zip(seeds, alphas):
+            plt.annotate(
+                str(seed),
+                (0.03, a),
+                fontsize=6
+            )
 
     plt.ylabel("Heaps alpha")
-    plt.title("Pangenome openness")
+    plt.title("Pangenome openness (one point per seed)")
 
     plt.tight_layout()
 
@@ -761,7 +985,10 @@ def plot_phase_space(mats, out):
 
 def analyse(
     folder,
-    gff_folder=None
+    gff_folder=None,
+    diversity_root=None,
+    kmer_size=21,
+    sketch_size=1000
 ):
 
     out = os.path.join(
@@ -777,14 +1004,21 @@ def analyse(
     accumulations = []
     cores = []
     pangenome_sizes = []
+    seeds = []
 
     for f in files:
 
         print("Loading:", f)
 
+        seed = extract_seed(f)
+        if seed is None:
+            print(f"  WARNING: could not identify seed for {f}, skipping")
+            continue
+
         mat = load_pa(f)
 
         mats.append(mat)
+        seeds.append(seed)
 
         accumulations.append(
             accumulation(mat)
@@ -798,16 +1032,21 @@ def analyse(
             len(mat)
         )
 
+    if not mats:
+        raise RuntimeError("No presence/absence files with a recognised seed were found.")
+
     representative = mats[0]
 
     plot_rarefaction_cloud(
         accumulations,
-        out
+        out,
+        seeds=seeds
     )
 
     plot_core_decay(
         cores,
-        out
+        out,
+        seeds=seeds
     )
 
     plot_frequency_spectrum(
@@ -842,7 +1081,8 @@ def analyse(
 
     plot_openness(
         accumulations,
-        out
+        out,
+        seeds=seeds
     )
 
     plot_phase_space(
@@ -851,8 +1091,8 @@ def analyse(
     )
 
     pd.DataFrame({
-        "pangenome_size":
-            pangenome_sizes
+        "seed": seeds,
+        "pangenome_size": pangenome_sizes
     }).to_csv(
         os.path.join(
             folder,
@@ -860,6 +1100,27 @@ def analyse(
         ),
         index=False
     )
+
+    # ---------------------------------------------------------
+    # Nucleotide diversity across the 30 populations, computed from
+    # the GFF-embedded genome sequences of each seed's 100 isolates.
+    # ---------------------------------------------------------
+    if diversity_root is not None:
+
+        diversity_df = compute_diversity_across_seeds(
+            diversity_root,
+            SEEDS,
+            k=kmer_size,
+            sketch_size=sketch_size
+        )
+
+        diversity_df.to_csv(
+            os.path.join(folder, "nucleotide_diversity_by_seed.csv"),
+            index=False
+        )
+
+        plot_nucleotide_diversity(diversity_df, out)
+
     if gff_folder is not None:
 
         gffs = find_gffs(
@@ -921,12 +1182,43 @@ if __name__ == "__main__":
         "--gff-folder",
         required=False,
         default="/nfs/research/jlees/campan/data/clustering_benchmarking/2026_06_10_simsnowwithntandaasandgffs/MSdataset/6925_1#61/",
-        help="Folder containing original GFF files"
+        help="Folder containing original (reference) GFF files, used for the gene-architecture plots"
+    )
+
+    parser.add_argument(
+        "-d",
+        "--diversity-root",
+        required=False,
+        default="/nfs/research/jlees/campan/data/clustering_benchmarking/2026_06_10_simsnowwithntandaasandgffs/simulations/PROKKA_06122025",
+        help=(
+            "Root folder containing the 30 per-seed subfolders, each with "
+            "~100 simulated isolate GFFs (with embedded ##FASTA), used to "
+            "estimate nucleotide diversity per seed. Set to '' to skip."
+        )
+    )
+
+    parser.add_argument(
+        "-k",
+        "--kmer-size",
+        type=int,
+        default=21,
+        help="K-mer size for the Mash-style diversity sketch"
+    )
+
+    parser.add_argument(
+        "-s",
+        "--sketch-size",
+        type=int,
+        default=1000,
+        help="MinHash sketch size for the diversity estimate"
     )
 
     args = parser.parse_args()
 
     analyse(
         args.input,
-        args.gff_folder
+        gff_folder=args.gff_folder,
+        diversity_root=(args.diversity_root or None),
+        kmer_size=args.kmer_size,
+        sketch_size=args.sketch_size
     )
