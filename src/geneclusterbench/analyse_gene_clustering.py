@@ -49,7 +49,8 @@ CLUSTERERS = [
             "ppanggolin",
             "panta",
             "panx",
-            "sketch"
+            "sketch",
+            "embeddings"
             ]
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
@@ -59,6 +60,12 @@ BASE_FONT_SIZE = 7
 DOPREM = True
 
 SKETCH_METHOD_NAMES = ["hdbscan_dist", "hdbscan_tsne", "hdbscan_umap"]
+EMBED_METHOD_NAMES = ["embed_hdbscan_dist", "embed_hdbscan_tsne", "embed_hdbscan_umap"]
+
+FAMILY_METHOD_NAMES = {
+    "Sketching methods": SKETCH_METHOD_NAMES,
+    "Embeddings methods": EMBED_METHOD_NAMES,
+}
 
 DEFAULT_FIGSIZE = (14, 6.5)
 
@@ -80,6 +87,10 @@ FANCYDICT = {
     "hdbscan_dist/nt": "Sketch - dist* (NT)",
     "hdbscan_tsne/nt": "Sketch - t-SNE* (NT)",
     "hdbscan_umap/nt": "Sketch - UMAP* (NT)",
+
+    "embed_hdbscan_dist/aa": "Embeddings - dist* (AA)",
+    "embed_hdbscan_tsne/aa": "Embeddings - t-SNE* (AA)",
+    "embed_hdbscan_umap/aa": "Embeddings - UMAP* (AA)",
 }
 
 COMBO_ORDER = [
@@ -98,12 +109,25 @@ COMBO_ORDER = [
     "hdbscan_dist/nt",
     "hdbscan_tsne/nt",
     "hdbscan_umap/nt",
+    "embed_hdbscan_dist/aa",
+    "embed_hdbscan_tsne/aa",
+    "embed_hdbscan_umap/aa",
 ]
 
 SKETCH_FOOTNOTE = (
     "* Sketch/HDBSCAN methods run once per seed on a fixed embedding; "
     "there is no c (minimum sequence identity) sweep, so no averaging over c is performed."
 )
+
+EMBED_FOOTNOTE = (
+    "* Embeddings/HDBSCAN methods run once per seed on a fixed embedding; "
+    "there is no c (minimum sequence identity) sweep, so no averaging over c is performed."
+)
+
+FAMILY_FOOTNOTES = {
+    "Sketching methods": SKETCH_FOOTNOTE,
+    "Embeddings methods": EMBED_FOOTNOTE,
+}
 
 CONFIGDICT = {
     "adj_rand_index": {
@@ -145,6 +169,10 @@ CONFIGDICT_COLOURS = {
     "hdbscan_dist/nt": "#5DA12F",
     "hdbscan_tsne/nt": "#34751B",
     "hdbscan_umap/nt": "#7FBE5A",
+
+    "embed_hdbscan_dist/aa": "#F2A03D",
+    "embed_hdbscan_tsne/aa": "#D9770B",
+    "embed_hdbscan_umap/aa": "#F7C177",
 }
 
 
@@ -723,6 +751,13 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
             "several methods (hdbscan_dist/hdbscan_tsne/hdbscan_umap)."
         )
 
+    if clusterer == "embeddings":
+        raise RuntimeError(
+            "get_df_from_clusterer('embeddings', ...) should not be called directly; "
+            "use get_dfs_from_embeddings(), since one embeddings folder can contain "
+            "several methods (hdbscan_dist/hdbscan_tsne/hdbscan_umap)."
+        )
+
     
         return outdf.set_index("cluster_id")
 
@@ -896,6 +931,61 @@ def get_dfs_from_sketch(folderpath, true_max_gene=None):
     return outdict
 
 
+def get_dfs_from_embeddings(folderpath, true_max_gene=None):
+
+    tsv_path = os.path.join(folderpath, "clustering", "clusters.tsv")
+    if not os.path.isfile(tsv_path):
+        return {}
+
+    alldf = pd.read_csv(tsv_path, sep="\t")
+
+    alldf["member"] = alldf["member"].apply(
+        lambda gid: "_".join(gid.split("_")[:2]) if gid.count("_") >= 2 else gid
+    )
+
+    outdict = {}
+    for method_name, methoddf in alldf.groupby("method"):
+        genelist = sorted(
+            set(methoddf["member"]), key=lambda x: int(x.split("_")[1])
+        )
+        gene_nums = {int(g.split("_")[1]) for g in genelist}
+
+        max_gene = max(gene_nums) if gene_nums else -1
+        if true_max_gene is not None:
+            max_gene = max(max_gene, true_max_gene)
+
+        missing = [
+            f"geneid_{i}" for i in range(max_gene + 1) if i not in gene_nums
+        ]
+        if missing:
+            genelist = genelist + missing
+            genelist.sort(key=lambda x: int(x.split("_")[1]))
+
+        cluster_ids = sorted(methoddf["cluster_id"].unique())
+        cluster_to_genes = methoddf.groupby("cluster_id")["member"].apply(set)
+
+        listoflists = []
+        for cluster_index, cid in enumerate(cluster_ids):
+            genes_in_cluster = cluster_to_genes[cid]
+            row = [cluster_index] + [
+                1.0 if gene in genes_in_cluster else -1.0 for gene in genelist
+            ]
+            listoflists.append(row)
+
+        if missing:
+            missingset = set(missing)
+            new_cluster_id = len(cluster_ids)
+            row = [new_cluster_id] + [
+                1.0 if gene in missingset else -1.0 for gene in genelist
+            ]
+            listoflists.append(row)
+
+        outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
+        outdict[f"embed_{method_name}"] = outdf.set_index("cluster_id")
+
+    return outdict
+
+
 def count_singleton_clusters(thedf):
     
     member_counts = (thedf >= 0.0).sum(axis=1)
@@ -960,6 +1050,8 @@ def check_status_of_folder(clusterer, path):
         filenam = "ppanggolin/pangenome.h5"
     elif clusterer == "sketch":
         filenam = "distance_clustering/clusters.tsv"
+    elif clusterer == "embeddings":
+        filenam = "clustering/clusters.tsv"
     elif clusterer == "panx":
         filenam = "protein_faa/diamond_matches/allclusters_final.tsv"
     else:
@@ -1046,7 +1138,7 @@ def get_info_from_folder(theargs):
                 stacklevel=2,
             )
             continue
-        tmpseqtype = paramdict.get("st", "aa" if tmpclusterer in ("panaroo", "ppanggolin", "panta", "panx") else DEFAULT_PARAMS["st"])
+        tmpseqtype = paramdict.get("st", "aa" if tmpclusterer in ("panaroo", "ppanggolin", "panta", "panx", "embeddings") else DEFAULT_PARAMS["st"])
         if tmpclusterer == "diamond" and tmpseqtype == "nt":
             warnings.warn(
                 f"Skipping disabled diamond+nt result folder {folderpath}",
@@ -1071,6 +1163,13 @@ def get_info_from_folder(theargs):
         if tmpclusterer == "panx" and tmpseqtype == "nt":
             warnings.warn(
                 f"Skipping disabled panx+nt result folder {folderpath}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
+        if tmpclusterer == "embeddings" and tmpseqtype == "nt":
+            warnings.warn(
+                f"Skipping disabled embeddings+nt result folder {folderpath}",
                 RuntimeWarning,
                 stacklevel=2,
             )
@@ -1111,6 +1210,52 @@ def get_info_from_folder(theargs):
                 ]
                 method_runtime = method_runtimes.get(
                     f"method_{method_name}_total", runtime
+                )
+                listoflists.append(
+                    calculate_values_from_cluster_matrix(
+                        (theass, theseed, method_name), thedf, truthlabels, truthdf
+                    )
+                    + [n_clusters, n_singletons, n_pairs]
+                    + paramlist
+                    + [method_runtime]
+                )
+            continue
+
+        if tmpclusterer == "embeddings":
+            embed_dfs = get_dfs_from_embeddings(folderpath, true_max_gene)
+            if not embed_dfs:
+                warnings.warn(
+                    f"No embeddings clusters.tsv files found in {folderpath}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                continue
+            runtime = get_time_diff_from_file(os.path.join(folderpath, "timebenchmark.txt"))
+
+            # Same rationale as sketch: prefer the per-method breakdown from
+            # clustering/time_per_method.txt (embedding + hdbscan fit time for
+            # that specific method) over the whole-folder runtime, when available.
+            time_per_method_path = os.path.join(folderpath, "clustering", "time_per_method.txt")
+            method_runtimes = {}
+            if os.path.isfile(time_per_method_path):
+                method_runtimes = parse_time_per_method_file(time_per_method_path)
+
+            for method_name, thedf in embed_dfs.items():
+                n_clusters = len(thedf.index)
+                n_singletons = count_singleton_clusters(thedf)
+                n_pairs = count_pairs_clusters(thedf)
+
+                paramlist = [
+                    tmpseqtype if el == "st" else DEFAULT_PARAMS[el]
+                    for el in PARAMORDER
+                ]
+                # method_runtimes is keyed by the raw (un-prefixed) method name,
+                # e.g. "method_hdbscan_dist_total", since that's what
+                # time_per_method.txt records; method_name here is the
+                # "embed_"-prefixed dict key.
+                raw_method_name = method_name[len("embed_"):]
+                method_runtime = method_runtimes.get(
+                    f"method_{raw_method_name}_total", runtime
                 )
                 listoflists.append(
                     calculate_values_from_cluster_matrix(
@@ -1171,26 +1316,48 @@ def build_ordered_combo_list(subdf, name=None):
     return x
 
 
+def get_family_footnote(x):
+    """Return the combined footnote text for whichever method families
+    (sketch, embeddings, ...) are present among the combos in x, or None if
+    none are present."""
+    lines = [
+        FAMILY_FOOTNOTES[label]
+        for label, method_names in FAMILY_METHOD_NAMES.items()
+        if any(value.split("/")[0] in method_names for value in x)
+    ]
+    if not lines:
+        return None
+    return "\n".join(lines)
+
+
 def add_sketch_bracket(ax, x, positions, bar_width=0.5, y_top=-0.16, y_bottom=-0.18,
-                        fontprops=None, fontsize=None):
-    """Draw a small bracket + 'Sketching methods' label under the sketch/HDBSCAN
-    columns, so readers can see at a glance that they're one family of methods."""
-    sketch_idx = [i for i, val in enumerate(x) if val.split("/")[0] in SKETCH_METHOD_NAMES]
-    if not sketch_idx:
-        return
-    lo, hi = min(sketch_idx), max(sketch_idx)
-    x0 = positions[lo] - bar_width / 2
-    x1 = positions[hi] + bar_width / 2
-    trans = ax.get_xaxis_transform()  # x in data coords, y in axes-fraction coords
-    ax.plot(
-        [x0, x0, x1, x1], [y_top, y_bottom, y_bottom, y_top],
-        transform=trans, color="black", linewidth=0.8, clip_on=False,
-    )
-    ax.text(
-        (x0 + x1) / 2, y_bottom - 0.015, "Sketching methods",
-        transform=trans, ha="center", va="top",
-        fontproperties=fontprops, fontsize=fontsize, clip_on=False,
-    )
+                        fontprops=None, fontsize=None, row_gap=0.06):
+    """Draw a small bracket + label under each method family's columns (sketch,
+    embeddings, ...), so readers can see at a glance that they're one family of
+    methods. If more than one family is present, brackets are stacked below
+    each other so they don't overlap. Kept under its original name for
+    backwards compatibility with existing call sites."""
+    row = 0
+    for label, method_names in FAMILY_METHOD_NAMES.items():
+        family_idx = [i for i, val in enumerate(x) if val.split("/")[0] in method_names]
+        if not family_idx:
+            continue
+        lo, hi = min(family_idx), max(family_idx)
+        x0 = positions[lo] - bar_width / 2
+        x1 = positions[hi] + bar_width / 2
+        row_y_top = y_top - row * row_gap
+        row_y_bottom = y_bottom - row * row_gap
+        trans = ax.get_xaxis_transform()  # x in data coords, y in axes-fraction coords
+        ax.plot(
+            [x0, x0, x1, x1], [row_y_top, row_y_bottom, row_y_bottom, row_y_top],
+            transform=trans, color="black", linewidth=0.8, clip_on=False,
+        )
+        ax.text(
+            (x0 + x1) / 2, row_y_bottom - 0.015, label,
+            transform=trans, ha="center", va="top",
+            fontproperties=fontprops, fontsize=fontsize, clip_on=False,
+        )
+        row += 1
 
 
 def plotter(theargs):
@@ -1223,6 +1390,7 @@ def plotter(theargs):
             for el in clusterers
             if el in availcl
             and el not in SKETCH_METHOD_NAMES  # no c sweep for sketch/HDBSCAN methods
+            and el not in EMBED_METHOD_NAMES  # no c sweep for embeddings/HDBSCAN methods
             and not (name == "runtime" and el == "panx")  # panx is a runtime outlier
             and (el + "/" + seqtype) in FANCYDICT
             and (el + "/" + seqtype) in CONFIGDICT_COLOURS
@@ -1430,9 +1598,10 @@ def plotter_pointplots(theargs):
     # bracket under the sketching methods, so readers see they're one family
     add_sketch_bracket(ax, x, positions, bar_width=bar_width, fontprops=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1)
 
-    if any(value.split("/")[0] in SKETCH_METHOD_NAMES for value in x):
+    family_footnote = get_family_footnote(x)
+    if family_footnote is not None:
         plt.text(
-            0.5, -0.30, SKETCH_FOOTNOTE,
+            0.5, -0.30, family_footnote,
             fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
             horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
@@ -1538,9 +1707,10 @@ def number_of_clusters_violin(theargs):
     # bracket under the sketching methods, so readers see they're one family
     add_sketch_bracket(ax, x, positions, bar_width=0.5, fontprops=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1)
 
-    if any(value.split("/")[0] in SKETCH_METHOD_NAMES for value in x):
+    family_footnote = get_family_footnote(x)
+    if family_footnote is not None:
         plt.text(
-            0.5, -0.30, SKETCH_FOOTNOTE,
+            0.5, -0.30, family_footnote,
             fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
             horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
@@ -1665,24 +1835,12 @@ def number_of_clusters_stacked_bar(theargs):
         plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold,
                  horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
 
-    # bracket under the sketching methods, so readers see they're one family
-    sketch_idx = [i for i, val in enumerate(x) if val.split("/")[0] in SKETCH_METHOD_NAMES]
-    if sketch_idx:
-        lo, hi = min(sketch_idx), max(sketch_idx)
-        x0 = positions[lo] - bar_width / 2
-        x1 = positions[hi] + bar_width / 2
-        y_top = -0.22
-        y_bottom = -0.24
-        trans = ax.get_xaxis_transform()  # x in data coords, y in axes-fraction coords
-        ax.plot(
-            [x0, x0, x1, x1], [y_top, y_bottom, y_bottom, y_top],
-            transform=trans, color="black", linewidth=0.8, clip_on=False,
-        )
-        ax.text(
-            (x0 + x1) / 2, y_bottom - 0.015, "Sketching methods",
-            transform=trans, ha="center", va="top",
-            fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1, clip_on=False,
-        )
+    # bracket(s) under each method family (sketch, embeddings, ...), so
+    # readers see at a glance that they're one family of methods.
+    add_sketch_bracket(
+        ax, x, positions, bar_width=bar_width, y_top=-0.22, y_bottom=-0.24,
+        fontprops=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
+    )
 
     # legend: method colours + segment shading, all in one block
     method_handles = [
@@ -1705,9 +1863,10 @@ def number_of_clusters_stacked_bar(theargs):
         labelspacing=0.3,
         ncol=len(method_handles),       # all in one row
     )
-    if any(value.split("/")[0] in SKETCH_METHOD_NAMES for value in x):
+    family_footnote = get_family_footnote(x)
+    if family_footnote is not None:
         plt.text(
-            0.5, -0.50, SKETCH_FOOTNOTE,
+            0.5, -0.50, family_footnote,
             fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
             horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
@@ -1743,7 +1902,7 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
     x = []
     for combo in COMBO_ORDER:
         clusterer, seqtype = combo.split("/")
-        if clusterer in SKETCH_METHOD_NAMES:
+        if clusterer in SKETCH_METHOD_NAMES or clusterer in EMBED_METHOD_NAMES:
             continue
         if combo not in FANCYDICT or combo not in CONFIGDICT_COLOURS:
             continue
@@ -1936,7 +2095,7 @@ def methods_comparison_heatmap(theargs):
             mat[i, j] = tmpdf[metric_col].astype(float).mean()
 
     row_labels = [
-        FANCYDICT[c] + (" *" if c.split("/")[0] in SKETCH_METHOD_NAMES else "") for c in x
+        FANCYDICT[c] + (" *" if c.split("/")[0] in SKETCH_METHOD_NAMES or c.split("/")[0] in EMBED_METHOD_NAMES else "") for c in x
     ]
 
     fig = plt.figure(
@@ -1986,9 +2145,10 @@ def methods_comparison_heatmap(theargs):
         plt.text(0.5, 1.03, "Preliminary", fontproperties=ibmplexsansbold,
                  horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
 
-    if any(value.split("/")[0] in SKETCH_METHOD_NAMES for value in x):
+    family_footnote = get_family_footnote(x)
+    if family_footnote is not None:
         plt.text(
-            0.5, -0.14, SKETCH_FOOTNOTE,
+            0.5, -0.14, family_footnote,
             fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
             horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
