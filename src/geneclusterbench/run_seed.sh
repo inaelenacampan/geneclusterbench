@@ -13,7 +13,7 @@ for seed in "${seeds[@]}"; do
        --error=logs/embed_${seed}.err \
        python embedprots.py \
          --input-fasta /nfs/research/jlees/campan/data/clustering_benchmarking/2026_06_10_simsnowwithntandaasandgffs/simulations/PROKKA_06122025/${seed}/sim_gr_1e-12_lr_1e-12_mu_1e-14_for_clustering_aa.fasta \
-         --out-dir /hps/nobackup/jlees/campan/embd \
+         --out-dir /hps/nobackup/jlees/campan/embd/${seed} \
          --batch-size 32 \
          --nthreads 8 &
 done

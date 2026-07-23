@@ -1111,6 +1111,11 @@ def get_info_from_folder(theargs):
         nameofass = ""
 
     listoflists = []
+    # combo ("clusterer/seqtype", e.g. "mmseqs2/nt") -> {gene_id: cluster_label}
+    # captured here (at the default c for the c-swept clusterers) so we can
+    # later compute pairwise ARI between methods themselves, not just vs
+    # ground truth. See build_pairwise_ari_matrix / plot_pairwise_ari_heatmap.
+    method_labels_out = {}
     seed_result_dir = os.path.join(thedir, str(theass), str(theseed))
     for folder_name in os.listdir(seed_result_dir):
         folderpath = os.path.join(seed_result_dir, folder_name)
@@ -1226,6 +1231,9 @@ def get_info_from_folder(theargs):
                     + paramlist
                     + [method_runtime]
                 )
+                # Sketch/HDBSCAN methods have no c sweep, so always capture them.
+                genes_i, labels_i = get_labels_list_from_df(thedf)
+                method_labels_out[f"{method_name}/{tmpseqtype}"] = dict(zip(genes_i, labels_i))
             continue
 
         if tmpclusterer == "embeddings":
@@ -1272,6 +1280,9 @@ def get_info_from_folder(theargs):
                     + paramlist
                     + [method_runtime]
                 )
+                # Embeddings/HDBSCAN methods have no c sweep, so always capture them.
+                genes_i, labels_i = get_labels_list_from_df(thedf)
+                method_labels_out[f"{method_name}/{tmpseqtype}"] = dict(zip(genes_i, labels_i))
             continue
 
         thedf = get_df_from_clusterer(tmpclusterer, folderpath, true_max_gene)
@@ -1291,13 +1302,20 @@ def get_info_from_folder(theargs):
             + paramlist
             + [runtime]
         )
+        # These clusterers are swept over c; only keep the default-c run so
+        # the pairwise comparison lines up with the vs-truth heatmap (which
+        # also filters to c == DEFAULT_PARAMS["c"]).
+        c_value = paramlist[PARAMORDER.index("c")]
+        if c_value == DEFAULT_PARAMS["c"]:
+            genes_i, labels_i = get_labels_list_from_df(thedf)
+            method_labels_out[f"{tmpclusterer}/{tmpseqtype}"] = dict(zip(genes_i, labels_i))
     if not listoflists:
         warnings.warn(
             f"No valid clustering outputs found for {theass}/{theseed}; skipping",
             RuntimeWarning,
             stacklevel=2,
         )
-    return (listoflists, theass, nameofass)
+    return (listoflists, theass, nameofass, theseed, method_labels_out)
 
 # plot idea : how does this metric vary with the clustering threshold, averaged over random seeds, for this assembly
 
@@ -2110,7 +2128,7 @@ def methods_comparison_heatmap(theargs):
         figsize=(max(6.0, len(metric_cols) * 1.6 + 2.0), max(4.0, len(x) * 0.42 + 1.5)),
     )
     ax = fig.subplots()
-    im = ax.imshow(mat, cmap="viridis", vmin=0, vmax=1, aspect="auto")
+    im = ax.imshow(mat, cmap="YlGnBu", vmin=0, vmax=1, aspect="auto")
 
     ax.set_xticks(range(len(metric_cols)))
     ax.set_xticklabels(metric_labels, rotation=30, ha="right", rotation_mode="anchor")
@@ -2163,6 +2181,143 @@ def methods_comparison_heatmap(theargs):
     for ext in ["png", "pdf", "svg"]:
         fig.savefig(
             os.path.join(outfolder, "_".join(["plot_heatmap_methodcomparison", datatype, assembly]) + "." + ext),
+            bbox_inches="tight",
+        )
+    fig.clf()
+    del fig, ax
+
+
+def build_pairwise_ari_matrix(combo_list, labels_by_seed):
+    
+    n = len(combo_list)
+    mat = np.full((n, n), np.nan)
+
+    for i, combo_i in enumerate(combo_list):
+        mat[i, i] = 1.0
+        for j in range(i + 1, len(combo_list)):
+            combo_j = combo_list[j]
+            seed_aris = []
+            for seed, combo_dict in labels_by_seed.items():
+                if combo_i not in combo_dict or combo_j not in combo_dict:
+                    continue
+                labels_i = combo_dict[combo_i]
+                labels_j = combo_dict[combo_j]
+
+                # Match on genes both methods actually assigned to a cluster.
+                common_genes = [g for g in labels_i if g in labels_j]
+                if len(common_genes) < 2:
+                    continue
+
+                ari = metrics.adjusted_rand_score(
+                    [labels_i[g] for g in common_genes],
+                    [labels_j[g] for g in common_genes],
+                )
+                seed_aris.append(float(ari))
+
+            if seed_aris:
+                mean_ari = float(np.mean(seed_aris))
+                mat[i, j] = mean_ari
+                mat[j, i] = mean_ari
+
+    return mat
+
+
+def plot_pairwise_ari_heatmap(theargs):
+   
+    labels_by_seed, namedict, outfolder, assembly, datatype, font_props = theargs
+    ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
+
+    print(f"\t- Plotting pairwise inter-method ARI heatmap for simulations of {namedict[assembly]}")
+
+    if not labels_by_seed:
+        warnings.warn(
+            f"No per-method label data available for {assembly}/{datatype}; "
+            "skipping pairwise ARI heatmap",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    combos_present = set()
+    for combo_dict in labels_by_seed.values():
+        combos_present.update(combo_dict.keys())
+
+    x = [combo for combo in COMBO_ORDER if combo in combos_present and combo in FANCYDICT]
+
+    if not x:
+        warnings.warn(
+            f"No clusterer/sequence-type combos available for {assembly}/{datatype}; "
+            "skipping pairwise ARI heatmap",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    mat = build_pairwise_ari_matrix(x, labels_by_seed)
+
+    labels = [
+        FANCYDICT[c] + (" *" if c.split("/")[0] in SKETCH_METHOD_NAMES or c.split("/")[0] in EMBED_METHOD_NAMES else "")
+        for c in x
+    ]
+
+    fig = plt.figure(
+        1, dpi=150,
+        figsize=(max(6.0, len(x) * 0.5 + 2.0), max(6.0, len(x) * 0.5 + 2.0)),
+    )
+    ax = fig.subplots()
+    im = ax.imshow(mat, cmap="YlGnBu", vmin=0, vmax=1, aspect="auto")
+
+    ax.set_xticks(range(len(x)))
+    ax.set_xticklabels(labels, rotation=45, ha="right", rotation_mode="anchor")
+    ax.set_yticks(range(len(x)))
+    ax.set_yticklabels(labels)
+
+    for i in range(len(x)):
+        for j in range(len(x)):
+            val = mat[i, j]
+            if np.isnan(val):
+                continue
+            txt_color = "white" if val < 0.5 else "black"
+            ax.text(
+                j, i, f"{val:.2f}",
+                ha="center", va="center",
+                fontsize=BASE_FONT_SIZE, color=txt_color,
+                fontproperties=ibmplexsans,
+            )
+
+    ax.set_xticks(np.arange(len(x) + 1) - 0.5, minor=True)
+    ax.set_yticks(np.arange(len(x) + 1) - 0.5, minor=True)
+    ax.grid(which="minor", color="white", linewidth=1.5)
+    ax.tick_params(which="minor", bottom=False, left=False)
+    ax.tick_params(which="major", bottom=False, left=False)
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(ibmplexsans)
+
+    cbar = fig.colorbar(im, ax=ax, fraction=0.035, pad=0.03)
+    cbar.set_label("Adjusted Rand index between methods (adim.)", fontproperties=ibmplexsans)
+    for label in cbar.ax.get_yticklabels():
+        label.set_fontproperties(ibmplexsans)
+
+    plt.text(0, 1.03, namedict[assembly], fontproperties=ibmplexsansitalics,
+             horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
+    plt.text(1, 1.03, "Simulations", fontproperties=ibmplexsans,
+             horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
+    if DOPREM:
+        plt.text(0.5, 1.03, "Preliminary", fontproperties=ibmplexsansbold,
+                 horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
+
+    family_footnote = get_family_footnote(x)
+    if family_footnote is not None:
+        plt.text(
+            0.5, -0.2, family_footnote,
+            fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
+            horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
+        )
+
+    for ext in ["png", "pdf", "svg"]:
+        fig.savefig(
+            os.path.join(outfolder, "_".join(["plot_heatmap_pairwise_ari", datatype, assembly]) + "." + ext),
             bbox_inches="tight",
         )
     fig.clf()
@@ -2284,16 +2439,21 @@ def main():
 
     listoflists = []
     namedict = {}
+    # assembly -> {seed: {combo: {gene_id: label}}}, used for the pairwise
+    # inter-method ARI heatmap.
+    method_labels_by_assembly = {}
     if args.nthreads <= 1:
         for task in gettinginfotasks:
             tmpout = get_info_from_folder(task)
             listoflists += tmpout[0]
             namedict[tmpout[1]] = tmpout[2]
+            method_labels_by_assembly.setdefault(tmpout[1], {})[tmpout[3]] = tmpout[4]
     else:
         pool = Pool(args.nthreads)
         for result in pool.map(get_info_from_folder, gettinginfotasks):
             listoflists += result[0]
             namedict[result[1]] = result[2]
+            method_labels_by_assembly.setdefault(result[1], {})[result[3]] = result[4]
         pool.close()
         pool.join()
     print("\n> Done!")
@@ -2341,6 +2501,11 @@ def main():
         ("method_comparison", outdf, namedict, args.outfolder, assembly, "simulations", font_props)
         for assembly in assemblies
     ]
+
+    plottingtasks_pairwise_ari = [
+        (method_labels_by_assembly.get(assembly, {}), namedict, args.outfolder, assembly, "simulations", font_props)
+        for assembly in assemblies
+    ]
     print("\n> Plotting...")
     if args.nthreads <= 1:
         for task in plottingtasks_pointplots:
@@ -2355,6 +2520,8 @@ def main():
             number_of_clusters_stacked_bar_vs_c(task)
         for task in plottingtasks_heatmap:
             methods_comparison_heatmap(task)
+        for task in plottingtasks_pairwise_ari:
+            plot_pairwise_ari_heatmap(task)
 
     else:
         pool = Pool(args.nthreads)
@@ -2364,6 +2531,7 @@ def main():
         pool.map(number_of_clusters_stacked_bar, plottingtasks_stackedbar)
         pool.map(number_of_clusters_stacked_bar_vs_c, plottingtasks_stackedbar_c)
         pool.map(methods_comparison_heatmap, plottingtasks_heatmap)
+        pool.map(plot_pairwise_ari_heatmap, plottingtasks_pairwise_ari)
         pool.close()
         pool.join()
     
