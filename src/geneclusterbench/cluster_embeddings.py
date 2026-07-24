@@ -57,7 +57,7 @@ SWEEP_MAX_ELIGIBLE_MIN_CLUSTER_SIZE = 8
 # metric="precomputed" to everything. Mixing these two up silently produces
 # nonsense: HDBSCAN/TSNE/UMAP would try to interpret embedding *values* as if
 # they were an n x n distance matrix.
-EMBEDDING_METRIC = "cosine"
+EMBEDDING_METRIC = "euclidean"
 
 
 def parse_args():
