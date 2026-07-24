@@ -97,12 +97,13 @@ SKETCH_SCAFFOLD_AA = (
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
+# default for the s parameter instead of 64
 SKETCH_SCAFFOLD_NT = (
     "mkdir -p {workdir} && mkdir -p {sketchdir} && "
     "cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
     "{execexec} sketch -f {inputfile} -o {outputprefix} "
-    "-s 64 -k 17 --seq-type dna --threads {ncores} -v && "
+    "-s 1000 -k 17 --seq-type dna --threads {ncores} -v && "
     "{execexec} dist {outputprefix} -o {distoutput} -k 17 --threads {ncores} -v && "
     "uv run --project {gcbrepo} python -m geneclusterbench.cluster_distance_file "
     "--dist-file {distoutput} --nthreads {ncores} && "

@@ -1102,6 +1102,14 @@ def get_info_from_folder(theargs):
     true_max_gene = max(
         int(re.search(r"geneid_(\d+)", g).group(1)) for g in truthdf.index
     )
+
+    # === CHANGE (gene-deletion penalty, requirements 1 & 2) ===
+    # Total number of genes in the ORIGINAL dataset for this assembly/seed.
+    # This is the reference/universe used later to (a) penalise the pairwise
+    # gene-retention F1 score for genes a method deleted, and (b) compute the
+    # per-method/per-seed "percentage of genes deleted" (see
+    # compute_gene_deletion_dataframe / build_pairwise_f1_matrix below).
+    n_original_genes = len(truthdf.index)
     print(f"\t- Getting information from {thedir} execution, {theass} assembly, and {theseed} seed")
 
     speciesfile = os.path.join(thedir, str(theass), "assembly_species.txt")
@@ -1315,7 +1323,8 @@ def get_info_from_folder(theargs):
             RuntimeWarning,
             stacklevel=2,
         )
-    return (listoflists, theass, nameofass, theseed, method_labels_out)
+    # === CHANGE: added n_original_genes as a 6th tuple element (requirement 1 & 2) ===
+    return (listoflists, theass, nameofass, theseed, method_labels_out, n_original_genes)
 
 # plot idea : how does this metric vary with the clustering threshold, averaged over random seeds, for this assembly
 
@@ -2128,7 +2137,16 @@ def methods_comparison_heatmap(theargs):
         figsize=(max(6.0, len(metric_cols) * 1.6 + 2.0), max(4.0, len(x) * 0.42 + 1.5)),
     )
     ax = fig.subplots()
-    im = ax.imshow(mat, cmap="YlGnBu", vmin=0, vmax=1, aspect="auto")
+    vmin = np.nanmin(mat)
+    vmax = np.nanmax(mat)
+
+    im = ax.imshow(
+        mat,
+        cmap="YlGnBu",
+        vmin=vmin,
+        vmax=vmax,
+        aspect="auto",
+    )
 
     ax.set_xticks(range(len(metric_cols)))
     ax.set_xticklabels(metric_labels, rotation=30, ha="right", rotation_mode="anchor")
@@ -2223,18 +2241,59 @@ def build_pairwise_ari_matrix(combo_list, labels_by_seed):
     return mat
 
 
-def build_pairwise_f1_matrix(combo_list, labels_by_seed):
-    """Pairwise agreement between methods on *which genes they kept*.
+def build_pairwise_f1_matrix(combo_list, labels_by_seed, total_genes_by_seed=None):
+    """Pairwise agreement between methods on *which genes they kept*, now
+    penalised for genes deleted with respect to the ORIGINAL gene set
+    (requirement 1).
 
-    Several clusterers drop/filter genes rather than forcing every gene into
-    a cluster (see get_labels_list_from_df). For a pair of methods, treat the
-    set of genes each one retained as a set and compute the F1 score (a.k.a.
-    Dice coefficient) between the two retained-gene sets:
+    === CHANGE (requirement 1: gene-deletion penalty) ===============
+    Previously this only used the genes each method actually retained:
 
-        F1 = 2 * |kept_i ∩ kept_j| / (|kept_i| + |kept_j|)
+        F1_old = 2 * |kept_i ∩ kept_j| / (|kept_i| + |kept_j|)
 
-    This is symmetric in i/j (no method is "ground truth"), so exactly like
-    the ARI matrix we only need to compute and store the lower triangle.
+    That is a fair "do these two methods agree with each other" score, but
+    it does NOT penalise a method (or a pair of methods) for having deleted
+    genes that existed in the original dataset: e.g. two methods that each
+    keep a totally different, small, non-overlapping subset of the genome
+    would already score 0 (correctly), but two methods that keep the SAME
+    small subset would score a misleading 1.0, even though most of the
+    original genome was lost by both of them.
+
+    To fix this we bring in `total_genes_by_seed` — the number of genes N in
+    the ORIGINAL dataset for that seed (see n_original_genes returned by
+    get_info_from_folder) — and treat the comparison as a precision/recall
+    problem against that original universe of N genes:
+
+      - "positive" event = a gene from the original dataset that BOTH
+        methods agreed to keep (kept_i ∩ kept_j). This is the only kind of
+        "positive" available since a method can only keep genes that were
+        present in the original dataset in the first place (no method can
+        invent new genes), so there are no possible false positives.
+      - TP = |kept_i ∩ kept_j|
+      - FP = 0 (a kept gene is by construction a subset of the original N)
+      - FN = N - TP  (every original gene that was NOT kept by both methods,
+        i.e. that was deleted by at least one of the two methods)
+      - Precision = TP / (TP + FP) = 1
+      - Recall    = TP / (TP + FN) = TP / N
+      - F1 = 2 * Precision * Recall / (Precision + Recall)
+           = 2 * TP / (N + TP)
+
+    Assumption: N (the size of the original gene set) is taken to be the
+    same reference for both methods being compared in a given seed — i.e.
+    the ground-truth gene count for that assembly/seed, not the union or
+    intersection of what either method happened to output. This is what
+    makes the score a genuine "penalty for deletion" rather than just an
+    agreement score: the more genes either method deletes, the smaller TP
+    gets relative to the fixed N, and the lower the score, even if the two
+    methods agree perfectly on the (small) subset they did keep.
+
+    If `total_genes_by_seed` is not supplied, this falls back to the
+    original, non-penalised Dice/F1 formula (kept for backward
+    compatibility / testing).
+
+    This remains symmetric in i/j (no method is "ground truth"), so exactly
+    like the ARI matrix we only need to compute and store the lower
+    triangle.
     """
     n = len(combo_list)
     mat = np.full((n, n), np.nan)
@@ -2249,18 +2308,178 @@ def build_pairwise_f1_matrix(combo_list, labels_by_seed):
                     continue
                 kept_i = set(combo_dict[combo_i].keys())
                 kept_j = set(combo_dict[combo_j].keys())
+                tp = len(kept_i & kept_j)
 
-                denom = len(kept_i) + len(kept_j)
-                if denom == 0:
-                    continue
+                # === CHANGE: penalised formula using the original gene
+                # count N for this seed, when available ===
+                n_original = None
+                if total_genes_by_seed is not None:
+                    n_original = total_genes_by_seed.get(seed)
 
-                f1 = 2 * len(kept_i & kept_j) / denom
+                if n_original:
+                    denom = n_original + tp
+                    if denom == 0:
+                        continue
+                    f1 = 2 * tp / denom
+                else:
+                    # fallback: old, non-penalised behaviour
+                    denom = len(kept_i) + len(kept_j)
+                    if denom == 0:
+                        continue
+                    f1 = 2 * tp / denom
+
                 seed_f1s.append(float(f1))
 
             if seed_f1s:
                 mat[j, i] = float(np.mean(seed_f1s))
 
     return mat
+
+
+# === NEW (requirement 2): percentage of genes deleted, per method & seed ===
+def compute_gene_deletion_dataframe(labels_by_seed, total_genes_by_seed, assembly):
+    """Build a tidy dataframe of deleted-gene percentages.
+
+    For every (seed, combo) pair present in `labels_by_seed`:
+
+        deleted_pct = (n_original_genes - n_genes_kept) / n_original_genes * 100
+
+    Assumptions:
+      - `total_genes_by_seed[seed]` is the number of genes in the ORIGINAL
+        dataset for that seed (n_original_genes from get_info_from_folder),
+        i.e. the full reference gene set before any clustering/filtering.
+      - `labels_by_seed[seed][combo]` is a dict of {gene_id: cluster_label}
+        for genes the method actually assigned to a cluster (see
+        get_labels_list_from_df); its length is therefore the number of
+        genes RETAINED by that method for that seed. Genes with no cluster
+        assignment at all are treated as deleted, matching the same
+        assumption already used for the pairwise F1/ARI heatmaps.
+      - Seeds/combos for which the original gene count is unknown (missing
+        from total_genes_by_seed) are skipped with a warning, since a
+        deletion percentage cannot be computed without a reference.
+
+    Returns a DataFrame with columns: assembly, seed, clusterer, seqtype,
+    combo, n_original_genes, n_genes_kept, n_genes_deleted, deleted_pct.
+    """
+    rows = []
+    for seed, combo_dict in labels_by_seed.items():
+        n_original = total_genes_by_seed.get(seed)
+        if not n_original:
+            warnings.warn(
+                f"No original gene count available for {assembly}/{seed}; "
+                "skipping deletion-percentage calculation for this seed",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
+        for combo, gene_dict in combo_dict.items():
+            n_kept = len(gene_dict)
+            n_deleted = n_original - n_kept
+            deleted_pct = (n_deleted / n_original) * 100.0
+            clusterer, seqtype = combo.split("/") if "/" in combo else (combo, "")
+            rows.append(
+                {
+                    "assembly": assembly,
+                    "seed": seed,
+                    "clusterer": clusterer,
+                    "seqtype": seqtype,
+                    "combo": combo,
+                    "n_original_genes": n_original,
+                    "n_genes_kept": n_kept,
+                    "n_genes_deleted": n_deleted,
+                    "deleted_pct": deleted_pct,
+                }
+            )
+
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "assembly", "seed", "clusterer", "seqtype", "combo",
+            "n_original_genes", "n_genes_kept", "n_genes_deleted", "deleted_pct",
+        ],
+    )
+
+
+# === NEW (requirement 3): boxplot of deleted-gene percentages per method ===
+def plot_gene_deletion_boxplot(theargs):
+    """Boxplot of the % of genes deleted by each clusterer/seqtype combo,
+    with the distribution taken across random seeds.
+
+    X-axis: clusterer/seqtype combo (e.g. "Panaroo", "PanX (AA)")
+    Y-axis: % of genes deleted relative to the original dataset
+    Each box: distribution of deleted_pct across all seeds for that combo.
+    """
+    labels_by_seed, total_genes_by_seed, namedict, outfolder, assembly, datatype, font_props = theargs
+    ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
+
+    print(f"\t- Plotting gene-deletion boxplot for simulations of {namedict[assembly]}")
+
+    if not labels_by_seed:
+        warnings.warn(
+            f"No per-method label data available for {assembly}/{datatype}; "
+            "skipping gene-deletion boxplot",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return None
+
+    deletion_df = compute_gene_deletion_dataframe(labels_by_seed, total_genes_by_seed, assembly)
+    if deletion_df.empty:
+        warnings.warn(
+            f"No deletion-percentage data available for {assembly}/{datatype}; "
+            "skipping gene-deletion boxplot",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return deletion_df
+
+    combos_present = set(deletion_df["combo"])
+    x = [combo for combo in COMBO_ORDER if combo in combos_present and combo in FANCYDICT]
+    if not x:
+        warnings.warn(
+            f"No clusterer/sequence-type combos available for {assembly}/{datatype}; "
+            "skipping gene-deletion boxplot",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return deletion_df
+
+    data = [deletion_df.loc[deletion_df["combo"] == combo, "deleted_pct"].values for combo in x]
+    labels = [
+        FANCYDICT[c] + (" *" if c.split("/")[0] in SKETCH_METHOD_NAMES or c.split("/")[0] in EMBED_METHOD_NAMES else "")
+        for c in x
+    ]
+
+    fig = plt.figure(1, dpi=150, figsize=(max(6.0, len(x) * 0.6 + 2.0), 6.0))
+    ax = fig.subplots()
+
+    bp = ax.boxplot(
+        data,
+        labels=labels,
+        patch_artist=True,
+        showfliers=True,
+    )
+    for patch, combo in zip(bp["boxes"], x):
+        patch.set_facecolor(CONFIGDICT_COLOURS.get(combo, "#CCCCCC"))
+        patch.set_alpha(0.8)
+
+    ax.set_xticklabels(labels, rotation=45, ha="right", rotation_mode="anchor")
+    ax.set_ylabel("Genes deleted (%)", fontsize=AXIS_TITLE_FONT_SIZE, fontproperties=ibmplexsans)
+    ax.set_ylim(bottom=0)
+    ax.yaxis.set_minor_locator(AutoMinorLocator())
+    ax.set_title(
+        f"Gene deletion across seeds — {namedict[assembly]} ({datatype})",
+        fontproperties=ibmplexsansbold,
+    )
+    fig.tight_layout()
+
+    outpath = os.path.join(
+        outfolder, f"plot_boxplot_gene_deletion_pct_{assembly}_{datatype}.png"
+    )
+    fig.savefig(outpath)
+    plt.close(fig)
+
+    return deletion_df
 
 
 def _plot_triangular_pairwise_heatmap(
@@ -2281,7 +2500,16 @@ def _plot_triangular_pairwise_heatmap(
     masked_mat = np.ma.masked_invalid(mat)
     cmap = copy.copy(plt.get_cmap("YlGnBu"))
     cmap.set_bad(color="white")
-    im = ax.imshow(masked_mat, cmap=cmap, vmin=0, vmax=1, aspect="auto")
+    vmin = np.nanmin(mat)
+    vmax = np.nanmax(mat)
+
+    im = ax.imshow(
+        mat,
+        cmap="YlGnBu",
+        vmin=vmin,
+        vmax=vmax,
+        aspect="auto",
+    )
 
     ax.set_xticks(range(len(x)))
     ax.set_xticklabels(labels, rotation=45, ha="right", rotation_mode="anchor")
@@ -2387,10 +2615,13 @@ def plot_pairwise_ari_heatmap(theargs):
 
 def plot_pairwise_f1_heatmap(theargs):
     """Lower-triangle heatmap of the pairwise gene-retention F1 score
-    (Dice coefficient) between methods: how much agreement there is between
-    two methods' sets of *kept* (non-deleted/non-filtered) genes."""
+    between methods: how much agreement there is between two methods' sets
+    of *kept* (non-deleted/non-filtered) genes, now penalised (see
+    build_pairwise_f1_matrix) for genes deleted relative to the original
+    dataset (requirement 1)."""
 
-    labels_by_seed, namedict, outfolder, assembly, datatype, font_props = theargs
+    # === CHANGE: theargs now also carries total_genes_by_seed (requirement 1) ===
+    labels_by_seed, total_genes_by_seed, namedict, outfolder, assembly, datatype, font_props = theargs
 
     print(f"\t- Plotting pairwise gene-retention F1 heatmap for simulations of {namedict[assembly]}")
 
@@ -2418,7 +2649,7 @@ def plot_pairwise_f1_heatmap(theargs):
         )
         return
 
-    mat = build_pairwise_f1_matrix(x, labels_by_seed)
+    mat = build_pairwise_f1_matrix(x, labels_by_seed, total_genes_by_seed)
 
     labels = [
         FANCYDICT[c] + (" *" if c.split("/")[0] in SKETCH_METHOD_NAMES or c.split("/")[0] in EMBED_METHOD_NAMES else "")
@@ -2427,7 +2658,8 @@ def plot_pairwise_f1_heatmap(theargs):
 
     _plot_triangular_pairwise_heatmap(
         mat, x, labels, namedict, outfolder, assembly, datatype, font_props,
-        cbar_label="Gene-retention F1 score between methods (adim.)",
+        # === CHANGE: label now reflects the gene-deletion penalty (requirement 1) ===
+        cbar_label="Gene-retention F1 score between methods, penalised for deleted genes (adim.)",
         filename_prefix="plot_heatmap_pairwise_gene_retention_f1",
     )
 
@@ -2550,18 +2782,25 @@ def main():
     # assembly -> {seed: {combo: {gene_id: label}}}, used for the pairwise
     # inter-method ARI heatmap.
     method_labels_by_assembly = {}
+    # === NEW (requirements 1 & 2): assembly -> {seed: n_original_genes} ===
+    # Total number of genes in the ORIGINAL dataset for each assembly/seed,
+    # used as the reference/universe for the gene-deletion penalty in the
+    # pairwise F1 heatmap and for the per-method deletion-percentage boxplot.
+    total_genes_by_assembly = {}
     if args.nthreads <= 1:
         for task in gettinginfotasks:
             tmpout = get_info_from_folder(task)
             listoflists += tmpout[0]
             namedict[tmpout[1]] = tmpout[2]
             method_labels_by_assembly.setdefault(tmpout[1], {})[tmpout[3]] = tmpout[4]
+            total_genes_by_assembly.setdefault(tmpout[1], {})[tmpout[3]] = tmpout[5]
     else:
         pool = Pool(args.nthreads)
         for result in pool.map(get_info_from_folder, gettinginfotasks):
             listoflists += result[0]
             namedict[result[1]] = result[2]
             method_labels_by_assembly.setdefault(result[1], {})[result[3]] = result[4]
+            total_genes_by_assembly.setdefault(result[1], {})[result[3]] = result[5]
         pool.close()
         pool.join()
     print("\n> Done!")
@@ -2615,11 +2854,31 @@ def main():
         for assembly in assemblies
     ]
 
+    # === CHANGE: pairwise F1 task now also carries total_genes_by_seed
+    # for this assembly, so the heatmap can penalise deleted genes
+    # (requirement 1) ===
     plottingtasks_pairwise_f1 = [
-        (method_labels_by_assembly.get(assembly, {}), namedict, args.outfolder, assembly, "simulations", font_props)
+        (
+            method_labels_by_assembly.get(assembly, {}),
+            total_genes_by_assembly.get(assembly, {}),
+            namedict, args.outfolder, assembly, "simulations", font_props,
+        )
+        for assembly in assemblies
+    ]
+
+    # === NEW (requirements 2 & 3): gene-deletion percentage boxplot task ===
+    plottingtasks_gene_deletion = [
+        (
+            method_labels_by_assembly.get(assembly, {}),
+            total_genes_by_assembly.get(assembly, {}),
+            namedict, args.outfolder, assembly, "simulations", font_props,
+        )
         for assembly in assemblies
     ]
     print("\n> Plotting...")
+    # === NEW: collect per-assembly deletion-percentage dataframes so we can
+    # write a single combined CSV at the end (requirement 2) ===
+    deletion_dfs = []
     if args.nthreads <= 1:
         for task in plottingtasks_pointplots:
             plotter_pointplots(task)
@@ -2637,6 +2896,10 @@ def main():
             plot_pairwise_ari_heatmap(task)
         for task in plottingtasks_pairwise_f1:
             plot_pairwise_f1_heatmap(task)
+        for task in plottingtasks_gene_deletion:
+            ddf = plot_gene_deletion_boxplot(task)
+            if ddf is not None and not ddf.empty:
+                deletion_dfs.append(ddf)
 
     else:
         pool = Pool(args.nthreads)
@@ -2648,6 +2911,9 @@ def main():
         pool.map(methods_comparison_heatmap, plottingtasks_heatmap)
         pool.map(plot_pairwise_ari_heatmap, plottingtasks_pairwise_ari)
         pool.map(plot_pairwise_f1_heatmap, plottingtasks_pairwise_f1)
+        for ddf in pool.map(plot_gene_deletion_boxplot, plottingtasks_gene_deletion):
+            if ddf is not None and not ddf.empty:
+                deletion_dfs.append(ddf)
         pool.close()
         pool.join()
     
@@ -2658,6 +2924,15 @@ def main():
         ),
         sep="\t"
     )
+
+    # === NEW (requirement 2): write out the per-method/per-seed gene
+    # deletion percentages, across all assemblies, as a single CSV ===
+    if deletion_dfs:
+        combined_deletion_df = pd.concat(deletion_dfs, ignore_index=True)
+        combined_deletion_df.to_csv(
+            os.path.join(args.outfolder, "gene_deletion_percentages.csv"),
+            index=False,
+        )
 
     print("\n> Done!\n")
 
