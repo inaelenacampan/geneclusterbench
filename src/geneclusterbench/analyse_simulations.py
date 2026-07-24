@@ -5,6 +5,9 @@ import glob
 import argparse
 import re
 import itertools
+import subprocess
+import tempfile
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -120,85 +123,127 @@ def read_gff_sequence(gff_file):
     return "".join(seq_lines).upper()
 
 
-def kmer_minhash(seq, k=21, sketch_size=1000):
-    """
-    Very small MinHash sketch of a sequence's k-mers, used as a fast
-    proxy for whole-genome similarity (same idea as Mash).
-    """
-    if len(seq) < k:
-        return set()
+def _write_fasta(seq, path, header="genome"):
+    """Write a single sequence to a FASTA file, wrapped at 70 columns."""
+    with open(path, "w") as fh:
+        fh.write(f">{header}\n")
+        for i in range(0, len(seq), 70):
+            fh.write(seq[i:i + 70] + "\n")
 
-    hashes = (
-        hash(seq[i:i + k])
-        for i in range(len(seq) - k + 1)
+
+def _require_mummer():
+    """
+    Check that the MUMmer toolkit (nucmer + dnadiff) is available on
+    PATH. Nucleotide diversity from unaligned whole genomes requires a
+    genuine pairwise whole-genome alignment; MUMmer is the standard,
+    scalable tool for this in bacterial population genomics.
+    Install via: conda install -c bioconda mummer
+    """
+    for tool in ("nucmer", "dnadiff"):
+        if shutil.which(tool) is None:
+            raise RuntimeError(
+                f"'{tool}' not found on PATH. Nucleotide diversity "
+                "calculation requires MUMmer (nucmer/dnadiff) for "
+                "whole-genome pairwise alignment. Install it, e.g. "
+                "'conda install -c bioconda mummer', and ensure it is "
+                "on PATH."
+            )
+
+
+def pairwise_genome_pi(fasta_a, fasta_b, workdir):
+    """
+    Align two whole genomes with MUMmer's dnadiff (nucmer + delta-filter
+    + SNP calling under the hood) and return the pairwise nucleotide
+    diversity contribution: SNPs / aligned_bases.
+
+    dnadiff reports, among other things:
+      - AlignedBases: total reference bases covered by 1-to-1 alignments
+      - TotalSNPs:    total SNPs within those 1-to-1 aligned regions
+
+    Restricting to 1-to-1 aligned blocks avoids counting differences
+    across repeats/rearrangements as if they were homologous sites,
+    which a naive Hamming distance on unaligned/concatenated sequence
+    would not guard against.
+    """
+    prefix = os.path.join(workdir, "dnadiff_out")
+
+    result = subprocess.run(
+        ["dnadiff", "-p", prefix, fasta_a, fasta_b],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE
     )
 
-    # keep the sketch_size smallest hashes -> MinHash sketch
-    return set(sorted(hashes)[:sketch_size])
+    report_path = prefix + ".report"
+    if result.returncode != 0 or not os.path.exists(report_path):
+        return np.nan, 0
+
+    total_snps = None
+    aligned_bases = None
+
+    with open(report_path) as fh:
+        for line in fh:
+            if line.startswith("TotalSNPs"):
+                parts = line.split()
+                total_snps = float(parts[1])
+            elif line.startswith("AlignedBases"):
+                # format: "AlignedBases   123456(98.76%)  123456(97.65%)"
+                parts = line.split()
+                match = re.match(r"(\d+)", parts[1])
+                if match:
+                    aligned_bases = float(match.group(1))
+
+    if total_snps is None or not aligned_bases:
+        return np.nan, 0
+
+    return total_snps / aligned_bases, aligned_bases
 
 
-def mash_distance(sketch_a, sketch_b, k=21):
+def seed_nucleotide_diversity(seed_gff_files):
     """
-    Approximate nucleotide divergence between two genomes from their
-    MinHash sketches. This is NOT nucleotide diversity (pi) in the
-    strict population-genetics sense -- it doesn't require alignment
-    or orthology calls, and is a widely used fast proxy for average
-    pairwise sequence divergence (Ondov et al. 2016, Mash).
+    Given the GFF files for all isolates of one seed, extract each
+    isolate's genome sequence, align every pair of genomes with MUMmer
+    (dnadiff), and compute nucleotide diversity (pi) as the mean, over
+    all pairwise comparisons, of (SNPs / alignable sites). This is the
+    standard pairwise-difference estimator of pi for a set of unaligned
+    whole genomes.
     """
-    if not sketch_a or not sketch_b:
-        return np.nan
+    _require_mummer()
 
-    intersection = len(sketch_a & sketch_b)
-    union = len(sketch_a | sketch_b)
-
-    if union == 0:
-        return np.nan
-
-    jaccard = intersection / union
-
-    if jaccard == 0:
-        return 1.0  # maximally divergent within sketch resolution
-
-    # Mash distance formula: d = -1/k * ln(2j / (1+j))
-    return -1.0 / k * np.log((2 * jaccard) / (1 + jaccard))
-
-
-def seed_nucleotide_diversity(seed_gff_files, k=21, sketch_size=1000):
-    """
-    Given the GFF files for all isolates of one seed, sketch each genome
-    and return the mean pairwise Mash distance -- a proxy for that
-    population's nucleotide diversity.
-    """
-    sketches = []
-
+    sequences = []
     for gff_file in seed_gff_files:
         seq = read_gff_sequence(gff_file)
         if seq:
-            sketches.append(kmer_minhash(seq, k=k, sketch_size=sketch_size))
+            sequences.append((gff_file, seq))
 
-    if len(sketches) < 2:
+    if len(sequences) < 2:
         return np.nan
 
-    dists = [
-        mash_distance(a, b, k=k)
-        for a, b in combinations(sketches, 2)
-    ]
+    with tempfile.TemporaryDirectory() as tmp_root:
 
-    dists = [d for d in dists if not np.isnan(d)]
+        fasta_paths = []
+        for i, (gff_file, seq) in enumerate(sequences):
+            fasta_path = os.path.join(tmp_root, f"isolate_{i}.fasta")
+            _write_fasta(seq, fasta_path, header=os.path.basename(gff_file))
+            fasta_paths.append(fasta_path)
 
-    return float(np.mean(dists)) if dists else np.nan
+        pair_pis = []
+        for i, j in combinations(range(len(fasta_paths)), 2):
+            with tempfile.TemporaryDirectory(dir=tmp_root) as pair_dir:
+                pi_ij, aligned_bases = pairwise_genome_pi(
+                    fasta_paths[i], fasta_paths[j], pair_dir
+                )
+                if not np.isnan(pi_ij) and aligned_bases > 0:
+                    pair_pis.append(pi_ij)
+
+    return float(np.mean(pair_pis)) if pair_pis else np.nan
 
 
-def compute_diversity_across_seeds(
-    diversity_root,
-    seeds,
-    k=21,
-    sketch_size=1000
-):
+def compute_diversity_across_seeds(diversity_root, seeds):
     """
-    For every known seed, find its GFF files under diversity_root and
-    compute a mean pairwise Mash-distance (nucleotide diversity proxy).
-    Returns a DataFrame with columns: seed, n_isolates, nucleotide_diversity_proxy.
+    For every known seed, find its GFF files under diversity_root,
+    align all pairs of isolate genomes with MUMmer, and compute true
+    nucleotide diversity (pi) as the mean pairwise SNPs-per-aligned-site.
+    Returns a DataFrame with columns: seed, n_isolates, nucleotide_diversity.
     """
     rows = []
 
@@ -211,16 +256,14 @@ def compute_diversity_across_seeds(
         if not seed_gffs:
             continue
 
-        print(f"Seed {seed}: {len(seed_gffs)} GFFs -> sketching")
+        print(f"Seed {seed}: {len(seed_gffs)} GFFs -> pairwise whole-genome alignment")
 
-        div = seed_nucleotide_diversity(
-            seed_gffs, k=k, sketch_size=sketch_size
-        )
+        div = seed_nucleotide_diversity(seed_gffs)
 
         rows.append({
             "seed": seed,
             "n_isolates": len(seed_gffs),
-            "nucleotide_diversity_proxy": div
+            "nucleotide_diversity": div
         })
 
     return pd.DataFrame(rows)
@@ -232,21 +275,21 @@ def plot_nucleotide_diversity(diversity_df, out):
         print("No diversity data to plot.")
         return
 
-    diversity_df = diversity_df.sort_values("nucleotide_diversity_proxy")
+    diversity_df = diversity_df.sort_values("nucleotide_diversity")
 
     plt.figure(figsize=(10, 6))
 
     sns.barplot(
         data=diversity_df,
         x="seed",
-        y="nucleotide_diversity_proxy",
+        y="nucleotide_diversity",
         order=diversity_df["seed"].astype(str),
         color="steelblue"
     )
 
     plt.xticks(rotation=90, fontsize=7)
     plt.xlabel("Seed")
-    plt.ylabel("Mean pairwise Mash distance\n(nucleotide diversity proxy)")
+    plt.ylabel("Nucleotide diversity (\u03c0)\nmean pairwise SNPs / aligned site")
     plt.title("Nucleotide diversity across simulated populations")
 
     plt.tight_layout()
@@ -899,16 +942,18 @@ def plot_openness(accumulations, out, seeds=None):
 
     plt.figure(figsize=(6, 6))
 
-    sns.violinplot(y=alphas, inner=None, color="lightgrey")
-    sns.stripplot(y=alphas, color="black", size=5, jitter=0.05)
+    sns.violinplot(
+        y=alphas,
+        inner=None,
+        color="steelblue"
+    )
 
-    if seeds is not None and len(seeds) == len(alphas):
-        for seed, a in zip(seeds, alphas):
-            plt.annotate(
-                str(seed),
-                (0.03, a),
-                fontsize=6
-            )
+    sns.stripplot(
+        y=alphas,
+        color="black",
+        size=5,
+        jitter=0.05
+    )
 
     plt.ylabel("Heaps alpha")
     plt.title("Pangenome openness (one point per seed)")
@@ -986,9 +1031,7 @@ def plot_phase_space(mats, out):
 def analyse(
     folder,
     gff_folder=None,
-    diversity_root=None,
-    kmer_size=21,
-    sketch_size=1000
+    diversity_root=None
 ):
 
     out = os.path.join(
@@ -1109,9 +1152,7 @@ def analyse(
 
         diversity_df = compute_diversity_across_seeds(
             diversity_root,
-            SEEDS,
-            k=kmer_size,
-            sketch_size=sketch_size
+            SEEDS
         )
 
         diversity_df.to_csv(
@@ -1193,24 +1234,9 @@ if __name__ == "__main__":
         help=(
             "Root folder containing the 30 per-seed subfolders, each with "
             "~100 simulated isolate GFFs (with embedded ##FASTA), used to "
-            "estimate nucleotide diversity per seed. Set to '' to skip."
+            "compute true nucleotide diversity (pi) per seed via pairwise "
+            "MUMmer whole-genome alignment. Set to '' to skip."
         )
-    )
-
-    parser.add_argument(
-        "-k",
-        "--kmer-size",
-        type=int,
-        default=21,
-        help="K-mer size for the Mash-style diversity sketch"
-    )
-
-    parser.add_argument(
-        "-s",
-        "--sketch-size",
-        type=int,
-        default=1000,
-        help="MinHash sketch size for the diversity estimate"
     )
 
     args = parser.parse_args()
@@ -1218,7 +1244,5 @@ if __name__ == "__main__":
     analyse(
         args.input,
         gff_folder=args.gff_folder,
-        diversity_root=(args.diversity_root or None),
-        kmer_size=args.kmer_size,
-        sketch_size=args.sketch_size
+        diversity_root=(args.diversity_root or None)
     )
