@@ -22,7 +22,16 @@ DEFAULT_GFF = (
     "2026_06_10_simsnowwithntandaasandgffs/MSdataset/6925_1#61/PROKKA_06122025.gff"
 )
 
-GENERATION_SCAFFOLD = '. "{env}" && python3 "{execexec}" -g "{inputgff}" -o "{outputpath}" -s "{seed}"'
+GENERATION_SCAFFOLD = (
+    '. "{env}" && python3 "{execexec}" -g "{inputgff}" -o "{outputpath}" -s "{seed}" '
+    '--gain_rate "{gain_rate}" --loss_rate "{loss_rate}" --mutation_rate "{mutation_rate}"'
+)
+
+# Defaults match simulate_full_pangenome.py's own argparse defaults, so that
+# not specifying a sweep reproduces the previous single-parameter-set behaviour.
+DEFAULT_GAIN_RATES = "1e-12"
+DEFAULT_LOSS_RATES = "1e-12"
+DEFAULT_MUTATION_RATES = "1e-14"
 SLURM_SCAFFOLD = (
     "sbatch -c 1 -t {timemax} --mem {memmax}G -J {jobname} "
     "-e {logpath}/log.%A.%a.%x.err -o {logpath}/log.%A.%a.%x.out "
@@ -45,6 +54,22 @@ def load_seeds(seedsfile):
 
 def get_assembly_name_from_gff(gff_path):
     return Path(gff_path).stem
+
+
+def parse_rate_list(rates_arg):
+    return [tok.strip() for tok in str(rates_arg).split(",") if tok.strip()]
+
+
+def get_param_combo_name(gain_rate, loss_rate, mutation_rate):
+    return f"gr_{gain_rate}_lr_{loss_rate}_mu_{mutation_rate}"
+
+
+def get_assembly_dir_name(assembly_name, param_combo_name):
+    # Fold the parameter combo into the assembly-level directory name itself
+    # (rather than adding a new nesting level below it), so that downstream
+    # scripts which expect "simulations/<assembly>/<seed>/..." keep working
+    # unchanged: each parameter combination just looks like its own assembly.
+    return f"{assembly_name}__{param_combo_name}"
 
 def count_genes_in_gff(gff_path):
     n_cds = 0
@@ -178,6 +203,21 @@ def main():
     parser.add_argument("--simulator", default=DEFAULT_EXEC_PATH)
     parser.add_argument("--python-env", default=DEFAULT_PY3ENV)
     parser.add_argument("--gff", default=DEFAULT_GFF)
+    parser.add_argument(
+        "--gain-rates",
+        default=DEFAULT_GAIN_RATES,
+        help="Comma-separated list of gain rates to sweep over",
+    )
+    parser.add_argument(
+        "--loss-rates",
+        default=DEFAULT_LOSS_RATES,
+        help="Comma-separated list of loss rates to sweep over",
+    )
+    parser.add_argument(
+        "--mutation-rates",
+        default=DEFAULT_MUTATION_RATES,
+        help="Comma-separated list of mutation rates to sweep over",
+    )
     parser.add_argument("--time", dest="timemax", default="1-00:00:00")
     parser.add_argument("--mem", dest="memmax", default=6, type=int)
     parser.add_argument("--job-name", default="pangenomesims")
@@ -215,48 +255,69 @@ def main():
     mainoutputfolder = os.path.join(args.outdir_sims, "simulations")
     logdir = os.path.join(args.outdir_sims, "logs", "simulations")
 
+    gain_rates = parse_rate_list(args.gain_rates)
+    loss_rates = parse_rate_list(args.loss_rates)
+    mutation_rates = parse_rate_list(args.mutation_rates)
+    param_combos = [
+        (gr, lr, mr)
+        for gr in gain_rates
+        for lr in loss_rates
+        for mr in mutation_rates
+    ]
+
     if args.collect_metadata:
-        metadata_path = args.metadata_out or os.path.join(
-            mainoutputfolder, assembly_name, "metadata.txt"
-        )
-        create_meta_data(
-            metadata_path=metadata_path,
-            gff=args.gff,
-            outdir_sims=args.outdir_sims,
-            assembly_name=assembly_name,
-            seeds=randomnumbers,
-        )
+        for gain_rate, loss_rate, mutation_rate in param_combos:
+            param_combo_name = get_param_combo_name(gain_rate, loss_rate, mutation_rate)
+            combo_assembly_name = get_assembly_dir_name(assembly_name, param_combo_name)
+            metadata_path = args.metadata_out or os.path.join(
+                mainoutputfolder, combo_assembly_name, "metadata.txt"
+            )
+            create_meta_data(
+                metadata_path=metadata_path,
+                gff=args.gff,
+                outdir_sims=args.outdir_sims,
+                assembly_name=combo_assembly_name,
+                seeds=randomnumbers,
+            )
         return
 
     if not args.pretend:
         os.makedirs(logdir, exist_ok=True)
     timestamp = time.time()
 
-    for seed in randomnumbers:
-        tmpoutpath = os.path.join(mainoutputfolder, assembly_name, str(seed))
-        if not os.path.isdir(tmpoutpath) and not args.pretend:
-            os.makedirs(tmpoutpath)
+    for gain_rate, loss_rate, mutation_rate in param_combos:
+        param_combo_name = get_param_combo_name(gain_rate, loss_rate, mutation_rate)
+        combo_assembly_name = get_assembly_dir_name(assembly_name, param_combo_name)
+        for seed in randomnumbers:
+            tmpoutpath = os.path.join(
+                mainoutputfolder, combo_assembly_name, str(seed)
+            )
+            if not os.path.isdir(tmpoutpath) and not args.pretend:
+                os.makedirs(tmpoutpath)
 
-        tmpcomm = SLURM_SCAFFOLD.format(
-            timemax=args.timemax,
-            memmax=args.memmax,
-            jobname=args.job_name,
-            logpath=logdir,
-            command=GENERATION_SCAFFOLD.format(
-                execexec=args.simulator,
-                env=args.python_env,
-                inputgff=args.gff,
-                outputpath=tmpoutpath,
-                seed=seed,
-            ),
-            other="",
-        )
+            tmpcomm = SLURM_SCAFFOLD.format(
+                timemax=args.timemax,
+                memmax=args.memmax,
+                jobname=args.job_name,
+                logpath=logdir,
+                command=GENERATION_SCAFFOLD.format(
+                    execexec=args.simulator,
+                    env=args.python_env,
+                    inputgff=args.gff,
+                    outputpath=tmpoutpath,
+                    seed=seed,
+                    gain_rate=gain_rate,
+                    loss_rate=loss_rate,
+                    mutation_rate=mutation_rate,
+                ),
+                other="",
+            )
 
-        if args.pretend:
-            print(f"You'd execute:\n\t{tmpcomm}\n")
-        else:
-            print(f"Executing\n\t{tmpcomm}")
-            os.system(tmpcomm)
+            if args.pretend:
+                print(f"You'd execute:\n\t{tmpcomm}\n")
+            else:
+                print(f"Executing\n\t{tmpcomm}")
+                os.system(tmpcomm)
 
 
 if __name__ == "__main__":
