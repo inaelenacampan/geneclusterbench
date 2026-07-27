@@ -8,6 +8,7 @@ import itertools
 import subprocess
 import tempfile
 import shutil
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 import pandas as pd
@@ -226,14 +227,41 @@ def seed_nucleotide_diversity(seed_gff_files):
             _write_fasta(seq, fasta_path, header=os.path.basename(gff_file))
             fasta_paths.append(fasta_path)
 
-        pair_pis = []
-        for i, j in combinations(range(len(fasta_paths)), 2):
-            with tempfile.TemporaryDirectory(dir=tmp_root) as pair_dir:
-                pi_ij, aligned_bases = pairwise_genome_pi(
-                    fasta_paths[i], fasta_paths[j], pair_dir
+        # Each pairwise dnadiff alignment is fully independent (own temp
+        # dir, no shared state), so this is embarrassingly parallel.
+        # Running the ~C(n,2) pairs across a process pool instead of
+        # sequentially is the main bottleneck fix here, since dnadiff
+        # itself is a single-threaded external subprocess per pair.
+        # Use only the CPUs actually allocated to this job (SLURM/LSF),
+        # falling back to the node's core count if not running under a
+        # scheduler. os.cpu_count() alone would oversubscribe when only
+        # a subset of a node's cores was requested.
+        n_workers = int(
+            os.environ.get("SLURM_CPUS_PER_TASK")
+            or os.environ.get("LSB_DJOB_NUMPROC")
+            or os.cpu_count()
+            or 1
+        )
+
+        pair_dirs = []
+        futures = {}
+        with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            for i, j in combinations(range(len(fasta_paths)), 2):
+                pair_dir = tempfile.mkdtemp(dir=tmp_root)
+                pair_dirs.append(pair_dir)
+                fut = executor.submit(
+                    pairwise_genome_pi, fasta_paths[i], fasta_paths[j], pair_dir
                 )
+                futures[fut] = pair_dir
+
+            pair_pis = []
+            for fut in as_completed(futures):
+                pi_ij, aligned_bases = fut.result()
                 if not np.isnan(pi_ij) and aligned_bases > 0:
                     pair_pis.append(pi_ij)
+
+        for pair_dir in pair_dirs:
+            shutil.rmtree(pair_dir, ignore_errors=True)
 
     return float(np.mean(pair_pis)) if pair_pis else np.nan
 
