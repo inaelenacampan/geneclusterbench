@@ -1498,8 +1498,6 @@ def plotter(theargs):
 
     plt.text(0, 1.01, namedict[assembly], fontproperties=ibmplexsansitalics, horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
     plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans, horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
-    if DOPREM:
-        plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold, horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
     plt.legend(loc="best", frameon=False, prop=ibmplexsans, handlelength=0.5, handletextpad=0.75, labelspacing=0.3)
 
     for ext in ["png", "pdf", "svg"]:
@@ -1626,8 +1624,6 @@ def plotter_pointplots(theargs):
 
     plt.text(0, 1.01, namedict[assembly], fontproperties=ibmplexsansitalics, horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
     plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans, horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
-    if DOPREM:
-        plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold, horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
 
     # bracket under the sketching methods, so readers see they're one family
     add_sketch_bracket(ax, x, positions, bar_width=bar_width, fontprops=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1)
@@ -1735,8 +1731,6 @@ def number_of_clusters_violin(theargs):
 
     plt.text(0, 1.01, namedict[assembly], fontproperties=ibmplexsansitalics, horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
     plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans, horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
-    if DOPREM:
-        plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold, horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
 
     # bracket under the sketching methods, so readers see they're one family
     add_sketch_bracket(ax, x, positions, bar_width=0.5, fontprops=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1)
@@ -1865,9 +1859,6 @@ def number_of_clusters_stacked_bar(theargs):
              horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
     plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans,
              horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
-    if DOPREM:
-        plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold,
-                 horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
 
     # bracket(s) under each method family (sketch, embeddings, ...), so
     # readers see at a glance that they're one family of methods.
@@ -2039,9 +2030,6 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
              horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
     plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans,
              horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
-    if DOPREM:
-        plt.text(0.5, 1.01, "Preliminary", fontproperties=ibmplexsansbold,
-                 horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
 
     method_handles = [
         mpatches.Patch(facecolor=CONFIGDICT_COLOURS[k], label=FANCYDICT[k]) for k in x
@@ -2184,9 +2172,6 @@ def methods_comparison_heatmap(theargs):
              horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
     plt.text(1, 1.03, "Simulations", fontproperties=ibmplexsans,
              horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
-    if DOPREM:
-        plt.text(0.5, 1.03, "Preliminary", fontproperties=ibmplexsansbold,
-                 horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
 
     family_footnote = get_family_footnote(x)
     if family_footnote is not None:
@@ -2444,6 +2429,21 @@ def plot_gene_deletion_boxplot(theargs):
         )
         return deletion_df
 
+    # === CHANGE: exclude methods with 0 deleted genes across all samples,
+    # since their box plot would show no meaningful information ===
+    x = [
+        combo for combo in x
+        if np.any(deletion_df.loc[deletion_df["combo"] == combo, "deleted_pct"].values > 0)
+    ]
+    if not x:
+        warnings.warn(
+            f"No methods with non-zero deleted genes for {assembly}/{datatype}; "
+            "skipping gene-deletion boxplot",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return deletion_df
+
     data = [deletion_df.loc[deletion_df["combo"] == combo, "deleted_pct"].values for combo in x]
     labels = [
         FANCYDICT[c] + (" *" if c.split("/")[0] in SKETCH_METHOD_NAMES or c.split("/")[0] in EMBED_METHOD_NAMES else "")
@@ -2547,9 +2547,6 @@ def _plot_triangular_pairwise_heatmap(
              horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
     plt.text(1, 1.03, "Simulations", fontproperties=ibmplexsans,
              horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
-    if DOPREM:
-        plt.text(0.5, 1.03, "Preliminary", fontproperties=ibmplexsansbold,
-                 horizontalalignment="center", verticalalignment="bottom", transform=ax.transAxes)
 
     family_footnote = get_family_footnote(x)
     if family_footnote is not None:
@@ -2659,7 +2656,7 @@ def plot_pairwise_f1_heatmap(theargs):
     _plot_triangular_pairwise_heatmap(
         mat, x, labels, namedict, outfolder, assembly, datatype, font_props,
         # === CHANGE: label now reflects the gene-deletion penalty (requirement 1) ===
-        cbar_label="Gene-retention F1 score between methods, penalised for deleted genes (adim.)",
+        cbar_label="Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",
         filename_prefix="plot_heatmap_pairwise_gene_retention_f1",
     )
 
