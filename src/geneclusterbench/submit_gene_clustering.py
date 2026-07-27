@@ -544,6 +544,14 @@ def submit_clustering_jobs(args):
         if os.path.isdir(os.path.join(simulations_dir, el))
     ]
 
+    if args.assembly is not None:
+        if args.assembly not in assemblies:
+            raise RuntimeError(
+                f"Assembly '{args.assembly}' not found in {simulations_dir}. "
+                f"Available assemblies: {sorted(assemblies)}"
+            )
+        assemblies = [args.assembly]
+
     for assembly in assemblies:
         for seed in seeds:
             simdir = os.path.join(simulations_dir, assembly, str(seed))
@@ -676,6 +684,11 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--datapath", default=DEFAULT_DATAPATH)
+    parser.add_argument(
+        "--assembly", "-a", default=None,
+        help="Name of a single assembly subdirectory under <datapath>/simulations "
+             "to run on (default: run on all assemblies found there).",
+    )
     parser.add_argument("--seeds", "-s", default=DEFAULT_SEEDS)
     parser.add_argument("--outdir", "-o", default="./")
     parser.add_argument("--temp-outdir", "-to", default="/hps/nobackup/jlees/campan/tmp/")
