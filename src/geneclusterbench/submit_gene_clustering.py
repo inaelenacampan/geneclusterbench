@@ -2,6 +2,7 @@
 from Bio import SeqIO
 import argparse
 import os
+import re
 import time
 from pathlib import Path
 import glob
@@ -143,6 +144,21 @@ def load_seeds(seedsfile):
     seeds.sort()
     return seeds
 
+
+# Matches the trailing clustering-parameter suffix on an assembly name, e.g.
+# "PROKKA_06122025__gr_1e-13_lr_1e-13_mu_1e-14" -> "gr_1e-13_lr_1e-13_mu_1e-14"
+PARAM_SUFFIX_RE = re.compile(r"(gr_[0-9eE.+-]+_lr_[0-9eE.+-]+_mu_[0-9eE.+-]+)$")
+
+
+def extract_param_suffix(assembly_name):
+    """Extract the gr_..._lr_..._mu_... parameter suffix from an assembly
+    name, if present. Returns None if the assembly name doesn't follow this
+    naming convention, so callers can fall back to the generic behaviour."""
+    if not assembly_name:
+        return None
+    match = PARAM_SUFFIX_RE.search(assembly_name)
+    return match.group(1) if match else None
+
 # type of "alphabet" used : aminoacids or nucleotide
 # thresholds : diffrent values how were there chosen?
 
@@ -240,7 +256,7 @@ def get_gene_list_for_sketch(simdir, seqtype):
     return tsv_path
 
 def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9, gcbrepo=None, pkfile=None):
-    
+
     if seqtype == "nt" :
         seq_arg = "nucleotide"
     else :
@@ -536,7 +552,7 @@ def submit_clustering_jobs(args):
     jobinfo = []
     # reproducibility
     timestamp = int(time.time()) if args.preset_timestamp < 0 else args.preset_timestamp
-    generaloutdir = os.path.join(args.temp_outdir, f"clustering_benchmark_{timestamp}")
+    generaldirname = f"clustering_benchmark_{timestamp}"
 
     simulations_dir = os.path.join(args.datapath, "simulations")
     assemblies = [
@@ -551,6 +567,20 @@ def submit_clustering_jobs(args):
                 f"Available assemblies: {sorted(assemblies)}"
             )
         assemblies = [args.assembly]
+
+    # When running against a single assembly, preserve its clustering
+    # parameter suffix (e.g. "gr_1e-13_lr_1e-13_mu_1e-14") in the top-level
+    # output folder name instead of the generic "clustering_benchmark_<ts>",
+    # so the final cluster output folder is self-describing. Falls back to
+    # the generic name when running over multiple assemblies (where a single
+    # suffix wouldn't be meaningful) or when the assembly name doesn't
+    # follow the gr_..._lr_..._mu_... naming convention.
+    if len(assemblies) == 1:
+        param_suffix = extract_param_suffix(assemblies[0])
+        if param_suffix:
+            generaldirname = f"{generaldirname}_{param_suffix}"
+
+    generaloutdir = os.path.join(args.temp_outdir, generaldirname)
 
     for assembly in assemblies:
         for seed in seeds:
@@ -673,7 +703,7 @@ def submit_clustering_jobs(args):
         os.system(tmpcomm)
         print(
             "\n> The temporal output folder has timestamp "
-            f"{timestamp} and is:\n\t{timestamp}\nYou'll need it later!"
+            f"{timestamp} and is:\n\t{generaldirname}\nYou'll need it later!"
         )
 
 
@@ -694,7 +724,7 @@ def main():
     parser.add_argument("--temp-outdir", "-to", default="/hps/nobackup/jlees/campan/tmp/")
     parser.add_argument("--threads", "-j", default=8, type=int)
     parser.add_argument("--time", "-t", default="1-12:00:00")
-    parser.add_argument("--mem", "-m", default="256")
+    parser.add_argument("--mem", "-m", default="64")
     parser.add_argument("--max-simultaneous-cores", "-M", default=2000, type=int)
     parser.add_argument("--preset-timestamp", "-P", default=-1, type=int)
     parser.add_argument("--pretend", "-p", action="store_true")
