@@ -82,9 +82,9 @@ def discover_assemblies(root):
     if os.path.isdir(root):
         for entry in sorted(os.listdir(root)):
             path = os.path.join(root, entry)
-            if entry == "PROKKA":
+            if entry == "PROKKA_06122025":
                 # Skip the bare "PROKKA" directory (no date/params
-                # suffix) - not a real simulated assembly.
+                # suffix)
                 print(f"Skipping '{entry}': bare PROKKA directory, no assembly suffix")
                 continue
             if os.path.isdir(path) and ASSEMBLY_DIR_PATTERN.match(entry):
@@ -411,13 +411,16 @@ def plot_diversity_comparison(diversity_all_df, out):
     plt.figure(figsize=(max(6, 1.5 * diversity_all_df["assembly"].nunique()), 6))
 
     order = sorted(diversity_all_df["assembly"].unique())
+    palette = sns.color_palette("tab10", len(order))
 
     sns.boxplot(
         data=diversity_all_df,
         x="assembly",
         y="nucleotide_diversity",
         order=order,
-        color="lightgrey",
+        hue="assembly",
+        palette=palette,
+        legend=False,
         showfliers=False
     )
     sns.stripplot(
@@ -431,10 +434,11 @@ def plot_diversity_comparison(diversity_all_df, out):
         alpha=0.6
     )
 
-    plt.xticks(rotation=30, ha="right")
-    plt.xlabel("Assembly")
-    plt.ylabel("Nucleotide diversity")
-    plt.title("Nucleotide diversity across assemblies (one point per seed)")
+    plt.xticks(rotation=30, ha="right", fontsize=8)
+    plt.yticks(fontsize=8)
+    plt.xlabel("Assembly", fontsize=9)
+    plt.ylabel("Nucleotide diversity", fontsize=9)
+    plt.title("Nucleotide diversity across assemblies (one point per seed)", fontsize=10)
 
     plt.tight_layout()
     plt.savefig(
@@ -574,14 +578,18 @@ def plot_rarefaction_cloud(accumulations, out, seeds=None, assembly_name=None):
     plt.fill_between(x, mean - sd, mean + sd, alpha=0.3)
 
     if seeds is not None:
-        plt.legend(title="Seed", fontsize=6, ncol=2, bbox_to_anchor=(1.02, 1), loc="upper left")
+        legend = plt.legend(title="Seed", fontsize=5, ncol=2, bbox_to_anchor=(1.02, 1), loc="upper left")
+        if legend is not None and legend.get_title() is not None:
+            legend.get_title().set_fontsize(6)
 
-    plt.xlabel("Number of isolates")
-    plt.ylabel("Pangenome size")
+    plt.xlabel("Number of isolates", fontsize=9)
+    plt.ylabel("Pangenome size", fontsize=9)
+    plt.xticks(fontsize=8)
+    plt.yticks(fontsize=8)
     title = "Pangenome rarefaction (per seed)"
     if assembly_name:
         title += f" - {assembly_name}"
-    plt.title(title)
+    plt.title(title, fontsize=10)
 
     plt.tight_layout()
     plt.savefig(os.path.join(out, "rarefaction_cloud.png"), dpi=300)
@@ -833,8 +841,13 @@ def plot_openness(accumulations, out, seeds=None, assembly_name=None):
     sns.boxplot(y=alphas, color="steelblue", showfliers=False)
     sns.stripplot(y=alphas, color="black", size=5, jitter=0.05)
 
-    plt.ylabel("Heaps alpha")
-    plt.title("Pangenome openness (one point per seed)" + (f" - {assembly_name}" if assembly_name else ""))
+    plt.ylabel("Heaps alpha", fontsize=9)
+    plt.yticks(fontsize=8)
+    plt.xticks(fontsize=8)
+    plt.title(
+        "Pangenome openness (one point per seed)" + (f" - {assembly_name}" if assembly_name else ""),
+        fontsize=9
+    )
     plt.tight_layout()
     plt.savefig(os.path.join(out, "heaps_alpha.png"), dpi=300)
     plt.close()
@@ -860,6 +873,7 @@ def plot_openness_comparison(alphas_by_assembly, out):
         return
 
     order = sorted(alphas_by_assembly.keys())
+    palette = sns.color_palette("tab10", len(order))
 
     plt.figure(figsize=(max(6, 1.5 * len(order)), 6))
 
@@ -868,7 +882,9 @@ def plot_openness_comparison(alphas_by_assembly, out):
         x="assembly",
         y="heaps_alpha",
         order=order,
-        color="lightgrey",
+        hue="assembly",
+        palette=palette,
+        legend=False,
         showfliers=False
     )
     sns.stripplot(
@@ -882,10 +898,11 @@ def plot_openness_comparison(alphas_by_assembly, out):
         alpha=0.7
     )
 
-    plt.xticks(rotation=30, ha="right")
-    plt.xlabel("Assembly")
-    plt.ylabel("Heaps alpha")
-    plt.title("Pangenome openness - assembly comparison (one point per seed)")
+    plt.xticks(rotation=30, ha="right", fontsize=8)
+    plt.yticks(fontsize=8)
+    plt.xlabel("Assembly", fontsize=9)
+    plt.ylabel("Heaps alpha", fontsize=9)
+    plt.title("Pangenome openness - assembly comparison (one point per seed)", fontsize=10)
 
     plt.tight_layout()
     plt.savefig(os.path.join(out, "heaps_alpha_comparison.png"), dpi=300)
