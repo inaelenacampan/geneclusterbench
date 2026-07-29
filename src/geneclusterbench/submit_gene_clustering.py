@@ -3,6 +3,7 @@ from Bio import SeqIO
 import argparse
 import os
 import re
+import subprocess
 import time
 from pathlib import Path
 import glob
@@ -142,6 +143,12 @@ CRANGE = [0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95]
 DEFAULT_PARAMS = {"c": 0.9}
 COMMANDS_FILE = "execcommands.tsv"
 CDHIT_EST_MIN_C = 0.8
+# Identity threshold used to pre-cluster real-data genes with CD-HIT/CD-HIT-EST
+# before sketching, so sketch's all-vs-all `dist` matrix is computed over one
+# representative per near-duplicate cluster instead of every raw gene copy.
+# Deliberately separate from CRANGE/DEFAULT_PARAMS["c"], which are swept when
+# CD-HIT is benchmarked as its own clustering method.
+SKETCH_DEDUP_C = 0.98
 
 # basic reading function for the random seeds
 def load_seeds(seedsfile):
@@ -249,13 +256,14 @@ def write_scketch_list(simdir):
                 handle.write(f"{genome_name}\t{os.path.join(simdir, gff)}\n")
     return listpath
 
-def get_gene_list_for_sketch(simdir, seqtype):
-    fasta_path = get_clustering_fasta(simdir, seqtype)
-
-    genes_dir = os.path.join(simdir, f"sketch_genes_{seqtype}")
+def split_fasta_for_sketch(fasta_path, genes_dir, tsv_path):
+    """Split a multi-FASTA into one file per record under genes_dir, and
+    write a gene_id<TAB>path TSV at tsv_path. Shared core used by both the
+    simulation and real-data sketch-input builders; sketchlib sketches each
+    TSV entry as an independent unit, so one gene per entry is required to
+    get gene-vs-gene distances out of `dist` rather than one distance for
+    the whole input file."""
     os.makedirs(genes_dir, exist_ok=True)
-
-    tsv_path = os.path.join(simdir, f"_sketch_gene_list_{seqtype}.tsv")
     if not os.path.isfile(tsv_path):
         with open(tsv_path, "w") as tsv:
             for record in SeqIO.parse(fasta_path, "fasta"):
@@ -264,6 +272,13 @@ def get_gene_list_for_sketch(simdir, seqtype):
                     SeqIO.write([record], gene_fasta, "fasta")
                 tsv.write(f"{record.id}\t{gene_fasta}\n")
     return tsv_path
+
+
+def get_gene_list_for_sketch(simdir, seqtype):
+    fasta_path = get_clustering_fasta(simdir, seqtype)
+    genes_dir = os.path.join(simdir, f"sketch_genes_{seqtype}")
+    tsv_path = os.path.join(simdir, f"_sketch_gene_list_{seqtype}.tsv")
+    return split_fasta_for_sketch(fasta_path, genes_dir, tsv_path)
 
 def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9, gcbrepo=None, pkfile=None):
 
@@ -761,6 +776,62 @@ def get_real_data_gbks_for_panx(root_dir, sample_dirs=None):
     return " ".join(staged)
 
 
+def run_cdhit_dedup_for_sketch(root_dir, seqtype, softwaredir, sample_dirs=None, nthreads=8, maxmem=64):
+    """Pre-cluster the real-data gene pool with CD-HIT (aa) / CD-HIT-EST (nt)
+    at SKETCH_DEDUP_C identity, and return the path to CD-HIT's own
+    representative-sequences FASTA output.
+
+    This exists only to shrink sketch's all-vs-all `dist` matrix: without it,
+    every near-identical copy of every conserved gene across every ERR
+    sample gets its own row/column. Cached: if the representative FASTA
+    already exists, CD-HIT is not re-run.
+    """
+    if seqtype not in ("nt", "aa"):
+        raise RuntimeError("Not supported sequence type " + seqtype)
+
+    infile = get_real_data_clustering_fasta(root_dir, seqtype, sample_dirs)
+
+    dedup_dir = os.path.join(root_dir, f"sketch_dedup_{seqtype}")
+    os.makedirs(dedup_dir, exist_ok=True)
+    outfile = os.path.join(dedup_dir, "cdhit_dedup")
+
+    if os.path.isfile(outfile):
+        return outfile
+
+    cdhitexec = os.path.join(
+        softwaredir,
+        "cdhit/cdhit/cd-hit-est" if seqtype == "nt" else "cdhit/cdhit/cd-hit",
+    )
+    word_size = get_cdhit_word_size(SKETCH_DEDUP_C, seqtype)
+
+    cmd = [
+        cdhitexec,
+        "-i", infile,
+        "-o", outfile,
+        "-c", str(SKETCH_DEDUP_C),
+        "-n", str(word_size),
+        "-d", "0",
+        "-T", str(nthreads),
+        "-M", str(int(maxmem) * 1000),
+    ]
+    subprocess.run(cmd, check=True)
+
+    return outfile
+
+
+def get_real_data_gene_list_for_sketch(root_dir, seqtype, sample_dirs=None, softwaredir=None, nthreads=8, maxmem=64):
+    """Real-data equivalent of get_gene_list_for_sketch(): CD-HIT-deduplicate
+    the gene pool at SKETCH_DEDUP_C first, then split *those*
+    representative sequences into one file per gene, and return the
+    gene_id<TAB>path TSV for sketchlib's `-f`."""
+    fasta_path = run_cdhit_dedup_for_sketch(
+        root_dir, seqtype, softwaredir, sample_dirs, nthreads=nthreads, maxmem=maxmem
+    )
+    genes_dir = os.path.join(root_dir, f"sketch_genes_{seqtype}")
+    tsv_path = os.path.join(root_dir, f"_sketch_gene_list_{seqtype}.tsv")
+    return split_fasta_for_sketch(fasta_path, genes_dir, tsv_path)
+
+
 def submit_real_data_clustering_jobs(args, jobinfo, generaloutdir):
     """Build job commands for the real-data workflow: every requested
     process is run once, across all ERR* samples together (a single
@@ -772,6 +843,7 @@ def submit_real_data_clustering_jobs(args, jobinfo, generaloutdir):
     for process in args.process:
         if process not in (
             "cdhit", "mmseqs2", "diamond", "panaroo", "ppanggolin", "panta", "panx",
+            "sketch",
         ):
             print(
                 f"> Skipping process '{process}': not yet supported for --real-data"
@@ -805,7 +877,15 @@ def submit_real_data_clustering_jobs(args, jobinfo, generaloutdir):
                 )
         else:
             for seqtype in args.sequence_type:
-                infile = get_real_data_clustering_fasta(root_dir, seqtype, sample_dirs)
+                if process == "sketch":
+                    infile = get_real_data_gene_list_for_sketch(
+                        root_dir, seqtype, sample_dirs,
+                        softwaredir=args.softwaredir,
+                        nthreads=args.threads,
+                        maxmem=args.mem,
+                    )
+                else:
+                    infile = get_real_data_clustering_fasta(root_dir, seqtype, sample_dirs)
 
                 for c_value in get_c_values_for_process(process, seqtype):
                     suffix = f"_st-{seqtype}" + (
@@ -1027,8 +1107,8 @@ def main():
         "--real-data", action="store_true",
         help="Use the real-data (Prokka-annotated ERR* samples) workflow "
              "instead of simulated assemblies. Only cdhit, mmseqs2, diamond, "
-             "panaroo, ppanggolin, panta and panx are supported in this mode; "
-             "any other --process value is skipped with a warning.",
+             "panaroo, ppanggolin, panta, panx and sketch are supported in "
+             "this mode; any other --process value is skipped with a warning.",
     )
     parser.add_argument(
         "--real-datapath", default=DEFAULT_REAL_DATAPATH,
