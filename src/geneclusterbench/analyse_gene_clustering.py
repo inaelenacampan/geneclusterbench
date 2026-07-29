@@ -52,6 +52,14 @@ CLUSTERERS = [
             "sketch",
             "embeddings"
             ]
+# === NEW (real-data support) ===
+# Real biological data has no ground truth and gene IDs are not in the
+# "geneid_N" simulation format, so of the original CLUSTERERS list above we
+# restrict real-data analysis to only the methods that were explicitly
+# requested: CD-HIT, DIAMOND, and MMseqs2. This list is only consumed by the
+# new *_realdata functions below; it never touches the simulations code path.
+REAL_DATA_CLUSTERERS = ["cdhit", "mmseqs2", "diamond"]
+
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
 DEFAULT_PARAMS = {"st": "nt", "c": 0.9}
@@ -875,6 +883,99 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
     raise RuntimeError("Clusterer " + clusterer + " not supported!")
 
 
+# === NEW (real-data support) ===================================
+def get_df_from_clusterer_realdata(clusterer, folderpath):
+    """Real-data equivalent of get_df_from_clusterer, restricted to CD-HIT,
+    DIAMOND, and MMseqs2 (requirement 5).
+
+    Why this needs to be a separate function rather than a tweak to the
+    original one: the original cdhit/mmseqs2/diamond branches above rely on
+    two simulation-only assumptions that silently produce wrong results (or
+    crash) on real gene IDs:
+
+      1. Gene IDs are assumed to look like "geneid_<N>" so a numeric suffix
+         can be parsed out of them (`int(x.split("_")[1])`) purely to sort
+         columns. Real gene IDs (locus tags, RefSeq accessions, etc.) have
+         no such guaranteed structure, so that parse would raise or silently
+         mis-sort. Sort order has no effect on any downstream metric, so we
+         just sort lexically here instead.
+      2. For mmseqs2/diamond, the original code reconstructs each cluster's
+         representative gene ID as the literal string "geneid_" + <int>
+         and uses that to re-select rows. This "reconstruction" only works
+         because in the simulated data the mmseqs2/diamond cluster_id
+         column happens to already be a geneid_N string, and the code was
+         extracting the N and rebuilding the same string. On real data,
+         cluster_id is still literally the representative gene's own real
+         ID (that's the native mmseqs2/diamond output format) -- there is
+         nothing to parse or reconstruct, so we group directly on it.
+
+    There is also no `true_max_gene` padding step here: padding existed only
+    to align a clusterer's gene universe with the ground-truth gene
+    universe (see get_purity/calculate_values_from_cluster_matrix), and
+    there is no ground truth for real data to align to. Every gene that
+    appears in the clustering output is simply used as-is.
+    """
+    if clusterer not in REAL_DATA_CLUSTERERS:
+        raise ValueError(
+            f"get_df_from_clusterer_realdata only supports {REAL_DATA_CLUSTERERS}, "
+            f"got {clusterer!r}"
+        )
+
+    if clusterer == "cdhit":
+        listoflists = []
+        setofgenes = set()
+        listofclusters = []
+        tmpdict = {}
+        with open(os.path.join(folderpath, "cdhit.clstr"), "r") as f:
+            tmpclusterid = -1
+            for line in f:
+                if line[0] == ">":
+                    tmpclusterid = int(line.replace(">", "").split(" ")[1].strip())
+                    tmpdict[tmpclusterid] = {}
+                    listofclusters.append(tmpclusterid)
+                else:
+                    tmpgeneid = line.strip().split(">")[1].split("...")[0]
+                    setofgenes.add(tmpgeneid)
+                    tmpdict[tmpclusterid][tmpgeneid] = (
+                        parse_cdhit_identity(line)
+                    ) if "*" not in line else 2.0
+
+        # Real gene IDs have no guaranteed numeric structure to sort on;
+        # a plain lexical sort gives a deterministic column order and has
+        # no bearing on any metric computed downstream.
+        listofgenes = sorted(setofgenes)
+        for cluster in listofclusters:
+            row = [cluster]
+            for gene in listofgenes:
+                row.append(tmpdict[cluster][gene] if gene in tmpdict[cluster] else -1.0)
+            listoflists.append(row)
+        outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + listofgenes)
+        return outdf.set_index("cluster_id")
+
+    # mmseqs2 and diamond share an output format: 2 columns, tab separated,
+    # (cluster representative gene id, member gene id).
+    filename = "mmseqs2_cluster.tsv" if clusterer == "mmseqs2" else "diamond"
+    firstdf = pd.read_csv(
+        os.path.join(folderpath, filename),
+        names=["cluster_id", "gene_id"],
+        sep="\t",
+    )
+    clusterlist = sorted(firstdf["cluster_id"].unique().tolist())
+    genelist = sorted(firstdf["gene_id"].unique().tolist())
+    cluster_to_genes = firstdf.groupby("cluster_id")["gene_id"].apply(set)
+
+    listoflists = []
+    for cluster_index, cluster_id in enumerate(clusterlist):
+        tmpset = cluster_to_genes[cluster_id]
+        row = [cluster_index] + [
+            1.0 if gene in tmpset else -1.0 for gene in genelist
+        ]
+        listoflists.append(row)
+
+    outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
+    return outdf.set_index("cluster_id")
+
+
 def get_dfs_from_sketch(folderpath, true_max_gene=None):
     
     tsv_path = os.path.join(folderpath, "distance_clustering", "clusters.tsv")
@@ -1325,6 +1426,147 @@ def get_info_from_folder(theargs):
         )
     # === CHANGE: added n_original_genes as a 6th tuple element (requirement 1 & 2) ===
     return (listoflists, theass, nameofass, theseed, method_labels_out, n_original_genes)
+
+
+# === NEW (real-data support) ===================================
+def get_info_from_folder_realdata(theargs):
+    """Real-data equivalent of get_info_from_folder.
+
+    === CHANGE: flat layout, no assembly/seed subdirectories ===========
+    Unlike the simulations layout (runfolder/simulations/<assembly>/<seed>/
+    <clusterer_paramdir>/...), the real_data layout you actually have is
+    flat: runfolder/real_data/<clusterer_paramdir>/... directly (e.g.
+    "diamond_st-aa_c-0.9/diamond"), with no per-assembly or per-seed
+    nesting at all. There is exactly one dataset and one run.
+
+    To reuse the rest of the pipeline unchanged (it is built throughout
+    around a MultiIndex of assembly + seed, e.g. for the pairwise-heatmap
+    "average over seeds" logic, and for namedict/outfolder plot titles), we
+    treat this single flat directory as one pseudo-"assembly" (named
+    "real_data") containing one pseudo-"seed" (named "run"). This is purely
+    a bookkeeping label -- it does not imply multiple seeds/replicates
+    exist; every plot will simply show a single data point per method.
+
+    Other differences from the simulation version, and why:
+      - No truth matrix is loaded (get_truth_matrix_path/get_purity/
+        calculate_values_from_cluster_matrix are never called), since real
+        biological data has no ground-truth cluster assignments. The
+        truth-dependent metric columns (adj_rand_index, purity,
+        adj_mutual_info, adj_rand_index_p, homogeneity, completeness,
+        v_measure) are filled with NaN so the returned row still matches
+        the column layout build_results_dataframe expects -- this lets us
+        reuse that function, and any plot that only reads runtime/
+        n_clusters/params, completely unchanged.
+      - Only CD-HIT, MMseqs2 and DIAMOND folders are processed (requirement
+        5); every other clusterer's output folder is ignored even if
+        present on disk.
+      - Gene tables come from get_df_from_clusterer_realdata, which makes no
+        "geneid_N" assumptions (requirement re: gene ID format) and needs no
+        true_max_gene padding (there is no ground-truth gene universe).
+      - "n_original_genes" here is NOT a ground-truth count (none exists);
+        it is simply the number of distinct genes seen across this run's
+        kept clustering outputs, kept only for descriptive/logging purposes.
+    """
+    thedir, theass, theseed, _datapath = theargs
+    print(
+        f"\t- Getting information from {thedir} (real data, no ground truth, "
+        "no assembly/seed nesting)"
+    )
+
+    nameofass = "Real data"
+
+    listoflists = []
+    method_labels_out = {}
+    all_genes_seen = set()
+    # === CHANGE: clusterer param-folders sit directly inside `thedir`
+    # (runfolder/real_data), not inside a <assembly>/<seed>/ subpath ===
+    seed_result_dir = thedir
+    for folder_name in os.listdir(seed_result_dir):
+        folderpath = os.path.join(seed_result_dir, folder_name)
+        if not os.path.isdir(folderpath):
+            continue
+
+        splits = folder_name.split("_")
+        tmpclusterer = splits[0]
+        if tmpclusterer not in REAL_DATA_CLUSTERERS:
+            # Requirement 5: restrict real-data analysis to cdhit/mmseqs2/diamond.
+            continue
+
+        try:
+            paramdict = get_param_dict_from_splits(splits[1:]) if len(splits) > 1 else {}
+        except ValueError as exc:
+            warnings.warn(
+                f"Skipping malformed result folder {folderpath}: {exc}",
+                RuntimeWarning, stacklevel=2,
+            )
+            continue
+
+        invalid_params = [key for key in paramdict if key not in DEFAULT_PARAMS]
+        if invalid_params:
+            warnings.warn(
+                f"Skipping result folder {folderpath}; unsupported parameters {invalid_params}",
+                RuntimeWarning, stacklevel=2,
+            )
+            continue
+
+        tmpseqtype = paramdict.get("st", DEFAULT_PARAMS["st"])
+        if tmpclusterer == "diamond" and tmpseqtype == "nt":
+            warnings.warn(
+                f"Skipping disabled diamond+nt result folder {folderpath}",
+                RuntimeWarning, stacklevel=2,
+            )
+            continue
+        if not check_status_of_folder(tmpclusterer, folderpath):
+            continue
+
+        # === NEW: per-method progress print (real-data mode) ===
+        print(f"\t\t- Reading {tmpclusterer} ({tmpseqtype}) from {folderpath} ...")
+        thedf = get_df_from_clusterer_realdata(tmpclusterer, folderpath)
+        runtime_path = os.path.join(folderpath, "timebenchmark.txt")
+        runtime = get_time_diff_from_file(runtime_path) if os.path.isfile(runtime_path) else np.nan
+        n_clusters = len(thedf.index)
+        n_singletons = count_singleton_clusters(thedf)
+        n_pairs = count_pairs_clusters(thedf)
+        # === NEW: confirm what was found for this method once parsed ===
+        print(
+            f"\t\t  done: {tmpclusterer} ({tmpseqtype}) -> "
+            f"{n_clusters} clusters, {len(thedf.columns)} genes, "
+            f"runtime={runtime if not np.isnan(runtime) else 'n/a'}s"
+        )
+        paramlist = [
+            paramdict[el] if el in paramdict else (tmpseqtype if el == "st" else DEFAULT_PARAMS[el])
+            for el in PARAMORDER
+        ]
+
+        # Truth-dependent columns (ARI, purity, AMI, v-measure, ...) do not
+        # exist for real data -> NaN, but the row shape is kept identical to
+        # calculate_values_from_cluster_matrix's output so
+        # build_results_dataframe needs no changes.
+        listoflists.append(
+            [False, theass, theseed, tmpclusterer,
+             np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+            + [n_clusters, n_singletons, n_pairs]
+            + paramlist
+            + [runtime]
+        )
+
+        genes_i, labels_i = get_labels_list_from_df(thedf)
+        all_genes_seen.update(genes_i)
+        # Only keep the default-c run for the pairwise method-vs-method
+        # comparisons, exactly as the simulation path does.
+        c_value = paramlist[PARAMORDER.index("c")]
+        if c_value == DEFAULT_PARAMS["c"]:
+            method_labels_out[f"{tmpclusterer}/{tmpseqtype}"] = dict(zip(genes_i, labels_i))
+
+    if not listoflists:
+        warnings.warn(
+            f"No valid real-data clustering outputs found for {theass}/{theseed}; skipping",
+            RuntimeWarning, stacklevel=2,
+        )
+
+    n_genes_seen = len(all_genes_seen)
+    return (listoflists, theass, nameofass, theseed, method_labels_out, n_genes_seen)
+
 
 # plot idea : how does this metric vary with the clustering threshold, averaged over random seeds, for this assembly
 
@@ -2737,9 +2979,71 @@ def report_missing_tasks(missingtasks, gettinginfotasks):
             print(f"\t  missing truth folder: {truth_seed_dir}")
 
 
+# === NEW (real-data support) ===================================
+def discover_analysis_tasks_realdata(runfolder, seeds):
+    """Real-data equivalent of discover_analysis_tasks.
+
+    === CHANGE: flat layout, no assembly/seed subdirectories ===========
+    Your actual real-data layout is flat: runfolder/real_data/<clusterer_
+    paramdir>/... directly, with no per-assembly or per-seed nesting (no
+    more "seeds" for real data -- there is one run). This is different from
+    the nested runfolder/simulations/<assembly>/<seed>/... layout, so this
+    function does not mirror discover_analysis_tasks's directory walk.
+
+    The `seeds` argument is accepted only to keep main()'s call signature
+    symmetric with the simulations branch; it is ignored here, since real
+    data has no seed dimension to iterate over. There is also no
+    ground-truth directory to check for (unlike discover_analysis_tasks),
+    since real data has none.
+    """
+    real_data_run_dir = os.path.join(runfolder, "real_data")
+    tasks = []
+    missing = []
+
+    if not os.path.isdir(real_data_run_dir):
+        missing.append(("real_data", "run", real_data_run_dir))
+        return tasks, missing
+
+    # Single pseudo-assembly ("real_data") / pseudo-seed ("run") -- see the
+    # docstring of get_info_from_folder_realdata for why. datapath (4th
+    # element) is unused for real data, kept as None purely so the task
+    # tuple shape matches the simulations path structurally.
+    tasks.append((real_data_run_dir, "real_data", "run", None))
+
+    return tasks, missing
+
+
+def report_missing_tasksrealdata(missingtasks, gettinginfotasks):
+    if not missingtasks:
+        return
+
+    warnings.warn(
+        f"{len(missingtasks)} expected real-data result folders are missing; "
+        f"analysing {len(gettinginfotasks)} present ones",
+        RuntimeWarning,
+        stacklevel=2,
+    )
+    print("> Missing expected real-data result folders:")
+    for assembly, seed, result_seed_dir in missingtasks:
+        print(f"\t- {assembly}/{seed}: missing result folder: {result_seed_dir}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Analyse gene clustering benchmark runs.")
     parser.add_argument("runfolder", default="./")
+    # === NEW (real-data support) ===
+    # "simulations" (default) preserves the exact original behaviour end to
+    # end. "real_data" switches to the ground-truth-free pipeline: no
+    # truth-comparison metrics, no gene-id-format assumptions, and analyses
+    # restricted to CD-HIT/DIAMOND/MMseqs2.
+    parser.add_argument(
+        "--mode", choices=["simulations", "real_data"], default="simulations",
+        help="'simulations' (default) analyses simulated runs against ground "
+             "truth, exactly as before. 'real_data' analyses real biological "
+             "data (folder 'real_data' instead of 'simulations'): no ground "
+             "truth, no assumptions about gene ID format, and only "
+             "CD-HIT/DIAMOND/MMseqs2 are considered.",
+    )
     parser.add_argument("--out-folder", dest="outfolder", default="./temp_runanalysis")
     parser.add_argument("--nthreads", "-j", type=int, default=1)
     parser.add_argument("--datapath", default=DEFAULT_DATAPATH)
@@ -2754,25 +3058,52 @@ def main():
     seedsfile = args.seeds
 
     lsdirs = next(os.walk(args.runfolder))[1]
-    if "simulations" not in lsdirs:
-        raise RuntimeError("No valid folders found!")
+
+    # === NEW (real-data support) ===
+    # The two modes look for a different top-level directory ("simulations"
+    # vs "real_data"), matching the requested assembly-name switch, but the
+    # rest of the folder layout underneath is unchanged.
+    if args.mode == "simulations":
+        if "simulations" not in lsdirs:
+            raise RuntimeError("No valid folders found!")
+    else:
+        if "real_data" not in lsdirs:
+            raise RuntimeError(
+                "No valid folders found! Expected a 'real_data' directory "
+                f"under {args.runfolder} when --mode real_data is used."
+            )
+
     print("> Getting seeds")
     seeds = load_seeds(seedsfile)
     print("> Got {} seeds".format(len(seeds)))
 
     print("\n> Getting info...")
-    gettinginfotasks, missingtasks = discover_analysis_tasks(
-        args.runfolder,
-        args.datapath,
-        seeds,
-    )
-    report_missing_tasks(missingtasks, gettinginfotasks)
-    if not gettinginfotasks:
-        expected_dir = os.path.join(args.runfolder, "simulations")
-        raise RuntimeError(
-            "No analysable simulations found; expected result folders under "
-            f"{expected_dir}/<assembly>/<seed>"
+    if args.mode == "simulations":
+        gettinginfotasks, missingtasks = discover_analysis_tasks(
+            args.runfolder,
+            args.datapath,
+            seeds,
         )
+        report_missing_tasks(missingtasks, gettinginfotasks)
+        if not gettinginfotasks:
+            expected_dir = os.path.join(args.runfolder, "simulations")
+            raise RuntimeError(
+                "No analysable simulations found; expected result folders under "
+                f"{expected_dir}/<assembly>/<seed>"
+            )
+    else:
+        # === NEW (real-data support): no ground-truth directory to check ===
+        gettinginfotasks, missingtasks = discover_analysis_tasks_realdata(
+            args.runfolder,
+            seeds,
+        )
+        report_missing_tasksrealdata(missingtasks, gettinginfotasks)
+        if not gettinginfotasks:
+            expected_dir = os.path.join(args.runfolder, "real_data")
+            raise RuntimeError(
+                "No analysable real-data results found; expected result folders under "
+                f"{expected_dir}/<assembly>/<seed>"
+            )
 
     listoflists = []
     namedict = {}
@@ -2784,16 +3115,17 @@ def main():
     # used as the reference/universe for the gene-deletion penalty in the
     # pairwise F1 heatmap and for the per-method deletion-percentage boxplot.
     total_genes_by_assembly = {}
+    info_fn = get_info_from_folder if args.mode == "simulations" else get_info_from_folder_realdata
     if args.nthreads <= 1:
         for task in gettinginfotasks:
-            tmpout = get_info_from_folder(task)
+            tmpout = info_fn(task)
             listoflists += tmpout[0]
             namedict[tmpout[1]] = tmpout[2]
             method_labels_by_assembly.setdefault(tmpout[1], {})[tmpout[3]] = tmpout[4]
             total_genes_by_assembly.setdefault(tmpout[1], {})[tmpout[3]] = tmpout[5]
     else:
         pool = Pool(args.nthreads)
-        for result in pool.map(get_info_from_folder, gettinginfotasks):
+        for result in pool.map(info_fn, gettinginfotasks):
             listoflists += result[0]
             namedict[result[1]] = result[2]
             method_labels_by_assembly.setdefault(result[1], {})[result[3]] = result[4]
@@ -2803,7 +3135,7 @@ def main():
     print("\n> Done!")
 
     if not listoflists:
-        raise RuntimeError("No valid clustering results were produced from the analysable simulations")
+        raise RuntimeError("No valid clustering results were produced from the analysable " + args.mode)
 
     outdf = build_results_dataframe(listoflists)
     print("Clusterers found:", set(outdf.index.get_level_values("clusterer")))
@@ -2813,122 +3145,234 @@ def main():
     if not os.path.isdir(args.outfolder):
         os.makedirs(args.outfolder)
 
-    plotstodo = ["adj_rand_index", "purity", "adj_mutual_info", "v_measure", "runtime"]
-    print("\n> Preparing plotting tasks...")
-    plottingtasks_pointplots = [
-        (plot_name, outdf, namedict, args.outfolder, assembly, "simulations", font_props)
-        for plot_name in plotstodo
-        for assembly in assemblies
-    ]
-    plottingtasks = [
-        (plot_name, outdf, namedict, args.outfolder, assembly, "simulations", font_props)
-        for plot_name in plotstodo
-        for assembly in assemblies
-    ]
+    datatype = args.mode  # "simulations" or "real_data"; used for filenames/labels below
 
-    plottingtasks_violin = [
-        ("n_clusters", outdf, namedict, args.outfolder, assembly, "simulations", font_props)
-        for assembly in assemblies
-    ]
+    if args.mode == "simulations":
+        # ================= ORIGINAL SIMULATIONS PIPELINE (unchanged) =================
+        plotstodo = ["adj_rand_index", "purity", "adj_mutual_info", "v_measure", "runtime"]
+        print("\n> Preparing plotting tasks...")
+        plottingtasks_pointplots = [
+            (plot_name, outdf, namedict, args.outfolder, assembly, datatype, font_props)
+            for plot_name in plotstodo
+            for assembly in assemblies
+        ]
+        plottingtasks = [
+            (plot_name, outdf, namedict, args.outfolder, assembly, datatype, font_props)
+            for plot_name in plotstodo
+            for assembly in assemblies
+        ]
 
-    plottingtasks_stackedbar_c = [
-        ("n_clusters", outdf, namedict, args.outfolder, assembly, "simulations", font_props)
-        for assembly in assemblies
-    ]
+        plottingtasks_violin = [
+            ("n_clusters", outdf, namedict, args.outfolder, assembly, datatype, font_props)
+            for assembly in assemblies
+        ]
 
-    plottingtasks_stackedbar = [
-        ("n_clusters", outdf, namedict, args.outfolder, assembly, "simulations", font_props)
-        for assembly in assemblies
-    ]
+        plottingtasks_stackedbar_c = [
+            ("n_clusters", outdf, namedict, args.outfolder, assembly, datatype, font_props)
+            for assembly in assemblies
+        ]
 
-    plottingtasks_heatmap = [
-        ("method_comparison", outdf, namedict, args.outfolder, assembly, "simulations", font_props)
-        for assembly in assemblies
-    ]
+        plottingtasks_stackedbar = [
+            ("n_clusters", outdf, namedict, args.outfolder, assembly, datatype, font_props)
+            for assembly in assemblies
+        ]
 
-    plottingtasks_pairwise_ari = [
-        (method_labels_by_assembly.get(assembly, {}), namedict, args.outfolder, assembly, "simulations", font_props)
-        for assembly in assemblies
-    ]
+        plottingtasks_heatmap = [
+            ("method_comparison", outdf, namedict, args.outfolder, assembly, datatype, font_props)
+            for assembly in assemblies
+        ]
 
-    # === CHANGE: pairwise F1 task now also carries total_genes_by_seed
-    # for this assembly, so the heatmap can penalise deleted genes
-    # (requirement 1) ===
-    plottingtasks_pairwise_f1 = [
-        (
-            method_labels_by_assembly.get(assembly, {}),
-            total_genes_by_assembly.get(assembly, {}),
-            namedict, args.outfolder, assembly, "simulations", font_props,
+        plottingtasks_pairwise_ari = [
+            (method_labels_by_assembly.get(assembly, {}), namedict, args.outfolder, assembly, datatype, font_props)
+            for assembly in assemblies
+        ]
+
+        # === CHANGE: pairwise F1 task now also carries total_genes_by_seed
+        # for this assembly, so the heatmap can penalise deleted genes
+        # (requirement 1) ===
+        plottingtasks_pairwise_f1 = [
+            (
+                method_labels_by_assembly.get(assembly, {}),
+                total_genes_by_assembly.get(assembly, {}),
+                namedict, args.outfolder, assembly, datatype, font_props,
+            )
+            for assembly in assemblies
+        ]
+
+        # === NEW (requirements 2 & 3): gene-deletion percentage boxplot task ===
+        plottingtasks_gene_deletion = [
+            (
+                method_labels_by_assembly.get(assembly, {}),
+                total_genes_by_assembly.get(assembly, {}),
+                namedict, args.outfolder, assembly, datatype, font_props,
+            )
+            for assembly in assemblies
+        ]
+        print("\n> Plotting...")
+        # === NEW: collect per-assembly deletion-percentage dataframes so we can
+        # write a single combined CSV at the end (requirement 2) ===
+        deletion_dfs = []
+        if args.nthreads <= 1:
+            for task in plottingtasks_pointplots:
+                plotter_pointplots(task)
+            for task in plottingtasks:
+                plotter(task)
+            for task in plottingtasks_violin:
+                number_of_clusters_violin(task)
+            for task in plottingtasks_stackedbar:
+                number_of_clusters_stacked_bar(task)
+            for task in plottingtasks_stackedbar_c:
+                number_of_clusters_stacked_bar_vs_c(task)
+            for task in plottingtasks_heatmap:
+                methods_comparison_heatmap(task)
+            for task in plottingtasks_pairwise_ari:
+                plot_pairwise_ari_heatmap(task)
+            for task in plottingtasks_pairwise_f1:
+                plot_pairwise_f1_heatmap(task)
+            for task in plottingtasks_gene_deletion:
+                ddf = plot_gene_deletion_boxplot(task)
+                if ddf is not None and not ddf.empty:
+                    deletion_dfs.append(ddf)
+
+        else:
+            pool = Pool(args.nthreads)
+            pool.map(plotter_pointplots, plottingtasks_pointplots)
+            pool.map(plotter, plottingtasks)
+            pool.map(number_of_clusters_violin, plottingtasks_violin)
+            pool.map(number_of_clusters_stacked_bar, plottingtasks_stackedbar)
+            pool.map(number_of_clusters_stacked_bar_vs_c, plottingtasks_stackedbar_c)
+            pool.map(methods_comparison_heatmap, plottingtasks_heatmap)
+            pool.map(plot_pairwise_ari_heatmap, plottingtasks_pairwise_ari)
+            pool.map(plot_pairwise_f1_heatmap, plottingtasks_pairwise_f1)
+            for ddf in pool.map(plot_gene_deletion_boxplot, plottingtasks_gene_deletion):
+                if ddf is not None and not ddf.empty:
+                    deletion_dfs.append(ddf)
+            pool.close()
+            pool.join()
+
+        outdf.to_csv(
+            os.path.join(
+                args.outfolder,
+                "clustering_metrics_with_pvalues.txt"
+            ),
+            sep="\t"
         )
-        for assembly in assemblies
-    ]
 
-    # === NEW (requirements 2 & 3): gene-deletion percentage boxplot task ===
-    plottingtasks_gene_deletion = [
-        (
-            method_labels_by_assembly.get(assembly, {}),
-            total_genes_by_assembly.get(assembly, {}),
-            namedict, args.outfolder, assembly, "simulations", font_props,
-        )
-        for assembly in assemblies
-    ]
-    print("\n> Plotting...")
-    # === NEW: collect per-assembly deletion-percentage dataframes so we can
-    # write a single combined CSV at the end (requirement 2) ===
-    deletion_dfs = []
-    if args.nthreads <= 1:
-        for task in plottingtasks_pointplots:
-            plotter_pointplots(task)
-        for task in plottingtasks:
-            plotter(task)
-        for task in plottingtasks_violin:
-            number_of_clusters_violin(task)
-        for task in plottingtasks_stackedbar:
-            number_of_clusters_stacked_bar(task)
-        for task in plottingtasks_stackedbar_c:
-            number_of_clusters_stacked_bar_vs_c(task)
-        for task in plottingtasks_heatmap:
-            methods_comparison_heatmap(task)
-        for task in plottingtasks_pairwise_ari:
-            plot_pairwise_ari_heatmap(task)
-        for task in plottingtasks_pairwise_f1:
-            plot_pairwise_f1_heatmap(task)
-        for task in plottingtasks_gene_deletion:
-            ddf = plot_gene_deletion_boxplot(task)
-            if ddf is not None and not ddf.empty:
-                deletion_dfs.append(ddf)
+        # === NEW (requirement 2): write out the per-method/per-seed gene
+        # deletion percentages, across all assemblies, as a single CSV ===
+        if deletion_dfs:
+            combined_deletion_df = pd.concat(deletion_dfs, ignore_index=True)
+            combined_deletion_df.to_csv(
+                os.path.join(args.outfolder, "gene_deletion_percentages.csv"),
+                index=False,
+            )
 
     else:
-        pool = Pool(args.nthreads)
-        pool.map(plotter_pointplots, plottingtasks_pointplots)
-        pool.map(plotter, plottingtasks)
-        pool.map(number_of_clusters_violin, plottingtasks_violin)
-        pool.map(number_of_clusters_stacked_bar, plottingtasks_stackedbar)
-        pool.map(number_of_clusters_stacked_bar_vs_c, plottingtasks_stackedbar_c)
-        pool.map(methods_comparison_heatmap, plottingtasks_heatmap)
-        pool.map(plot_pairwise_ari_heatmap, plottingtasks_pairwise_ari)
-        pool.map(plot_pairwise_f1_heatmap, plottingtasks_pairwise_f1)
-        for ddf in pool.map(plot_gene_deletion_boxplot, plottingtasks_gene_deletion):
-            if ddf is not None and not ddf.empty:
-                deletion_dfs.append(ddf)
-        pool.close()
-        pool.join()
-    
-    outdf.to_csv(
-        os.path.join(
-            args.outfolder,
-            "clustering_metrics_with_pvalues.txt"
-        ),
-        sep="\t"
-    )
+        # ================= NEW: REAL-DATA PIPELINE =================
+        # Requirements 4 & 5: only analyses that do not depend on ground
+        # truth are run here, and only for CD-HIT/DIAMOND/MMseqs2 (the
+        # get_info_from_folder_realdata step above already filtered every
+        # other clusterer out, so `outdf` only ever contains these three
+        # here regardless).
+        #
+        # What is intentionally NOT run in this branch, and why:
+        #   - plotter / plotter_pointplots for adj_rand_index / purity /
+        #     adj_mutual_info / v_measure: these are agreement-with-truth
+        #     metrics; every value for real data is NaN (no truth), so the
+        #     plots would be empty/meaningless. Only "runtime" is kept.
+        #   - methods_comparison_heatmap: its columns are exactly those same
+        #     truth-based metrics, so it is skipped entirely.
+        #   - plot_pairwise_f1_heatmap / plot_gene_deletion_boxplot with the
+        #     gene-deletion penalty: that penalty needs total_genes_by_seed
+        #     from a ground-truth gene count, which does not exist for real
+        #     data (total_genes_by_assembly here is just "genes seen in the
+        #     outputs", not a true universe) -- using it as if it were a
+        #     ground truth would silently produce a misleading penalised
+        #     score, so we deliberately drop the deletion-boxplot analysis
+        #     and only run the *un-penalised* pairwise F1/Dice heatmap
+        #     (build_pairwise_f1_matrix's documented fallback behaviour when
+        #     total_genes_by_seed is not supplied), which is a pure
+        #     method-vs-method agreement score and needs no ground truth.
+        print("\n> Preparing plotting tasks (real-data mode: runtime, cluster-count "
+              "and method-vs-method comparisons only)...")
 
-    # === NEW (requirement 2): write out the per-method/per-seed gene
-    # deletion percentages, across all assemblies, as a single CSV ===
-    if deletion_dfs:
-        combined_deletion_df = pd.concat(deletion_dfs, ignore_index=True)
-        combined_deletion_df.to_csv(
-            os.path.join(args.outfolder, "gene_deletion_percentages.csv"),
-            index=False,
+        plottingtasks_pointplots = [
+            ("runtime", outdf, namedict, args.outfolder, assembly, datatype, font_props)
+            for assembly in assemblies
+        ]
+        plottingtasks = [
+            ("runtime", outdf, namedict, args.outfolder, assembly, datatype, font_props)
+            for assembly in assemblies
+        ]
+
+        plottingtasks_violin = [
+            ("n_clusters", outdf, namedict, args.outfolder, assembly, datatype, font_props)
+            for assembly in assemblies
+        ]
+
+        plottingtasks_stackedbar_c = [
+            ("n_clusters", outdf, namedict, args.outfolder, assembly, datatype, font_props)
+            for assembly in assemblies
+        ]
+
+        plottingtasks_stackedbar = [
+            ("n_clusters", outdf, namedict, args.outfolder, assembly, datatype, font_props)
+            for assembly in assemblies
+        ]
+
+        plottingtasks_pairwise_ari = [
+            (method_labels_by_assembly.get(assembly, {}), namedict, args.outfolder, assembly, datatype, font_props)
+            for assembly in assemblies
+        ]
+
+        # No total_genes_by_seed passed -> build_pairwise_f1_matrix falls
+        # back to the plain, non-truth-penalised Dice/F1 score between
+        # methods (see its docstring).
+        plottingtasks_pairwise_f1 = [
+            (
+                method_labels_by_assembly.get(assembly, {}),
+                None,
+                namedict, args.outfolder, assembly, datatype, font_props,
+            )
+            for assembly in assemblies
+        ]
+
+        print("\n> Plotting...")
+        if args.nthreads <= 1:
+            for task in plottingtasks_pointplots:
+                plotter_pointplots(task)
+            for task in plottingtasks:
+                plotter(task)
+            for task in plottingtasks_violin:
+                number_of_clusters_violin(task)
+            for task in plottingtasks_stackedbar:
+                number_of_clusters_stacked_bar(task)
+            for task in plottingtasks_stackedbar_c:
+                number_of_clusters_stacked_bar_vs_c(task)
+            for task in plottingtasks_pairwise_ari:
+                plot_pairwise_ari_heatmap(task)
+            for task in plottingtasks_pairwise_f1:
+                plot_pairwise_f1_heatmap(task)
+        else:
+            pool = Pool(args.nthreads)
+            pool.map(plotter_pointplots, plottingtasks_pointplots)
+            pool.map(plotter, plottingtasks)
+            pool.map(number_of_clusters_violin, plottingtasks_violin)
+            pool.map(number_of_clusters_stacked_bar, plottingtasks_stackedbar)
+            pool.map(number_of_clusters_stacked_bar_vs_c, plottingtasks_stackedbar_c)
+            pool.map(plot_pairwise_ari_heatmap, plottingtasks_pairwise_ari)
+            pool.map(plot_pairwise_f1_heatmap, plottingtasks_pairwise_f1)
+            pool.close()
+            pool.join()
+
+        # Truth-based metric columns are all-NaN in real-data mode; we still
+        # write out the table (runtime/n_clusters/params are real and useful),
+        # just under a name that doesn't claim "with_pvalues" (there are no
+        # p-values here, since there's no ground truth to permutation-test
+        # against).
+        outdf.to_csv(
+            os.path.join(args.outfolder, "clustering_metrics_real_data.txt"),
+            sep="\t"
         )
 
     print("\n> Done!\n")
