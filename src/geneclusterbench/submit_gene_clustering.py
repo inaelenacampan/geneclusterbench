@@ -12,6 +12,16 @@ DEFAULT_DATAPATH = (
     "/nfs/research/jlees/campan/data/clustering_benchmarking/"
     "2026_06_10_simsnowwithntandaasandgffs"
 )
+# real (non-simulated) sequencing data, annotated
+DEFAULT_REAL_DATAPATH = (
+    "/nfs/research/jlees/campan/data/clustering_benchmarking/"
+    "2026_07_24_real_data"
+)
+PROKKA_FFN_NAME = "PROKKA_06122025.ffn"
+PROKKA_FAA_NAME = "PROKKA_06122025.faa"
+PROKKA_GFF_NAME = "PROKKA_06122025.gff"
+PROKKA_GBK_NAME = "PROKKA_06122025.gbk"
+PROKKA_FILTERED_FFN_NAME = "PROKKA_06122025_filtered.ffn"
 # updated
 DEFAULT_SOFTWAREDIR = (
     "/hps/software/users/jlees/campan/clustering_benchmarking/software"
@@ -542,16 +552,245 @@ def get_sim_iso_gbks(simdir):
         fix_genbank_metadata(gbk)
     return " ".join(matches)  # e.g. "path/iso_0.gbk path/iso_1.gbk ..."
 
+########################
+# --- real-data helpers ---
+########################
+
+def get_real_data_sample_dirs(root_dir):
+    """Return sorted list of ERRxxxx sample directories under root_dir."""
+    if not os.path.isdir(root_dir):
+        raise RuntimeError(f"Real-data root directory not found: {root_dir}")
+    matches = sorted(
+        el for el in os.listdir(root_dir)
+        if el.startswith("ERR") and os.path.isdir(os.path.join(root_dir, el))
+    )
+    if not matches:
+        raise RuntimeError(f"No ERR* sample directories found in {root_dir}")
+    return [os.path.join(root_dir, el) for el in matches]
+
+
+def filter_ffn_by_gff(gff_file, ffn_file, out_file):
+    """Python port of filter_real_data.sh: keep only FFN records whose
+    matching GFF feature (by ID=) has "CDS" in column 3."""
+    type_of = {}
+    with open(gff_file) as gff:
+        for line in gff:
+            line = line.rstrip("\n")
+            if not line or line.startswith("#"):
+                continue
+            cols = line.split("\t")
+            if len(cols) < 9:
+                continue
+            ftype = cols[2]
+            attrs = cols[8]
+            match = re.search(r"ID=([^;]+)", attrs)
+            if match:
+                type_of[match.group(1)] = ftype
+
+    with open(ffn_file) as ffn, open(out_file, "w") as out:
+        keep = False
+        for line in ffn:
+            if line.startswith(">"):
+                rec_id = line[1:].split()[0].strip()
+                ftype = type_of.get(rec_id)
+                keep = ftype == "CDS"
+            if keep:
+                out.write(line)
+
+
+def get_or_create_filtered_ffn(sample_dir):
+    """Return path to PROKKA_06122025_filtered.ffn for a sample directory,
+    generating it from the .ffn/.gff pair if it doesn't already exist."""
+    out_file = os.path.join(sample_dir, PROKKA_FILTERED_FFN_NAME)
+    if os.path.isfile(out_file):
+        return out_file
+
+    ffn_file = os.path.join(sample_dir, PROKKA_FFN_NAME)
+    gff_file = os.path.join(sample_dir, PROKKA_GFF_NAME)
+    if not os.path.isfile(ffn_file):
+        raise RuntimeError(f"Missing {PROKKA_FFN_NAME} in {sample_dir}")
+    if not os.path.isfile(gff_file):
+        raise RuntimeError(f"Missing {PROKKA_GFF_NAME} in {sample_dir}")
+
+    filter_ffn_by_gff(gff_file, ffn_file, out_file)
+    return out_file
+
+
+def get_real_data_clustering_fasta(root_dir, seqtype, sample_dirs=None):
+    """Build (or reuse) a single concatenated fasta across all ERR* samples,
+    analogous to get_clustering_fasta() for simulated data.
+
+    nt  -> concatenation of each sample's CDS-filtered .ffn
+    aa  -> concatenation of each sample's .faa (already CDS-only, no
+           filtering needed)
+    """
+    if seqtype not in ("nt", "aa"):
+        raise RuntimeError("Not supported sequence type " + seqtype)
+
+    out_name = (
+        "real_data_for_clustering.fasta" if seqtype == "nt"
+        else "real_data_for_clustering_aa.fasta"
+    )
+    out_file = os.path.join(root_dir, out_name)
+    if os.path.isfile(out_file):
+        return out_file
+
+    if sample_dirs is None:
+        sample_dirs = get_real_data_sample_dirs(root_dir)
+
+    with open(out_file, "w") as out:
+        for sample_dir in sample_dirs:
+            if seqtype == "nt":
+                src = get_or_create_filtered_ffn(sample_dir)
+            else:
+                src = os.path.join(sample_dir, PROKKA_FAA_NAME)
+                if not os.path.isfile(src):
+                    raise RuntimeError(f"Missing {PROKKA_FAA_NAME} in {sample_dir}")
+            with open(src) as handle:
+                for line in handle:
+                    out.write(line)
+
+    return out_file
+
+
+def get_real_data_gffs(root_dir, sample_dirs=None):
+    """Space-separated list of every sample's GFF, for panaroo/panta."""
+    if sample_dirs is None:
+        sample_dirs = get_real_data_sample_dirs(root_dir)
+    matches = []
+    for sample_dir in sample_dirs:
+        gff = os.path.join(sample_dir, PROKKA_GFF_NAME)
+        if not os.path.isfile(gff):
+            raise RuntimeError(f"Missing {PROKKA_GFF_NAME} in {sample_dir}")
+        matches.append(gff)
+    return " ".join(matches)
+
+
+def get_real_data_gbks(root_dir, sample_dirs=None):
+    """Space-separated list of every sample's GenBank file, metadata-fixed,
+    for panX."""
+    if sample_dirs is None:
+        sample_dirs = get_real_data_sample_dirs(root_dir)
+    matches = []
+    for sample_dir in sample_dirs:
+        gbk = os.path.join(sample_dir, PROKKA_GBK_NAME)
+        if not os.path.isfile(gbk):
+            raise RuntimeError(f"Missing {PROKKA_GBK_NAME} in {sample_dir}")
+        matches.append(gbk)
+    for gbk in matches:
+        fix_genbank_metadata(gbk)
+    return " ".join(matches)
+
+
+def get_or_write_real_data_ppanggolin_anno_list(root_dir, sample_dirs=None):
+    """genome_name<TAB>gff_path TSV across all ERR* samples, for ppanggolin
+    annotate --anno."""
+    listpath = os.path.join(root_dir, "ppanggolin_anno_list.tsv")
+    if os.path.isfile(listpath):
+        return listpath
+
+    if sample_dirs is None:
+        sample_dirs = get_real_data_sample_dirs(root_dir)
+
+    with open(listpath, "w") as handle:
+        for sample_dir in sample_dirs:
+            gff = os.path.join(sample_dir, PROKKA_GFF_NAME)
+            if not os.path.isfile(gff):
+                raise RuntimeError(f"Missing {PROKKA_GFF_NAME} in {sample_dir}")
+            genome_name = os.path.basename(sample_dir.rstrip("/"))
+            handle.write(f"{genome_name}\t{gff}\n")
+    return listpath
+
+
+def submit_real_data_clustering_jobs(args, jobinfo, generaloutdir):
+    """Build job commands for the real-data workflow: every requested
+    process is run once, across all ERR* samples together (a single
+    pangenome / clustering run, not per-assembly/per-seed)."""
+    root_dir = args.real_datapath
+    sample_dirs = get_real_data_sample_dirs(root_dir)
+    print(f"> Found {len(sample_dirs)} real-data (ERR*) samples under {root_dir}")
+
+    for process in args.process:
+        if process not in (
+            "cdhit", "mmseqs2", "diamond", "panaroo", "ppanggolin", "panta", "panx",
+        ):
+            print(
+                f"> Skipping process '{process}': not yet supported for --real-data"
+            )
+            continue
+
+        if process in ("panaroo", "ppanggolin", "panta", "panx"):
+            if process == "ppanggolin":
+                infile = get_or_write_real_data_ppanggolin_anno_list(root_dir, sample_dirs)
+            elif process == "panx":
+                infile = get_real_data_gbks(root_dir, sample_dirs)
+            else:
+                infile = get_real_data_gffs(root_dir, sample_dirs)
+
+            for c_value in get_c_values_for_process(process, "aa"):
+                suffix = f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
+                jobinfo.append(
+                    get_command_for_process(
+                        process,
+                        "aa",
+                        infile,
+                        os.path.join(generaloutdir, "real_data", process + suffix),
+                        args.threads,
+                        args.mem,
+                        args.softwaredir,
+                        c_value,
+                        gcbrepo=args.gcb_repo,
+                    )
+                )
+        else:
+            for seqtype in args.sequence_type:
+                infile = get_real_data_clustering_fasta(root_dir, seqtype, sample_dirs)
+
+                for c_value in get_c_values_for_process(process, seqtype):
+                    suffix = f"_st-{seqtype}" + (
+                        f"_c-{c_value}" if c_value != DEFAULT_PARAMS["c"] else ""
+                    )
+                    jobinfo.append(
+                        get_command_for_process(
+                            process,
+                            seqtype,
+                            infile,
+                            os.path.join(generaloutdir, "real_data", process + suffix),
+                            args.threads,
+                            args.mem,
+                            args.softwaredir,
+                            c_value,
+                            gcbrepo=args.gcb_repo,
+                        )
+                    )
+
+
 def submit_clustering_jobs(args):
+    print("\n> Preparing jobs...")
+    jobinfo = []
+    # reproducibility
+    timestamp = int(time.time()) if args.preset_timestamp < 0 else args.preset_timestamp
+
+    if args.real_data:
+        generaldirname = f"clustering_benchmark_real_data_{timestamp}"
+        generaloutdir = os.path.join(args.temp_outdir, generaldirname)
+
+        submit_real_data_clustering_jobs(args, jobinfo, generaloutdir)
+
+        if not jobinfo:
+            raise RuntimeError(
+                "No clustering jobs were prepared for --real-data; expected "
+                f"ERR* sample directories under {args.real_datapath}"
+            )
+
+        _write_and_launch_jobs(args, jobinfo, generaloutdir, generaldirname, timestamp)
+        return
+
     print("> Getting seeds")
     # reads a list of random seeds : each seed corresponds to one simulated dataset
     seeds = load_seeds(args.seeds)
     print("> Got {} seeds".format(len(seeds)))
 
-    print("\n> Preparing jobs...")
-    jobinfo = []
-    # reproducibility
-    timestamp = int(time.time()) if args.preset_timestamp < 0 else args.preset_timestamp
     generaldirname = f"clustering_benchmark_{timestamp}"
 
     simulations_dir = os.path.join(args.datapath, "simulations")
@@ -663,6 +902,10 @@ def submit_clustering_jobs(args):
             f"{simulations_dir}/<assembly>/<seed>"
         )
 
+    _write_and_launch_jobs(args, jobinfo, generaloutdir, generaldirname, timestamp)
+
+
+def _write_and_launch_jobs(args, jobinfo, generaloutdir, generaldirname, timestamp):
     print("\n> Writing job commands file...")
     with open(os.path.join("./", COMMANDS_FILE), "w") as handle:
         for i, command in enumerate(jobinfo):
@@ -718,6 +961,18 @@ def main():
         "--assembly", "-a", default=None,
         help="Name of a single assembly subdirectory under <datapath>/simulations "
              "to run on (default: run on all assemblies found there).",
+    )
+    parser.add_argument(
+        "--real-data", action="store_true",
+        help="Use the real-data (Prokka-annotated ERR* samples) workflow "
+             "instead of simulated assemblies. Only cdhit, mmseqs2, diamond, "
+             "panaroo, ppanggolin, panta and panx are supported in this mode; "
+             "any other --process value is skipped with a warning.",
+    )
+    parser.add_argument(
+        "--real-datapath", default=DEFAULT_REAL_DATAPATH,
+        help="Root directory containing ERRxxxx/ Prokka output folders. "
+             "Only used with --real-data.",
     )
     parser.add_argument("--seeds", "-s", default=DEFAULT_SEEDS)
     parser.add_argument("--outdir", "-o", default="./")
