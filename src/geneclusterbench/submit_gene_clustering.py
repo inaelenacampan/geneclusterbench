@@ -12,7 +12,7 @@ DEFAULT_DATAPATH = (
     "/nfs/research/jlees/campan/data/clustering_benchmarking/"
     "2026_06_10_simsnowwithntandaasandgffs"
 )
-# real (non-simulated) sequencing data, annotated
+# real (non-simulated) sequencing data, annotated with Prokka
 DEFAULT_REAL_DATAPATH = (
     "/nfs/research/jlees/campan/data/clustering_benchmarking/"
     "2026_07_24_real_data"
@@ -702,6 +702,65 @@ def get_or_write_real_data_ppanggolin_anno_list(root_dir, sample_dirs=None):
     return listpath
 
 
+def stage_uniquely_named_symlinks(root_dir, sample_dirs, source_filename, stage_dirname, ext):
+    """Create <root_dir>/<stage_dirname>/<ERRxxxx>.<ext> symlinks pointing at
+    each sample's source_filename.
+
+    Every ERRxxxx sample's Prokka outputs share the same basename
+    (PROKKA_06122025.*), so any downstream tool that derives a sample's
+    identity from the input *filename* (e.g. panta's -g file list, or panX's
+    own `ln -sf $(basename $f)` staging step) collapses every sample onto
+    one name. Staging uniquely-named symlinks, keyed off the ERRxxxx
+    directory name, fixes this without touching the samples themselves.
+    """
+    stage_dir = os.path.join(root_dir, stage_dirname)
+    os.makedirs(stage_dir, exist_ok=True)
+    staged = []
+    for sample_dir in sample_dirs:
+        sample_name = os.path.basename(sample_dir.rstrip("/"))
+        src = os.path.join(sample_dir, source_filename)
+        if not os.path.isfile(src):
+            raise RuntimeError(f"Missing {source_filename} in {sample_dir}")
+        dst = os.path.join(stage_dir, f"{sample_name}.{ext}")
+        if os.path.islink(dst) or os.path.exists(dst):
+            os.remove(dst)
+        os.symlink(os.path.abspath(src), dst)
+        staged.append(dst)
+    return staged
+
+
+def get_real_data_gffs_for_panta(root_dir, sample_dirs=None):
+    """Space-separated list of uniquely-named (ERRxxxx.gff) symlinked GFFs,
+    for panta only. panta derives each sample's internal ID from the input
+    filename, so the shared PROKKA_06122025.gff basename must be avoided."""
+    if sample_dirs is None:
+        sample_dirs = get_real_data_sample_dirs(root_dir)
+    staged = stage_uniquely_named_symlinks(
+        root_dir, sample_dirs, PROKKA_GFF_NAME, "gff_by_sample", "gff"
+    )
+    return " ".join(staged)
+
+
+def get_real_data_gbks_for_panx(root_dir, sample_dirs=None):
+    """Space-separated list of uniquely-named (ERRxxxx.gbk) symlinked
+    GenBank files, for panX only. panX's own scaffold does
+    `ln -sf $f input_GenBank/$(basename $f)`; with the shared
+    PROKKA_06122025.gbk basename, every sample overwrites the same
+    symlink target and only the last sample survives. Metadata is fixed
+    on the original (non-symlink) files first, exactly as before."""
+    if sample_dirs is None:
+        sample_dirs = get_real_data_sample_dirs(root_dir)
+    for sample_dir in sample_dirs:
+        gbk = os.path.join(sample_dir, PROKKA_GBK_NAME)
+        if not os.path.isfile(gbk):
+            raise RuntimeError(f"Missing {PROKKA_GBK_NAME} in {sample_dir}")
+        fix_genbank_metadata(gbk)
+    staged = stage_uniquely_named_symlinks(
+        root_dir, sample_dirs, PROKKA_GBK_NAME, "gbk_by_sample", "gbk"
+    )
+    return " ".join(staged)
+
+
 def submit_real_data_clustering_jobs(args, jobinfo, generaloutdir):
     """Build job commands for the real-data workflow: every requested
     process is run once, across all ERR* samples together (a single
@@ -723,7 +782,9 @@ def submit_real_data_clustering_jobs(args, jobinfo, generaloutdir):
             if process == "ppanggolin":
                 infile = get_or_write_real_data_ppanggolin_anno_list(root_dir, sample_dirs)
             elif process == "panx":
-                infile = get_real_data_gbks(root_dir, sample_dirs)
+                infile = get_real_data_gbks_for_panx(root_dir, sample_dirs)
+            elif process == "panta":
+                infile = get_real_data_gffs_for_panta(root_dir, sample_dirs)
             else:
                 infile = get_real_data_gffs(root_dir, sample_dirs)
 
