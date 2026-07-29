@@ -1429,7 +1429,99 @@ def get_info_from_folder(theargs):
 
 
 # === NEW (real-data support) ===================================
-def get_info_from_folder_realdata(theargs):
+def _process_one_realdata_folder(args):
+    """Worker for a single clusterer output folder in real-data mode
+    (e.g. "mmseqs2_st-aa_c-0.9/"). Pulled out of get_info_from_folder_realdata
+    so it can be dispatched to a multiprocessing Pool -- see the
+    parallelization note in get_info_from_folder_realdata's docstring.
+
+    Returns None if this folder should be skipped (wrong clusterer, bad
+    params, disabled combo, missing expected output file), otherwise a
+    dict with everything the caller needs to fold into its accumulators.
+    """
+    folderpath, folder_name, theass, theseed = args
+
+    splits = folder_name.split("_")
+    tmpclusterer = splits[0]
+    if tmpclusterer not in REAL_DATA_CLUSTERERS:
+        # Requirement 5: restrict real-data analysis to cdhit/mmseqs2/diamond.
+        return None
+
+    try:
+        paramdict = get_param_dict_from_splits(splits[1:]) if len(splits) > 1 else {}
+    except ValueError as exc:
+        warnings.warn(
+            f"Skipping malformed result folder {folderpath}: {exc}",
+            RuntimeWarning, stacklevel=2,
+        )
+        return None
+
+    invalid_params = [key for key in paramdict if key not in DEFAULT_PARAMS]
+    if invalid_params:
+        warnings.warn(
+            f"Skipping result folder {folderpath}; unsupported parameters {invalid_params}",
+            RuntimeWarning, stacklevel=2,
+        )
+        return None
+
+    tmpseqtype = paramdict.get("st", DEFAULT_PARAMS["st"])
+    if tmpclusterer == "diamond" and tmpseqtype == "nt":
+        warnings.warn(
+            f"Skipping disabled diamond+nt result folder {folderpath}",
+            RuntimeWarning, stacklevel=2,
+        )
+        return None
+    if not check_status_of_folder(tmpclusterer, folderpath):
+        return None
+
+    # === Per-method progress prints (real-data mode) ===
+    # Printed from whichever process (main, or a Pool worker) handles this
+    # folder -- with -j > 1 these interleave across methods running at the
+    # same time, which is expected and fine; each line is self-contained.
+    print(f"\t\t- Reading {tmpclusterer} ({tmpseqtype}) from {folderpath} ...")
+    thedf = get_df_from_clusterer_realdata(tmpclusterer, folderpath)
+    runtime_path = os.path.join(folderpath, "timebenchmark.txt")
+    runtime = get_time_diff_from_file(runtime_path) if os.path.isfile(runtime_path) else np.nan
+    n_clusters = len(thedf.index)
+    n_singletons = count_singleton_clusters(thedf)
+    n_pairs = count_pairs_clusters(thedf)
+    print(
+        f"\t\t  done: {tmpclusterer} ({tmpseqtype}) -> "
+        f"{n_clusters} clusters, {len(thedf.columns)} genes, "
+        f"runtime={runtime if not np.isnan(runtime) else 'n/a'}s"
+    )
+    paramlist = [
+        paramdict[el] if el in paramdict else (tmpseqtype if el == "st" else DEFAULT_PARAMS[el])
+        for el in PARAMORDER
+    ]
+
+    # Truth-dependent columns (ARI, purity, AMI, v-measure, ...) do not
+    # exist for real data -> NaN, but the row shape is kept identical to
+    # calculate_values_from_cluster_matrix's output so
+    # build_results_dataframe needs no changes.
+    row = (
+        [False, theass, theseed, tmpclusterer,
+         np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+        + [n_clusters, n_singletons, n_pairs]
+        + paramlist
+        + [runtime]
+    )
+
+    genes_i, labels_i = get_labels_list_from_df(thedf)
+    # Only keep the default-c run for the pairwise method-vs-method
+    # comparisons, exactly as the simulation path does.
+    c_value = paramlist[PARAMORDER.index("c")]
+    combo_key = f"{tmpclusterer}/{tmpseqtype}" if c_value == DEFAULT_PARAMS["c"] else None
+
+    return {
+        "row": row,
+        "genes": genes_i,
+        "labels": labels_i,
+        "combo_key": combo_key,
+    }
+
+
+def get_info_from_folder_realdata(theargs, nthreads=1):
     """Real-data equivalent of get_info_from_folder.
 
     === CHANGE: flat layout, no assembly/seed subdirectories ===========
@@ -1446,6 +1538,26 @@ def get_info_from_folder_realdata(theargs):
     "real_data") containing one pseudo-"seed" (named "run"). This is purely
     a bookkeeping label -- it does not imply multiple seeds/replicates
     exist; every plot will simply show a single data point per method.
+
+    === CHANGE (parallelization) =======================================
+    discover_analysis_tasks_realdata only ever returns ONE outer task (this
+    whole function call), since there's no assembly/seed dimension to split
+    across workers the way the simulations path does. So running this
+    *whole function* inside main()'s outer Pool.map (as the simulations
+    path does) would waste `-j` on a list of length 1, and the real,
+    independent parallelizable work -- reading each clusterer's output
+    folder (cdhit / mmseqs2 / diamond, and any parameter sweep across
+    multiple c/seqtype values within each) -- would still run serially
+    inside a single worker.
+
+    Instead, this function does its OWN internal parallelization: it lists
+    all candidate result folders first, then farms each one out to
+    `_process_one_realdata_folder` via a multiprocessing Pool sized by
+    `nthreads` (falling back to a plain for-loop when nthreads <= 1, so
+    behaviour with the default -j 1 is unchanged and single-process for
+    easy debugging). main() calls this function directly (not through its
+    own outer Pool) in real-data mode and passes args.nthreads through, so
+    `-j` now actually parallelizes per-method file reading.
 
     Other differences from the simulation version, and why:
       - No truth matrix is loaded (get_truth_matrix_path/get_purity/
@@ -1475,88 +1587,31 @@ def get_info_from_folder_realdata(theargs):
 
     nameofass = "Real data"
 
-    listoflists = []
-    method_labels_out = {}
-    all_genes_seen = set()
     # === CHANGE: clusterer param-folders sit directly inside `thedir`
     # (runfolder/real_data), not inside a <assembly>/<seed>/ subpath ===
     seed_result_dir = thedir
-    for folder_name in os.listdir(seed_result_dir):
-        folderpath = os.path.join(seed_result_dir, folder_name)
-        if not os.path.isdir(folderpath):
+    folder_tasks = [
+        (os.path.join(seed_result_dir, folder_name), folder_name, theass, theseed)
+        for folder_name in os.listdir(seed_result_dir)
+        if os.path.isdir(os.path.join(seed_result_dir, folder_name))
+    ]
+
+    if nthreads <= 1:
+        raw_results = [_process_one_realdata_folder(t) for t in folder_tasks]
+    else:
+        with Pool(min(nthreads, max(1, len(folder_tasks)))) as pool:
+            raw_results = pool.map(_process_one_realdata_folder, folder_tasks)
+
+    listoflists = []
+    method_labels_out = {}
+    all_genes_seen = set()
+    for result in raw_results:
+        if result is None:
             continue
-
-        splits = folder_name.split("_")
-        tmpclusterer = splits[0]
-        if tmpclusterer not in REAL_DATA_CLUSTERERS:
-            # Requirement 5: restrict real-data analysis to cdhit/mmseqs2/diamond.
-            continue
-
-        try:
-            paramdict = get_param_dict_from_splits(splits[1:]) if len(splits) > 1 else {}
-        except ValueError as exc:
-            warnings.warn(
-                f"Skipping malformed result folder {folderpath}: {exc}",
-                RuntimeWarning, stacklevel=2,
-            )
-            continue
-
-        invalid_params = [key for key in paramdict if key not in DEFAULT_PARAMS]
-        if invalid_params:
-            warnings.warn(
-                f"Skipping result folder {folderpath}; unsupported parameters {invalid_params}",
-                RuntimeWarning, stacklevel=2,
-            )
-            continue
-
-        tmpseqtype = paramdict.get("st", DEFAULT_PARAMS["st"])
-        if tmpclusterer == "diamond" and tmpseqtype == "nt":
-            warnings.warn(
-                f"Skipping disabled diamond+nt result folder {folderpath}",
-                RuntimeWarning, stacklevel=2,
-            )
-            continue
-        if not check_status_of_folder(tmpclusterer, folderpath):
-            continue
-
-        # === NEW: per-method progress print (real-data mode) ===
-        print(f"\t\t- Reading {tmpclusterer} ({tmpseqtype}) from {folderpath} ...")
-        thedf = get_df_from_clusterer_realdata(tmpclusterer, folderpath)
-        runtime_path = os.path.join(folderpath, "timebenchmark.txt")
-        runtime = get_time_diff_from_file(runtime_path) if os.path.isfile(runtime_path) else np.nan
-        n_clusters = len(thedf.index)
-        n_singletons = count_singleton_clusters(thedf)
-        n_pairs = count_pairs_clusters(thedf)
-        # === NEW: confirm what was found for this method once parsed ===
-        print(
-            f"\t\t  done: {tmpclusterer} ({tmpseqtype}) -> "
-            f"{n_clusters} clusters, {len(thedf.columns)} genes, "
-            f"runtime={runtime if not np.isnan(runtime) else 'n/a'}s"
-        )
-        paramlist = [
-            paramdict[el] if el in paramdict else (tmpseqtype if el == "st" else DEFAULT_PARAMS[el])
-            for el in PARAMORDER
-        ]
-
-        # Truth-dependent columns (ARI, purity, AMI, v-measure, ...) do not
-        # exist for real data -> NaN, but the row shape is kept identical to
-        # calculate_values_from_cluster_matrix's output so
-        # build_results_dataframe needs no changes.
-        listoflists.append(
-            [False, theass, theseed, tmpclusterer,
-             np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
-            + [n_clusters, n_singletons, n_pairs]
-            + paramlist
-            + [runtime]
-        )
-
-        genes_i, labels_i = get_labels_list_from_df(thedf)
-        all_genes_seen.update(genes_i)
-        # Only keep the default-c run for the pairwise method-vs-method
-        # comparisons, exactly as the simulation path does.
-        c_value = paramlist[PARAMORDER.index("c")]
-        if c_value == DEFAULT_PARAMS["c"]:
-            method_labels_out[f"{tmpclusterer}/{tmpseqtype}"] = dict(zip(genes_i, labels_i))
+        listoflists.append(result["row"])
+        all_genes_seen.update(result["genes"])
+        if result["combo_key"] is not None:
+            method_labels_out[result["combo_key"]] = dict(zip(result["genes"], result["labels"]))
 
     if not listoflists:
         warnings.warn(
@@ -3057,6 +3112,15 @@ def main():
     font_props = get_font_properties(args)
     seedsfile = args.seeds
 
+    # === NEW: fail with a clear message instead of a bare StopIteration
+    # from os.walk() when runfolder doesn't exist (e.g. a missing leading
+    # "/" turning an absolute path into a relative one) ===
+    if not os.path.isdir(args.runfolder):
+        raise RuntimeError(
+            f"runfolder does not exist or is not a directory: {args.runfolder!r} "
+            f"(resolved to {os.path.abspath(args.runfolder)!r}). "
+            "Check the path, including a leading '/' if it's meant to be absolute."
+        )
     lsdirs = next(os.walk(args.runfolder))[1]
 
     # === NEW (real-data support) ===
@@ -3115,17 +3179,30 @@ def main():
     # used as the reference/universe for the gene-deletion penalty in the
     # pairwise F1 heatmap and for the per-method deletion-percentage boxplot.
     total_genes_by_assembly = {}
-    info_fn = get_info_from_folder if args.mode == "simulations" else get_info_from_folder_realdata
-    if args.nthreads <= 1:
+    # === CHANGE (parallelization): real-data mode has only ONE outer task
+    # (see discover_analysis_tasks_realdata), so routing it through main()'s
+    # outer Pool.map would waste `-j` on a list of length 1. Instead we call
+    # get_info_from_folder_realdata directly and let IT parallelize
+    # internally, across clusterer folders, using args.nthreads. The
+    # simulations path is untouched: it still has one outer task per
+    # assembly/seed and benefits from the outer Pool exactly as before.
+    if args.mode == "real_data":
         for task in gettinginfotasks:
-            tmpout = info_fn(task)
+            tmpout = get_info_from_folder_realdata(task, nthreads=args.nthreads)
+            listoflists += tmpout[0]
+            namedict[tmpout[1]] = tmpout[2]
+            method_labels_by_assembly.setdefault(tmpout[1], {})[tmpout[3]] = tmpout[4]
+            total_genes_by_assembly.setdefault(tmpout[1], {})[tmpout[3]] = tmpout[5]
+    elif args.nthreads <= 1:
+        for task in gettinginfotasks:
+            tmpout = get_info_from_folder(task)
             listoflists += tmpout[0]
             namedict[tmpout[1]] = tmpout[2]
             method_labels_by_assembly.setdefault(tmpout[1], {})[tmpout[3]] = tmpout[4]
             total_genes_by_assembly.setdefault(tmpout[1], {})[tmpout[3]] = tmpout[5]
     else:
         pool = Pool(args.nthreads)
-        for result in pool.map(info_fn, gettinginfotasks):
+        for result in pool.map(get_info_from_folder, gettinginfotasks):
             listoflists += result[0]
             namedict[result[1]] = result[2]
             method_labels_by_assembly.setdefault(result[1], {})[result[3]] = result[4]

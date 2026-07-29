@@ -122,6 +122,38 @@ SKETCH_SCAFFOLD_NT = (
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
+# --- real-data sketch workflow: all genes, no CD-HIT dedup ---
+# For real data only: instead of CD-HIT-deduplicating the gene pool before
+# sketching, every gene is included and sketchlib's all-vs-all `dist` matrix
+# is computed over all of them. The resulting distance file is then filtered
+# to drop entries where the distance value (3rd column) equals 1, and that
+# filtered file is what's passed on to cluster_distance_file.py.
+SKETCH_SCAFFOLD_AA_REALDATA = (
+    "mkdir -p {workdir} && mkdir -p {sketchdir} && "
+    "cd {workdir} && "
+    "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
+    "{execexec} sketch -f {inputfile} -o {outputprefix} "
+    "-s 64 -k 5 --seq-type aa --threads {ncores} -v && "
+    "{execexec} dist {outputprefix} -o {distoutput} -k 5 --threads {ncores} -v && "
+    "awk -F'\\t' '$3 != 1' {distoutput} > {filtereddistoutput} && "
+    "uv run --project {gcbrepo} python -m geneclusterbench.cluster_distance_file "
+    "--dist-file {filtereddistoutput} --nthreads {ncores} && "
+    "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
+)
+
+SKETCH_SCAFFOLD_NT_REALDATA = (
+    "mkdir -p {workdir} && mkdir -p {sketchdir} && "
+    "cd {workdir} && "
+    "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
+    "{execexec} sketch -f {inputfile} -o {outputprefix} "
+    "-s 1000 -k 17 --seq-type dna --threads {ncores} -v && "
+    "{execexec} dist {outputprefix} -o {distoutput} -k 17 --threads {ncores} -v && "
+    "awk -F'\\t' '$3 != 1' {distoutput} > {filtereddistoutput} && "
+    "uv run --project {gcbrepo} python -m geneclusterbench.cluster_distance_file "
+    "--dist-file {filtereddistoutput} --nthreads {ncores} && "
+    "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
+)
+
 # ProstT5 embeddings + HDBSCAN/UMAP/t-SNE clustering. Only sensible for AA
 # input (ProstT5 expects amino-acid, or lower-case 3Di, sequences).
 EMBEDDINGS_SCAFFOLD = (
@@ -143,12 +175,14 @@ CRANGE = [0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 0.95]
 DEFAULT_PARAMS = {"c": 0.9}
 COMMANDS_FILE = "execcommands.tsv"
 CDHIT_EST_MIN_C = 0.8
-# Identity threshold used to pre-cluster real-data genes with CD-HIT/CD-HIT-EST
-# before sketching, so sketch's all-vs-all `dist` matrix is computed over one
-# representative per near-duplicate cluster instead of every raw gene copy.
-# Deliberately separate from CRANGE/DEFAULT_PARAMS["c"], which are swept when
-# CD-HIT is benchmarked as its own clustering method.
-SKETCH_DEDUP_C = 0.98
+# DEPRECATED / REMOVED: identity threshold used to pre-cluster real-data
+# genes with CD-HIT/CD-HIT-EST before sketching, so sketch's all-vs-all
+# `dist` matrix would be computed over one representative per near-duplicate
+# cluster instead of every raw gene copy. Real-data sketch runs no longer
+# CD-HIT-dedup the gene pool: every gene is sketched, and the resulting
+# all-vs-all distance file is filtered instead (entries with distance == 1
+# removed) before being handed to downstream clustering. Kept for reference.
+# SKETCH_DEDUP_C = 0.98
 
 # basic reading function for the random seeds
 def load_seeds(seedsfile):
@@ -280,7 +314,7 @@ def get_gene_list_for_sketch(simdir, seqtype):
     tsv_path = os.path.join(simdir, f"_sketch_gene_list_{seqtype}.tsv")
     return split_fasta_for_sketch(fasta_path, genes_dir, tsv_path)
 
-def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9, gcbrepo=None, pkfile=None):
+def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, softwaredir, c=0.9, gcbrepo=None, pkfile=None, real_data=False):
 
     if seqtype == "nt" :
         seq_arg = "nucleotide"
@@ -415,6 +449,35 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
 
         sketchexec = os.path.join(softwaredir, "sketchlib.rust/target/release/sketchlib")
         sketchdir = os.path.join(outfolder, "sketch")
+
+        # Real data: sketch/dist over *all* genes (no CD-HIT dedup beforehand),
+        # then filter the distance file to drop dist==1 entries before
+        # clustering. Simulated data keeps the original (unfiltered) scaffold.
+        if real_data:
+            if seqtype == "nt":
+                return SKETCH_SCAFFOLD_NT_REALDATA.format(
+                    workdir=outfolder,
+                    sketchdir=sketchdir,
+                    inputfile=infile,
+                    execexec=sketchexec,
+                    outputprefix=os.path.join(sketchdir, "sketch"),
+                    distoutput=os.path.join(sketchdir, "output.dist"),
+                    filtereddistoutput=os.path.join(sketchdir, "output_filtered.dist"),
+                    gcbrepo=gcbrepo,
+                    ncores=nthreads,
+                )
+            else:
+                return SKETCH_SCAFFOLD_AA_REALDATA.format(
+                    workdir=outfolder,
+                    sketchdir=sketchdir,
+                    inputfile=infile,
+                    execexec=sketchexec,
+                    outputprefix=os.path.join(sketchdir, "sketch"),
+                    distoutput=os.path.join(sketchdir, "output.dist"),
+                    filtereddistoutput=os.path.join(sketchdir, "output_filtered.dist"),
+                    gcbrepo=gcbrepo,
+                    ncores=nthreads,
+                )
 
         if seqtype == "nt" :
             return SKETCH_SCAFFOLD_NT.format(
@@ -776,57 +839,79 @@ def get_real_data_gbks_for_panx(root_dir, sample_dirs=None):
     return " ".join(staged)
 
 
-def run_cdhit_dedup_for_sketch(root_dir, seqtype, softwaredir, sample_dirs=None, nthreads=8, maxmem=64):
-    """Pre-cluster the real-data gene pool with CD-HIT (aa) / CD-HIT-EST (nt)
-    at SKETCH_DEDUP_C identity, and return the path to CD-HIT's own
-    representative-sequences FASTA output.
-
-    This exists only to shrink sketch's all-vs-all `dist` matrix: without it,
-    every near-identical copy of every conserved gene across every ERR
-    sample gets its own row/column. Cached: if the representative FASTA
-    already exists, CD-HIT is not re-run.
-    """
-    if seqtype not in ("nt", "aa"):
-        raise RuntimeError("Not supported sequence type " + seqtype)
-
-    infile = get_real_data_clustering_fasta(root_dir, seqtype, sample_dirs)
-
-    dedup_dir = os.path.join(root_dir, f"sketch_dedup_{seqtype}")
-    os.makedirs(dedup_dir, exist_ok=True)
-    outfile = os.path.join(dedup_dir, "cdhit_dedup")
-
-    if os.path.isfile(outfile):
-        return outfile
-
-    cdhitexec = os.path.join(
-        softwaredir,
-        "cdhit/cdhit/cd-hit-est" if seqtype == "nt" else "cdhit/cdhit/cd-hit",
-    )
-    word_size = get_cdhit_word_size(SKETCH_DEDUP_C, seqtype)
-
-    cmd = [
-        cdhitexec,
-        "-i", infile,
-        "-o", outfile,
-        "-c", str(SKETCH_DEDUP_C),
-        "-n", str(word_size),
-        "-d", "0",
-        "-T", str(nthreads),
-        "-M", str(int(maxmem) * 1000),
-    ]
-    subprocess.run(cmd, check=True)
-
-    return outfile
+# DEPRECATED / REMOVED: real-data sketch runs no longer pre-cluster the gene
+# pool with CD-HIT before sketching. Kept here for reference only — do not
+# call. See get_real_data_gene_list_for_sketch() below and the
+# SKETCH_SCAFFOLD_*_REALDATA scaffolds for the current (filter-based)
+# workflow: all genes are sketched, and the resulting all-vs-all distance
+# file is filtered afterwards (dropping rows where column 3 == 1) instead.
+#
+# def run_cdhit_dedup_for_sketch(root_dir, seqtype, softwaredir, sample_dirs=None, nthreads=8, maxmem=64):
+#     """Pre-cluster the real-data gene pool with CD-HIT (aa) / CD-HIT-EST (nt)
+#     at SKETCH_DEDUP_C identity, and return the path to CD-HIT's own
+#     representative-sequences FASTA output.
+#
+#     This exists only to shrink sketch's all-vs-all `dist` matrix: without it,
+#     every near-identical copy of every conserved gene across every ERR
+#     sample gets its own row/column. Cached: if the representative FASTA
+#     already exists, CD-HIT is not re-run.
+#     """
+#     if seqtype not in ("nt", "aa"):
+#         raise RuntimeError("Not supported sequence type " + seqtype)
+#
+#     infile = get_real_data_clustering_fasta(root_dir, seqtype, sample_dirs)
+#
+#     dedup_dir = os.path.join(root_dir, f"sketch_dedup_{seqtype}")
+#     os.makedirs(dedup_dir, exist_ok=True)
+#     outfile = os.path.join(dedup_dir, "cdhit_dedup")
+#
+#     if os.path.isfile(outfile):
+#         return outfile
+#
+#     cdhitexec = os.path.join(
+#         softwaredir,
+#         "cdhit/cdhit/cd-hit-est" if seqtype == "nt" else "cdhit/cdhit/cd-hit",
+#     )
+#     word_size = get_cdhit_word_size(SKETCH_DEDUP_C, seqtype)
+#
+#     cmd = [
+#         cdhitexec,
+#         "-i", infile,
+#         "-o", outfile,
+#         "-c", str(SKETCH_DEDUP_C),
+#         "-n", str(word_size),
+#         "-d", "0",
+#         "-T", str(nthreads),
+#         "-M", str(int(maxmem) * 1000),
+#     ]
+#     subprocess.run(cmd, check=True)
+#
+#     return outfile
+#
+#
+# def get_real_data_gene_list_for_sketch(root_dir, seqtype, sample_dirs=None, softwaredir=None, nthreads=8, maxmem=64):
+#     """Real-data equivalent of get_gene_list_for_sketch(): CD-HIT-deduplicate
+#     the gene pool at SKETCH_DEDUP_C first, then split *those*
+#     representative sequences into one file per gene, and return the
+#     gene_id<TAB>path TSV for sketchlib's `-f`."""
+#     fasta_path = run_cdhit_dedup_for_sketch(
+#         root_dir, seqtype, softwaredir, sample_dirs, nthreads=nthreads, maxmem=maxmem
+#     )
+#     genes_dir = os.path.join(root_dir, f"sketch_genes_{seqtype}")
+#     tsv_path = os.path.join(root_dir, f"_sketch_gene_list_{seqtype}.tsv")
+#     return split_fasta_for_sketch(fasta_path, genes_dir, tsv_path)
 
 
 def get_real_data_gene_list_for_sketch(root_dir, seqtype, sample_dirs=None, softwaredir=None, nthreads=8, maxmem=64):
-    """Real-data equivalent of get_gene_list_for_sketch(): CD-HIT-deduplicate
-    the gene pool at SKETCH_DEDUP_C first, then split *those*
-    representative sequences into one file per gene, and return the
-    gene_id<TAB>path TSV for sketchlib's `-f`."""
-    fasta_path = run_cdhit_dedup_for_sketch(
-        root_dir, seqtype, softwaredir, sample_dirs, nthreads=nthreads, maxmem=maxmem
-    )
+    """Real-data equivalent of get_gene_list_for_sketch(): no CD-HIT dedup —
+    every gene in the real-data clustering FASTA is split into one file per
+    gene, and the gene_id<TAB>path TSV is returned for sketchlib's `-f`.
+    sketchlib's `dist` then computes the pairwise distance between every
+    gene; the resulting distance file is filtered downstream (dist==1 rows
+    removed) rather than shrinking the input beforehand with CD-HIT.
+    softwaredir/nthreads/maxmem are accepted for call-signature
+    compatibility but are unused now that CD-HIT dedup has been removed."""
+    fasta_path = get_real_data_clustering_fasta(root_dir, seqtype, sample_dirs)
     genes_dir = os.path.join(root_dir, f"sketch_genes_{seqtype}")
     tsv_path = os.path.join(root_dir, f"_sketch_gene_list_{seqtype}.tsv")
     return split_fasta_for_sketch(fasta_path, genes_dir, tsv_path)
@@ -873,11 +958,17 @@ def submit_real_data_clustering_jobs(args, jobinfo, generaloutdir):
                         args.softwaredir,
                         c_value,
                         gcbrepo=args.gcb_repo,
+                        real_data=True,
                     )
                 )
         else:
             for seqtype in args.sequence_type:
                 if process == "sketch":
+                    # No CD-HIT dedup: split every gene in the real-data pool
+                    # for sketching. sketchlib computes the pairwise distance
+                    # between every gene, and the resulting distance file is
+                    # filtered (dist==1 rows dropped) inside the sketch
+                    # command itself before being handed to clustering.
                     infile = get_real_data_gene_list_for_sketch(
                         root_dir, seqtype, sample_dirs,
                         softwaredir=args.softwaredir,
@@ -902,6 +993,7 @@ def submit_real_data_clustering_jobs(args, jobinfo, generaloutdir):
                             args.softwaredir,
                             c_value,
                             gcbrepo=args.gcb_repo,
+                            real_data=True,
                         )
                     )
 
