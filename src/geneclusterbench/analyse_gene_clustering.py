@@ -58,7 +58,7 @@ CLUSTERERS = [
 # restrict real-data analysis to only the methods that were explicitly
 # requested: CD-HIT, DIAMOND, and MMseqs2. This list is only consumed by the
 # new *_realdata functions below; it never touches the simulations code path.
-REAL_DATA_CLUSTERERS = ["cdhit", "mmseqs2", "diamond"]
+REAL_DATA_CLUSTERERS = ["cdhit", "mmseqs2", "diamond", "panaroo"]
 
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
@@ -886,12 +886,12 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
 # === NEW (real-data support) ===================================
 def get_df_from_clusterer_realdata(clusterer, folderpath):
     """Real-data equivalent of get_df_from_clusterer, restricted to CD-HIT,
-    DIAMOND, and MMseqs2 (requirement 5).
+    DIAMOND, MMseqs2, and Panaroo (requirement 5).
 
     Why this needs to be a separate function rather than a tweak to the
-    original one: the original cdhit/mmseqs2/diamond branches above rely on
-    two simulation-only assumptions that silently produce wrong results (or
-    crash) on real gene IDs:
+    original one: the original cdhit/mmseqs2/diamond/panaroo branches above
+    rely on simulation-only assumptions that silently produce wrong results
+    (or crash) on real gene IDs:
 
       1. Gene IDs are assumed to look like "geneid_<N>" so a numeric suffix
          can be parsed out of them (`int(x.split("_")[1])`) purely to sort
@@ -908,6 +908,13 @@ def get_df_from_clusterer_realdata(clusterer, folderpath):
          cluster_id is still literally the representative gene's own real
          ID (that's the native mmseqs2/diamond output format) -- there is
          nothing to parse or reconstruct, so we group directly on it.
+      3. For panaroo, the simulation path recovers the "geneid_N" gene id
+         from each Panaroo internal protein id (e.g. "0_0_0") by looking it
+         up in gene_data.csv and then regex-extracting a `geneid_\\d+`
+         token out of whatever that lookup returns. Real gene IDs (e.g.
+         "NLEIDEKG_00001") have no such embedded token to extract, so here
+         we instead use the gene_data.csv lookup result directly as the
+         gene id -- see the panaroo branch below.
 
     There is also no `true_max_gene` padding step here: padding existed only
     to align a clusterer's gene universe with the ground-truth gene
@@ -969,27 +976,130 @@ def get_df_from_clusterer_realdata(clusterer, folderpath):
 
     # mmseqs2 and diamond share an output format: 2 columns, tab separated,
     # (cluster representative gene id, member gene id).
-    filename = "mmseqs2_cluster.tsv" if clusterer == "mmseqs2" else "diamond"
-    firstdf = pd.read_csv(
-        os.path.join(folderpath, filename),
-        names=["cluster_id", "gene_id"],
-        sep="\t",
-    )
+    if clusterer in ("mmseqs2", "diamond"):
+        filename = "mmseqs2_cluster.tsv" if clusterer == "mmseqs2" else "diamond"
+        firstdf = pd.read_csv(
+            os.path.join(folderpath, filename),
+            names=["cluster_id", "gene_id"],
+            sep="\t",
+        )
 
-    # pd.crosstab builds the dense (sorted-cluster x sorted-gene) membership
-    # matrix in one vectorized call -- same result as the old
-    # "for cluster_index, cluster_id: for gene: ..." double loop, but
-    # without the O(n_clusters * n_genes) Python-level iteration. Since
-    # clustering is a partition, every (cluster, gene) count is 0 or 1.
-    crosstab = pd.crosstab(firstdf["cluster_id"], firstdf["gene_id"])
+        # pd.crosstab builds the dense (sorted-cluster x sorted-gene) membership
+        # matrix in one vectorized call -- same result as the old
+        # "for cluster_index, cluster_id: for gene: ..." double loop, but
+        # without the O(n_clusters * n_genes) Python-level iteration. Since
+        # clustering is a partition, every (cluster, gene) count is 0 or 1.
+        crosstab = pd.crosstab(firstdf["cluster_id"], firstdf["gene_id"])
+        outdf = crosstab.astype(float)
+        outdf[outdf == 0] = -1.0
+        # crosstab's index is the *original* cluster_id, sorted -- the old code
+        # discarded that value and just renumbered clusters 0..n-1 in sorted
+        # order, so replicate that here for output-compatibility.
+        outdf = outdf.reset_index(drop=True)
+        outdf.index.name = "cluster_id"
+        return outdf
+
+    # clusterer == "panaroo":
+    #
+    # === CHANGED (bugfix): parse gene_presence_absence.csv instead of the
+    # combined_protein_cdhit_out.txt.clstr file =========================
+    # The previous version of this branch parsed Panaroo's raw CD-HIT-format
+    # clustering file (combined_protein_cdhit_out.txt.clstr) and remapped
+    # each internal protein id back to a gene id via gene_data.csv. That was
+    # the WRONG input file for real data: it does not reflect Panaroo's
+    # final, post-processed gene clusters, and the corrected analysis must
+    # instead use Panaroo's actual output table, gene_presence_absence.csv,
+    # which is the file Panaroo itself reports as its final pangenome
+    # clustering.
+    #
+    # gene_presence_absence.csv format (one row per gene cluster):
+    #   - columns "Gene", "Non-unique Gene name", "Annotation": metadata,
+    #     ignored here.
+    #   - every other column is one isolate; the cell value is empty when
+    #     that cluster is absent from that isolate ("expected, continue
+    #     reading the row"), and otherwise contains the gene id(s) (locus
+    #     tags) present in that isolate for this cluster. Panaroo separates
+    #     multiple paralogous gene ids in the same cell with ";", so we
+    #     split on that (and, defensively, on tabs too).
+    #
+    # The file path is unchanged (still under "panaroo/" inside folderpath).
+    #
+    # NOTE on "refound" genes: Panaroo inserts additional, Panaroo-recovered
+    # gene ids into this table (identifiable by "refound" appearing in the
+    # gene id) to patch annotation gaps. Per requirement 2, these must not
+    # be used for AMI/ARI (or any other clustering-agreement metric).
+    # Rather than dropping them here, they are intentionally KEPT in the
+    # returned matrix -- filtering happens one step downstream, in
+    # `_process_one_realdata_folder`, right before the gene/label lists are
+    # handed to the pairwise AMI/ARI/purity/v-measure/F1 machinery (see
+    # `filter_refound_genes` there). Keeping them here also lets the
+    # "percentage of added genes" statistic (requirement 3B) be computed
+    # directly from this matrix, since it needs to know which genes Panaroo
+    # added.
+    gpa_path = os.path.join(folderpath, "panaroo/gene_presence_absence.csv")
+    gene_presence_absence = pd.read_csv(gpa_path, low_memory=False)
+
+    meta_cols = ["Gene", "Non-unique Gene name", "Annotation"]
+    missing_meta = [c for c in meta_cols if c not in gene_presence_absence.columns]
+    if missing_meta:
+        raise ValueError(
+            f"{gpa_path} is missing expected metadata column(s) {missing_meta}; "
+            "cannot reliably tell metadata columns from isolate columns"
+        )
+    isolate_cols = [c for c in gene_presence_absence.columns if c not in meta_cols]
+
+    # Each row of gene_presence_absence.csv is one cluster; use the row's
+    # positional index (0..n_clusters-1) as cluster_id, matching the
+    # convention used by the cdhit/mmseqs2/diamond branches above.
+    gene_presence_absence = gene_presence_absence.reset_index(drop=True)
+    gene_presence_absence.index.name = "cluster_id"
+
+    # Vectorized long-format build (same rationale/performance note as the
+    # mmseqs2/diamond crosstab above: avoids an O(n_clusters * n_isolates)
+    # nested Python loop, which matters once isolate/cluster counts get
+    # into the thousands on real data):
+    #   1. melt to (cluster_id, isolate, cell) long format
+    #   2. drop empty cells (absent cluster in that isolate -- expected)
+    #   3. split each cell on ";"/tab into one or more gene ids (paralogs)
+    #      and explode so each gene id gets its own row
+    #   4. pd.crosstab -> dense cluster x gene membership matrix
+    melted = (
+        gene_presence_absence[isolate_cols]
+        .reset_index()
+        .melt(id_vars="cluster_id", var_name="isolate", value_name="gene_id")
+    )
+    melted["gene_id"] = melted["gene_id"].astype(str).str.strip()
+    # pandas turns empty/NaN cells into the literal string "nan" after
+    # astype(str); treat both that and a truly empty string as "absent".
+    melted = melted[(melted["gene_id"] != "") & (melted["gene_id"].str.lower() != "nan")]
+
+    melted["gene_id"] = melted["gene_id"].str.split(r"[;\t]")
+    melted = melted.explode("gene_id")
+    melted["gene_id"] = melted["gene_id"].str.strip()
+    melted = melted[melted["gene_id"] != ""]
+    # explode() preserves (and duplicates) the pre-explode row index, which
+    # trips up pd.crosstab's internal reindex; the row index carries no
+    # meaning here anyway (cluster_id/gene_id are separate columns), so
+    # just reset it.
+    melted = melted.reset_index(drop=True)
+
+    if melted.empty:
+        # Degenerate but valid case: every cell was empty. Return an
+        # all-absent matrix with the right cluster rows and no gene columns.
+        outdf = pd.DataFrame(index=gene_presence_absence.index.tolist())
+        outdf.index.name = "cluster_id"
+        return outdf
+
+    crosstab = pd.crosstab(melted["cluster_id"], melted["gene_id"])
     outdf = crosstab.astype(float)
     outdf[outdf == 0] = -1.0
-    # crosstab's index is the *original* cluster_id, sorted -- the old code
-    # discarded that value and just renumbered clusters 0..n-1 in sorted
-    # order, so replicate that here for output-compatibility.
-    outdf = outdf.reset_index(drop=True)
+    # Make sure every cluster row is present even if (unexpectedly) it had
+    # no genes at all in any isolate, so row count still matches the
+    # original table.
+    outdf = outdf.reindex(index=gene_presence_absence.index.tolist(), fill_value=-1.0)
     outdf.index.name = "cluster_id"
     return outdf
+
 
 
 def get_dfs_from_sketch(folderpath, true_max_gene=None):
@@ -1445,6 +1555,46 @@ def get_info_from_folder(theargs):
 
 
 # === NEW (real-data support) ===================================
+# === NEW (requirement 2): drop Panaroo "refound" genes before any
+# clustering-agreement metric (AMI/ARI/purity/v-measure/F1) is computed ===
+def is_refound_gene_id(gene_id):
+    """True if `gene_id` looks like a Panaroo-added "refound" gene id
+    (Panaroo encodes this directly in the gene id string it writes into
+    gene_presence_absence.csv, e.g. "NLEIDEKG_01145_refound_1")."""
+    return "refound" in str(gene_id)
+
+
+def filter_refound_genes(genes, labels):
+    """Real-data-only filter: given parallel (genes, labels) lists as
+    returned by get_labels_list_from_df, drop every entry whose gene id is
+    a Panaroo "refound" gene (see is_refound_gene_id), and report how many
+    were removed.
+
+    This is the real-data analogue of the exclusion already applied on the
+    simulation/gene_data.csv side (see get_df_from_clusterer_realdata's old
+    id_map construction and get_realdata_reference_gene_set): refound genes
+    are Panaroo-reconstructed sequences used to patch annotation gaps, not
+    genes that were genuinely observed and clustered, so they must not be
+    allowed to influence any agreement-with-another-method metric (AMI,
+    ARI, purity, v-measure, or the pairwise F1/Dice score). They are,
+    however, still real entries in Panaroo's *output*, so they are kept
+    for the separate "% of genes added by Panaroo" statistic instead (see
+    compute_gene_addition_dataframe).
+
+    Returns (filtered_genes, filtered_labels, n_refound_removed).
+    """
+    filtered_genes = []
+    filtered_labels = []
+    n_refound = 0
+    for gene, label in zip(genes, labels):
+        if is_refound_gene_id(gene):
+            n_refound += 1
+            continue
+        filtered_genes.append(gene)
+        filtered_labels.append(label)
+    return filtered_genes, filtered_labels, n_refound
+
+
 def _process_one_realdata_folder(args):
     """Worker for a single clusterer output folder in real-data mode
     (e.g. "mmseqs2_st-aa_c-0.9/"). Pulled out of get_info_from_folder_realdata
@@ -1460,7 +1610,7 @@ def _process_one_realdata_folder(args):
     splits = folder_name.split("_")
     tmpclusterer = splits[0]
     if tmpclusterer not in REAL_DATA_CLUSTERERS:
-        # Requirement 5: restrict real-data analysis to cdhit/mmseqs2/diamond.
+        # Requirement 5: restrict real-data analysis to cdhit/mmseqs2/diamond/panaroo.
         return None
 
     try:
@@ -1480,10 +1630,20 @@ def _process_one_realdata_folder(args):
         )
         return None
 
-    tmpseqtype = paramdict.get("st", DEFAULT_PARAMS["st"])
+    # panaroo has no nt variant (same default as the simulations path -- see
+    # get_info_from_folder's equivalent tmpseqtype line), so default it to
+    # "aa" rather than DEFAULT_PARAMS["st"] ("nt") when "st" isn't in the
+    # folder name.
+    tmpseqtype = paramdict.get("st", "aa" if tmpclusterer == "panaroo" else DEFAULT_PARAMS["st"])
     if tmpclusterer == "diamond" and tmpseqtype == "nt":
         warnings.warn(
             f"Skipping disabled diamond+nt result folder {folderpath}",
+            RuntimeWarning, stacklevel=2,
+        )
+        return None
+    if tmpclusterer == "panaroo" and tmpseqtype == "nt":
+        warnings.warn(
+            f"Skipping disabled panaroo+nt result folder {folderpath}",
             RuntimeWarning, stacklevel=2,
         )
         return None
@@ -1524,6 +1684,17 @@ def _process_one_realdata_folder(args):
     )
 
     genes_i, labels_i = get_labels_list_from_df(thedf)
+
+    # === NEW (requirement 2): strip Panaroo "refound" genes before they
+    # can reach any clustering-agreement metric (AMI/ARI/purity/v-measure/
+    # F1). Only panaroo's real-data matrix can contain refound gene ids
+    # (see get_df_from_clusterer_realdata), so this is a no-op (n_refound
+    # == 0) for cdhit/mmseqs2/diamond. ===
+    if tmpclusterer == "panaroo":
+        genes_i, labels_i, n_refound = filter_refound_genes(genes_i, labels_i)
+    else:
+        n_refound = 0
+
     # Only keep the default-c run for the pairwise method-vs-method
     # comparisons, exactly as the simulation path does.
     c_value = paramlist[PARAMORDER.index("c")]
@@ -1534,6 +1705,11 @@ def _process_one_realdata_folder(args):
         "genes": genes_i,
         "labels": labels_i,
         "combo_key": combo_key,
+        # === NEW (requirement 3B): number of Panaroo-added (refound)
+        # genes for this combo, only ever non-zero for panaroo. Only
+        # meaningful when combo_key is not None (default-c run), same
+        # scoping as genes/labels above.
+        "n_refound": n_refound,
     }
 
 
@@ -1620,6 +1796,11 @@ def get_info_from_folder_realdata(theargs, nthreads=1):
 
     listoflists = []
     method_labels_out = {}
+    # === NEW (requirement 3B): combo -> number of Panaroo-added (refound)
+    # genes, for the gene-addition boxplot. Only ever populated for the
+    # panaroo combo_key; every other combo simply never gets an entry
+    # (equivalent to 0 added genes).
+    n_refound_out = {}
     all_genes_seen = set()
     for result in raw_results:
         if result is None:
@@ -1628,6 +1809,7 @@ def get_info_from_folder_realdata(theargs, nthreads=1):
         all_genes_seen.update(result["genes"])
         if result["combo_key"] is not None:
             method_labels_out[result["combo_key"]] = dict(zip(result["genes"], result["labels"]))
+            n_refound_out[result["combo_key"]] = result.get("n_refound", 0)
 
     if not listoflists:
         warnings.warn(
@@ -1636,7 +1818,7 @@ def get_info_from_folder_realdata(theargs, nthreads=1):
         )
 
     n_genes_seen = len(all_genes_seen)
-    return (listoflists, theass, nameofass, theseed, method_labels_out, n_genes_seen)
+    return (listoflists, theass, nameofass, theseed, method_labels_out, n_genes_seen, n_refound_out)
 
 
 # plot idea : how does this metric vary with the clustering threshold, averaged over random seeds, for this assembly
@@ -2690,7 +2872,463 @@ def build_pairwise_f1_matrix(combo_list, labels_by_seed, total_genes_by_seed=Non
     return mat
 
 
+# === NEW (requirement 4, real-data only) ===================================
+# build_pairwise_f1_matrix (above) already penalises DELETED genes (it uses
+# a fixed reference N and TP = |kept_i & kept_j|, so more deletion -> lower
+# recall -> lower F1). It has no way to penalise ADDED genes (Panaroo
+# refound genes), because deletion-only F1 assumes "a kept gene is always a
+# subset of the original N genes" -- which is no longer true once a method
+# can add genes that were never in the original annotation.
+#
+# STATUS: mode="added_as_fp" is now wired into the pipeline, as an
+# ADDITIONAL heatmap (plot_pairwise_f1_heatmap_added_as_fp /
+# "plot_heatmap_pairwise_gene_retention_f1_added_as_fp_*.png"), generated
+# alongside (not instead of) the existing plot_pairwise_f1_heatmap /
+# build_pairwise_f1_matrix output, real-data only. Three modes are still
+# implemented here for reference / future use, selected via `mode`:
+#
+#   mode="deleted_only" (default): identical to build_pairwise_f1_matrix's
+#       penalised formula. Included here only so this function is a
+#       complete, self-contained drop-in replacement if you want it.
+#         TP = |kept_i & kept_j|,  FN = N - TP,  FP = 0
+#         F1 = 2*TP / (N + TP)
+#
+#   mode="added_as_fp" (ENABLED, see above): treat every refound/added
+#       gene either method introduced as a false positive. This is the
+#       most standard precision/recall reading of "added genes are genes
+#       that shouldn't be there": a method that hallucinates extra genes
+#       should lose precision, exactly the same way a method that drops
+#       genes loses recall.
+#         TP = |kept_i & kept_j|
+#         FP = |added_i| + |added_j|   (refound genes contributed by either
+#              method; an added gene can never be a TP since by
+#              definition it has no counterpart in the original N)
+#         FN = N - TP
+#         Precision = TP / (TP + FP)
+#         Recall    = TP / (TP + FN) = TP / N
+#         F1 = 2 * Precision * Recall / (Precision + Recall)
+#
+#   mode="net_kept" (still opt-in only, not wired anywhere): simplest
+#       option -- just shrink the effective "kept" count of each method by
+#       its own number of added genes before computing the ordinary
+#       (deletion-penalised) formula, i.e. treat a method that adds K genes
+#       as if it had really only kept (kept - K) genes. This is a rougher
+#       approximation than "added_as_fp" (it does not distinguish which
+#       specific genes were added), but is simpler to explain and to
+#       reproduce by hand.
+#         TP_effective = max(0, TP - added_i - added_j)
+#         F1 = 2 * TP_effective / (N + TP_effective)
+def build_pairwise_f1_matrix_with_additions(
+    combo_list, labels_by_seed, total_genes_by_seed=None,
+    n_added_by_seed=None, mode="deleted_only",
+):
+    """See the module-level comment directly above for the three `mode`
+    options and their formulas. `n_added_by_seed` should have the same
+    shape as `total_genes_by_seed` but per-combo: {seed: {combo: n_added}}
+    (this is exactly `addition_by_assembly[assembly]` as built in main()).
+    """
+    if mode not in ("deleted_only", "added_as_fp", "net_kept"):
+        raise ValueError(f"Unknown mode {mode!r}; expected one of "
+                          "'deleted_only', 'added_as_fp', 'net_kept'")
+
+    n = len(combo_list)
+    mat = np.full((n, n), np.nan)
+
+    for i, combo_i in enumerate(combo_list):
+        mat[i, i] = 1.0
+        for j in range(i + 1, len(combo_list)):
+            combo_j = combo_list[j]
+            seed_f1s = []
+            for seed, combo_dict in labels_by_seed.items():
+                if combo_i not in combo_dict or combo_j not in combo_dict:
+                    continue
+                kept_i = set(combo_dict[combo_i].keys())
+                kept_j = set(combo_dict[combo_j].keys())
+                tp = len(kept_i & kept_j)
+
+                n_original = total_genes_by_seed.get(seed) if total_genes_by_seed else None
+                added_i = (n_added_by_seed or {}).get(seed, {}).get(combo_i, 0)
+                added_j = (n_added_by_seed or {}).get(seed, {}).get(combo_j, 0)
+
+                if not n_original:
+                    denom = len(kept_i) + len(kept_j)
+                    if denom == 0:
+                        continue
+                    seed_f1s.append(float(2 * tp / denom))
+                    continue
+
+                if mode == "deleted_only":
+                    denom = n_original + tp
+                    if denom == 0:
+                        continue
+                    f1 = 2 * tp / denom
+                elif mode == "added_as_fp":
+                    fp = added_i + added_j
+                    fn = n_original - tp
+                    denom_p = tp + fp
+                    denom_r = tp + fn
+                    precision = (tp / denom_p) if denom_p else 0.0
+                    recall = (tp / denom_r) if denom_r else 0.0
+                    f1 = (
+                        2 * precision * recall / (precision + recall)
+                        if (precision + recall) else 0.0
+                    )
+                else:  # mode == "net_kept"
+                    tp_eff = max(0, tp - added_i - added_j)
+                    denom = n_original + tp_eff
+                    f1 = (2 * tp_eff / denom) if denom else 0.0
+
+                seed_f1s.append(float(f1))
+
+            if seed_f1s:
+                mat[j, i] = float(np.mean(seed_f1s))
+
+    return mat
+
+
+# === NEW: exact-cluster-match agreement between pan-genome tools ===========
+def build_pairwise_exact_match_matrix(combo_list, labels_by_seed):
+    """Row-normalised agreement matrix: mat[i, j] is the fraction of tool
+    i's clusters that have an EXACT match (identical gene membership set)
+    among tool j's clusters, averaged over seeds (real data only ever has
+    one pseudo-seed, "run").
+
+    Unlike the ARI/AMI/purity/F1 pairwise matrices above, this is NOT
+    symmetric in general (tool i and tool j can have different numbers of
+    clusters, so "fraction of i's clusters matched in j" need not equal
+    "fraction of j's clusters matched in i"), so the full n x n matrix is
+    computed and returned (no upper-triangle NaN masking).
+
+    A cluster is represented as the frozenset of gene ids it contains
+    (restricted, like every other pairwise metric here, to genes both
+    tools actually assigned to a cluster is NOT needed here -- an exact
+    match is compared against the tool's own full gene set for that
+    cluster, since partial-membership genes would trivially break an
+    "exact" match anyway).
+    """
+    n = len(combo_list)
+    mat = np.full((n, n), np.nan)
+
+    for i, combo_i in enumerate(combo_list):
+        mat[i, i] = 1.0
+        for j, combo_j in enumerate(combo_list):
+            if i == j:
+                continue
+            seed_fracs = []
+            for seed, combo_dict in labels_by_seed.items():
+                if combo_i not in combo_dict or combo_j not in combo_dict:
+                    continue
+                labels_i = combo_dict[combo_i]
+                labels_j = combo_dict[combo_j]
+
+                clusters_i = {}
+                for gene, label in labels_i.items():
+                    clusters_i.setdefault(label, set()).add(gene)
+                clusters_j_sets = set()
+                tmp_j = {}
+                for gene, label in labels_j.items():
+                    tmp_j.setdefault(label, set()).add(gene)
+                for members in tmp_j.values():
+                    clusters_j_sets.add(frozenset(members))
+
+                if not clusters_i:
+                    continue
+
+                n_matched = sum(
+                    1 for members in clusters_i.values()
+                    if frozenset(members) in clusters_j_sets
+                )
+                seed_fracs.append(n_matched / len(clusters_i))
+
+            if seed_fracs:
+                mat[i, j] = float(np.mean(seed_fracs))
+
+    return mat
+
+
+def plot_pairwise_exact_match_heatmap(theargs):
+    """Full (non-triangular) heatmap of pairwise exact-cluster-match
+    agreement between pan-genome clustering tools: row = "query" tool,
+    column = "reference" tool, cell = fraction of the row tool's clusters
+    that are an exact gene-membership match to one of the column tool's
+    clusters (see build_pairwise_exact_match_matrix)."""
+    labels_by_seed, namedict, outfolder, assembly, datatype, font_props = theargs
+    ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
+
+    print(f"\t- Plotting pairwise exact-cluster-match heatmap for {namedict[assembly]}")
+
+    if not labels_by_seed:
+        warnings.warn(
+            f"No per-method label data available for {assembly}/{datatype}; "
+            "skipping pairwise exact-match heatmap",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    combos_present = set()
+    for combo_dict in labels_by_seed.values():
+        combos_present.update(combo_dict.keys())
+
+    x = [combo for combo in COMBO_ORDER if combo in combos_present and combo in FANCYDICT]
+
+    if not x:
+        warnings.warn(
+            f"No clusterer/sequence-type combos available for {assembly}/{datatype}; "
+            "skipping pairwise exact-match heatmap",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    mat = build_pairwise_exact_match_matrix(x, labels_by_seed)
+    labels = [FANCYDICT[c] for c in x]
+
+    fig = plt.figure(
+        1, dpi=150,
+        figsize=(max(6.0, len(x) * 0.5 + 2.0), max(6.0, len(x) * 0.5 + 2.0)),
+    )
+    ax = fig.subplots()
+
+    im = ax.imshow(mat, cmap="YlGnBu", vmin=0.0, vmax=1.0, aspect="auto")
+
+    ax.set_xticks(range(len(x)))
+    ax.set_xticklabels(labels, rotation=45, ha="right", rotation_mode="anchor")
+    ax.set_yticks(range(len(x)))
+    ax.set_yticklabels(labels)
+
+    for i in range(len(x)):
+        for j in range(len(x)):
+            val = mat[i, j]
+            if np.isnan(val):
+                continue
+            txt_color = "white" if val > 0.5 else "black"
+            ax.text(
+                j, i, f"{val:.2f}",
+                ha="center", va="center",
+                fontsize=BASE_FONT_SIZE, color=txt_color,
+                fontproperties=ibmplexsans,
+            )
+
+    ax.set_xticks(np.arange(len(x) + 1) - 0.5, minor=True)
+    ax.set_yticks(np.arange(len(x) + 1) - 0.5, minor=True)
+    ax.grid(which="minor", color="white", linewidth=1.5)
+    ax.tick_params(which="minor", bottom=False, left=False)
+    ax.tick_params(which="major", bottom=False, left=False)
+
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(ibmplexsans)
+
+    ax.set_xlabel("Reference tool (matched against)", fontsize=AXIS_TITLE_FONT_SIZE, fontproperties=ibmplexsans)
+    ax.set_ylabel("Query tool (fraction of its clusters matched)", fontsize=AXIS_TITLE_FONT_SIZE, fontproperties=ibmplexsans)
+
+    cbar = fig.colorbar(im, ax=ax, fraction=0.035, pad=0.03)
+    cbar.set_label("Fraction of exactly-matching clusters (adim.)", fontproperties=ibmplexsans)
+    for label in cbar.ax.get_yticklabels():
+        label.set_fontproperties(ibmplexsans)
+
+    plt.text(0, 1.03, namedict[assembly], fontproperties=ibmplexsansitalics,
+             horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
+
+    for ext in ["png", "pdf", "svg"]:
+        fig.savefig(
+            os.path.join(
+                outfolder,
+                "_".join(["plot_heatmap_pairwise_exact_match", datatype, assembly]) + "." + ext,
+            ),
+            bbox_inches="tight",
+        )
+    fig.clf()
+    del fig, ax
+
+
+# === NEW: core genome estimation curve (real data) =========================
+def extract_strain_from_geneid(gene_id):
+    """Heuristic extraction of the strain/isolate identifier a gene id
+    belongs to. Real-data gene ids here are locus tags of the form
+    "<STRAIN_PREFIX>_<NUMBER>" (the standard Prokka/Panaroo locus-tag
+    convention, e.g. "NLEIDEKG_01145"), optionally with a
+    "_refound_<N>" suffix appended by Panaroo. There is no per-gene
+    strain field carried through the cluster matrices built earlier in
+    this pipeline, so the strain is recovered directly from the gene id
+    string:
+      1. Strip a trailing "_refound_<N>" suffix, if present.
+      2. Take everything before the final "_<digits>" suffix as the
+         strain identifier.
+      3. If the id doesn't match that pattern at all, fall back to using
+         the whole id as its own "strain" (keeps the function total and
+         gives a graceful, conservative degradation rather than an error).
+    """
+    gid = str(gene_id)
+    gid = re.sub(r"_refound_\d+$", "", gid)
+    match = re.match(r"^(.*)_\d+$", gid)
+    if match:
+        return match.group(1)
+    return gid
+
+
+def compute_cluster_strain_counts(gene_label_dict):
+    """Given one tool's {gene_id: cluster_label} dict, return a list with
+    the number of distinct strains represented in each cluster (one entry
+    per cluster, unsorted)."""
+    clusters = {}
+    for gene, label in gene_label_dict.items():
+        clusters.setdefault(label, set()).add(extract_strain_from_geneid(gene))
+    return [len(strains) for strains in clusters.values()]
+
+
+def estimate_total_strains(labels_by_seed):
+    """Approximate the total number of strains/isolates in the real
+    dataset as the union of strains inferred (via
+    extract_strain_from_geneid) from every gene seen across every tool
+    and seed. Since every tool clusters genes drawn from the same set of
+    input genomes, this union should closely approximate the true isolate
+    count even though individual tools may not have a representative from
+    every strain in every cluster."""
+    strains = set()
+    for combo_dict in labels_by_seed.values():
+        for gene_label_dict in combo_dict.values():
+            for gene in gene_label_dict:
+                strains.add(extract_strain_from_geneid(gene))
+    return len(strains)
+
+
+def plot_core_genome_curve_realdata(theargs):
+    """Core-genome estimation plot (real data only): for each tool, sort
+    its clusters in descending order by the number of distinct strains
+    they contain, and plot that count against the cluster's rank. The
+    point where a tool's curve drops below the total number of strains in
+    the dataset marks its estimated core-genome size (the number of
+    clusters present in essentially every strain). Follows the same
+    "core genome estimation" style as standard pan-genome-tool benchmark
+    plots (step curve per tool, dashed horizontal line at the total
+    strain count)."""
+    labels_by_seed, namedict, outfolder, assembly, datatype, font_props = theargs
+    ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
+
+    print(f"\t- Plotting core genome estimation curve for {namedict[assembly]}")
+
+    if not labels_by_seed:
+        warnings.warn(
+            f"No per-method label data available for {assembly}/{datatype}; "
+            "skipping core genome estimation curve",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    combos_present = set()
+    for combo_dict in labels_by_seed.values():
+        combos_present.update(combo_dict.keys())
+
+    x = [combo for combo in COMBO_ORDER if combo in combos_present and combo in FANCYDICT]
+
+    if not x:
+        warnings.warn(
+            f"No clusterer/sequence-type combos available for {assembly}/{datatype}; "
+            "skipping core genome estimation curve",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    total_strains = estimate_total_strains(labels_by_seed)
+    if total_strains == 0:
+        warnings.warn(
+            f"Could not infer any strain identifiers for {assembly}/{datatype}; "
+            "skipping core genome estimation curve",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    # Merge across seeds (real data only ever has one, "run") by combo.
+    curves = {}
+    for combo in x:
+        counts = []
+        for combo_dict in labels_by_seed.values():
+            if combo in combo_dict:
+                counts.extend(compute_cluster_strain_counts(combo_dict[combo]))
+        if counts:
+            curves[combo] = sorted(counts, reverse=True)
+
+    if not curves:
+        warnings.warn(
+            f"No cluster/strain data available for {assembly}/{datatype}; "
+            "skipping core genome estimation curve",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    fig = plt.figure(1, dpi=150, figsize=DEFAULT_FIGSIZE)
+    ax = fig.subplots()
+
+    for combo in x:
+        if combo not in curves:
+            continue
+        counts = curves[combo]
+        ranks = np.arange(1, len(counts) + 1)
+        color = CONFIGDICT_COLOURS.get(combo)
+        # Core genome size = number of leading clusters at (or above) the
+        # full strain count, i.e. where the curve has not yet dropped
+        # below the total number of strains.
+        core_size = sum(1 for c in counts if c >= total_strains)
+        label = f"{FANCYDICT[combo]}. core: {core_size} total: {len(counts)}"
+        ax.step(ranks, counts, where="post", label=label, color=color, linewidth=1.3)
+
+    ax.axhline(total_strains, color="grey", linestyle="--", linewidth=0.8)
+    ax.set_xlabel("cluster rank", fontsize=AXIS_TITLE_FONT_SIZE, fontproperties=ibmplexsans)
+    ax.set_ylabel("number of strains in cluster", fontsize=AXIS_TITLE_FONT_SIZE, fontproperties=ibmplexsans)
+    ax.set_ylim(bottom=0, top=total_strains * 1.02)
+    ax.yaxis.set_minor_locator(AutoMinorLocator())
+    ax.legend(loc="upper right", fontsize=BASE_FONT_SIZE, frameon=True)
+    ax.set_title(
+        f"Core genome estimation — {namedict[assembly]} ({datatype})",
+        fontproperties=ibmplexsansbold,
+    )
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(ibmplexsans)
+    fig.tight_layout()
+
+    for ext in ["png", "pdf", "svg"]:
+        fig.savefig(
+            os.path.join(
+                outfolder,
+                "_".join(["plot_core_genome_estimation", datatype, assembly]) + "." + ext,
+            ),
+        )
+    plt.close(fig)
+
+
 # === NEW (requirement 2): percentage of genes deleted, per method & seed ===
+def get_realdata_reference_gene_set(real_data_run_dir):
+    """Find a 'total genes' reference for real data, so gene-deletion
+    percentages can be computed the same way as for simulations (see
+    compute_gene_deletion_dataframe), even though there is no ground truth.
+
+    Real biological data has no ground-truth gene universe, but Panaroo's
+    gene_data.csv (column 4, the gene id) lists every gene Prokka annotated
+    in the input assembly -- i.e. the full gene set *before* any clustering
+    or filtering by any method. That makes it the best available stand-in
+    for "the original number of genes" (n_original_genes) that
+    compute_gene_deletion_dataframe expects, letting every method
+    (including Panaroo itself) be checked against the same fixed
+    reference. This is only available when a Panaroo folder was actually
+    run for this dataset; returns None otherwise.
+
+    Rows whose internal Panaroo id (column 3) contains "refound" are
+    excluded: these are sequences Panaroo reconstructs itself to patch
+    annotation gaps and were never fed into the clustering step, so they
+    are not part of the "genes available to be clustered" universe and
+    would otherwise make every method look like it deleted more than it
+    actually did.
+    """
+    if not os.path.isdir(real_data_run_dir):
+        return None
+    for folder_name in os.listdir(real_data_run_dir):
+        gene_data_path = os.path.join(real_data_run_dir, folder_name, "panaroo", "gene_data.csv")
+        if os.path.isfile(gene_data_path):
+            gene_data = pd.read_csv(gene_data_path, header=None, low_memory=False)
+            is_refound = gene_data[2].astype(str).str.contains("refound")
+            return set(gene_data.loc[~is_refound, 3])
+    return None
+
+
 def compute_gene_deletion_dataframe(labels_by_seed, total_genes_by_seed, assembly):
     """Build a tidy dataframe of deleted-gene percentages.
 
@@ -2750,6 +3388,67 @@ def compute_gene_deletion_dataframe(labels_by_seed, total_genes_by_seed, assembl
         columns=[
             "assembly", "seed", "clusterer", "seqtype", "combo",
             "n_original_genes", "n_genes_kept", "n_genes_deleted", "deleted_pct",
+        ],
+    )
+
+
+# === NEW (requirement 3B, real-data only): percentage of genes ADDED by
+# Panaroo (refound genes), per method & seed ===
+def compute_gene_addition_dataframe(addition_by_seed, total_genes_by_seed, assembly):
+    """Real-data-only companion to compute_gene_deletion_dataframe.
+
+    For every (seed, combo) pair present in `addition_by_seed`:
+
+        added_pct = n_refound / n_original_genes * 100
+
+    Assumptions (mirrors compute_gene_deletion_dataframe):
+      - `total_genes_by_seed[seed]` is the same reference gene-set size
+        used for the deletion percentage (Panaroo's gene_data.csv, refound
+        rows excluded -- see get_realdata_reference_gene_set), so deleted%
+        and added% are directly comparable/stackable against the same
+        denominator.
+      - `addition_by_seed[seed][combo]` is the number of Panaroo "refound"
+        gene ids seen in that combo's clustering output (see
+        `filter_refound_genes` / the "n_refound" field returned by
+        `_process_one_realdata_folder`). This is 0 (not missing) for every
+        non-panaroo combo, so they still appear in the output with
+        added_pct == 0.
+
+    Returns a DataFrame with columns: assembly, seed, clusterer, seqtype,
+    combo, n_original_genes, n_genes_added, added_pct.
+    """
+    rows = []
+    for seed, combo_dict in addition_by_seed.items():
+        n_original = total_genes_by_seed.get(seed)
+        if not n_original:
+            warnings.warn(
+                f"No original gene count available for {assembly}/{seed}; "
+                "skipping addition-percentage calculation for this seed",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
+        for combo, n_added in combo_dict.items():
+            added_pct = (n_added / n_original) * 100.0
+            clusterer, seqtype = combo.split("/") if "/" in combo else (combo, "")
+            rows.append(
+                {
+                    "assembly": assembly,
+                    "seed": seed,
+                    "clusterer": clusterer,
+                    "seqtype": seqtype,
+                    "combo": combo,
+                    "n_original_genes": n_original,
+                    "n_genes_added": n_added,
+                    "added_pct": added_pct,
+                }
+            )
+
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "assembly", "seed", "clusterer", "seqtype", "combo",
+            "n_original_genes", "n_genes_added", "added_pct",
         ],
     )
 
@@ -2849,6 +3548,57 @@ def plot_gene_deletion_boxplot(theargs):
     plt.close(fig)
 
     return deletion_df
+
+
+# === NEW (requirement 3, real-data only): combined deleted% / added% boxplot
+def plot_gene_deletion_and_addition_boxplot_realdata(theargs):
+    """Real-data-only helper computing, for each clusterer/seqtype combo:
+      A) % of genes DELETED relative to the original (Panaroo-annotated,
+         refound-excluded) gene set -- reuses compute_gene_deletion_dataframe
+         unchanged.
+      B) % of genes ADDED by Panaroo (refound genes) relative to that same
+         original gene set -- new, via compute_gene_addition_dataframe.
+    Both percentages share the same denominator (n_original_genes), so
+    they are directly comparable.
+
+    === CHANGE (per user request) ===
+    The boxplot figure this function used to produce for real data has
+    been removed; only the two dataframes are still computed and
+    returned here. main() still writes these out as the
+    "gene_deletion_percentages_real_data.csv" and
+    "gene_addition_percentages_real_data.csv" CSV files -- no PNG plot is
+    generated for this any more. (Despite the function name being kept
+    unchanged for minimal diff elsewhere in main()'s call sites.)
+
+    This does not touch/replace `plot_gene_deletion_boxplot`, which is
+    still used, unmodified, by the simulation branch.
+    """
+    (
+        labels_by_seed, addition_by_seed, total_genes_by_seed,
+        namedict, outfolder, assembly, datatype, font_props,
+    ) = theargs
+
+    print(f"\t- Computing gene deletion/addition percentages for {namedict[assembly]}")
+
+    if not labels_by_seed:
+        warnings.warn(
+            f"No per-method label data available for {assembly}/{datatype}; "
+            "skipping gene deletion/addition computation",
+            RuntimeWarning, stacklevel=2,
+        )
+        return None, None
+
+    deletion_df = compute_gene_deletion_dataframe(labels_by_seed, total_genes_by_seed, assembly)
+    addition_df = compute_gene_addition_dataframe(addition_by_seed, total_genes_by_seed, assembly)
+
+    if deletion_df.empty and addition_df.empty:
+        warnings.warn(
+            f"No deletion/addition data available for {assembly}/{datatype}",
+            RuntimeWarning, stacklevel=2,
+        )
+        return deletion_df, addition_df
+
+    return deletion_df, addition_df
 
 
 def _plot_triangular_pairwise_heatmap(
@@ -3116,6 +3866,75 @@ def plot_pairwise_f1_heatmap(theargs):
     )
 
 
+# === NEW (requirement 4, real-data only): pairwise F1 heatmap penalised for
+# BOTH deleted genes and Panaroo-added (refound) genes, using
+# build_pairwise_f1_matrix_with_additions(mode="added_as_fp"). This is a
+# separate, additional plot -- it does NOT replace plot_pairwise_f1_heatmap
+# above, which is still generated unchanged (deletion-penalised only, or
+# plain Dice for real data as before).
+def plot_pairwise_f1_heatmap_added_as_fp(theargs):
+    """Lower-triangle heatmap of the pairwise gene-retention F1 score
+    between methods, using the "added_as_fp" formula (requirement 4):
+    Panaroo-added/refound genes count as false positives, deleted genes
+    count as false negatives against the original (Panaroo gene_data.csv,
+    refound-excluded) reference gene set N.
+
+        FP = a_i + a_j            (added/refound genes from either method)
+        FN = N - TP               (TP = |kept_i ∩ kept_j|)
+        Precision = TP / (TP + FP)
+        Recall    = TP / (TP + FN) = TP / N
+        F1 = 2 * Precision * Recall / (Precision + Recall)
+
+    Real-data only: called from main()'s real_data branch alongside (not
+    instead of) plot_pairwise_f1_heatmap.
+    """
+    labels_by_seed, total_genes_by_seed, n_added_by_seed, namedict, outfolder, assembly, datatype, font_props = theargs
+
+    print(f"\t- Plotting pairwise gene-retention F1 (added-as-FP) heatmap for {namedict[assembly]}")
+
+    if not labels_by_seed:
+        warnings.warn(
+            f"No per-method label data available for {assembly}/{datatype}; "
+            "skipping pairwise gene-retention F1 (added-as-FP) heatmap",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    combos_present = set()
+    for combo_dict in labels_by_seed.values():
+        combos_present.update(combo_dict.keys())
+
+    x = [combo for combo in COMBO_ORDER if combo in combos_present and combo in FANCYDICT]
+
+    if not x:
+        warnings.warn(
+            f"No clusterer/sequence-type combos available for {assembly}/{datatype}; "
+            "skipping pairwise gene-retention F1 (added-as-FP) heatmap",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    mat = build_pairwise_f1_matrix_with_additions(
+        x, labels_by_seed, total_genes_by_seed, n_added_by_seed, mode="added_as_fp",
+    )
+
+    labels = [
+        FANCYDICT[c] + (" *" if c.split("/")[0] in SKETCH_METHOD_NAMES or c.split("/")[0] in EMBED_METHOD_NAMES else "")
+        for c in x
+    ]
+
+    _plot_triangular_pairwise_heatmap(
+        mat, x, labels, namedict, outfolder, assembly, datatype, font_props,
+        cbar_label=(
+            "Gene-retention adjusted Dice score between methods, penalised "
+            "for deleted AND Panaroo-added/refound genes (adim.)"
+        ),
+        filename_prefix="plot_heatmap_pairwise_gene_retention_f1_added_as_fp",
+    )
+
+
 def load_seeds(seedsfile):
     seeds = []
     with open(seedsfile, "r") as f:
@@ -3344,6 +4163,9 @@ def main():
     # internally, across clusterer folders, using args.nthreads. The
     # simulations path is untouched: it still has one outer task per
     # assembly/seed and benefits from the outer Pool exactly as before.
+    # === NEW (requirement 3B): assembly -> {seed: {combo: n_refound}},
+    # real-data only. Feeds the new gene-addition boxplot.
+    addition_by_assembly = {}
     if args.mode == "real_data":
         for task in gettinginfotasks:
             tmpout = get_info_from_folder_realdata(task, nthreads=args.nthreads)
@@ -3351,6 +4173,7 @@ def main():
             namedict[tmpout[1]] = tmpout[2]
             method_labels_by_assembly.setdefault(tmpout[1], {})[tmpout[3]] = tmpout[4]
             total_genes_by_assembly.setdefault(tmpout[1], {})[tmpout[3]] = tmpout[5]
+            addition_by_assembly.setdefault(tmpout[1], {})[tmpout[3]] = tmpout[6]
         print("\n> All real data retrieved, now waiting on plots...")
     elif args.nthreads <= 1:
         for task in gettinginfotasks:
@@ -3512,9 +4335,9 @@ def main():
     else:
         # ================= NEW: REAL-DATA PIPELINE =================
         # Requirements 4 & 5: only analyses that do not depend on ground
-        # truth are run here, and only for CD-HIT/DIAMOND/MMseqs2 (the
-        # get_info_from_folder_realdata step above already filtered every
-        # other clusterer out, so `outdf` only ever contains these three
+        # truth are run here, and only for CD-HIT/DIAMOND/MMseqs2/Panaroo
+        # (the get_info_from_folder_realdata step above already filtered
+        # every other clusterer out, so `outdf` only ever contains these
         # here regardless).
         #
         # What is intentionally NOT run in this branch, and why:
@@ -3524,17 +4347,18 @@ def main():
         #     plots would be empty/meaningless. Only "runtime" is kept.
         #   - methods_comparison_heatmap: its columns are exactly those same
         #     truth-based metrics, so it is skipped entirely.
-        #   - plot_pairwise_f1_heatmap / plot_gene_deletion_boxplot with the
-        #     gene-deletion penalty: that penalty needs total_genes_by_seed
-        #     from a ground-truth gene count, which does not exist for real
-        #     data (total_genes_by_assembly here is just "genes seen in the
-        #     outputs", not a true universe) -- using it as if it were a
-        #     ground truth would silently produce a misleading penalised
-        #     score, so we deliberately drop the deletion-boxplot analysis
-        #     and only run the *un-penalised* pairwise F1/Dice heatmap
-        #     (build_pairwise_f1_matrix's documented fallback behaviour when
-        #     total_genes_by_seed is not supplied), which is a pure
-        #     method-vs-method agreement score and needs no ground truth.
+        #   - plot_pairwise_f1_heatmap uses the *un-penalised* pairwise
+        #     F1/Dice score between methods (build_pairwise_f1_matrix's
+        #     documented fallback when total_genes_by_seed is not supplied),
+        #     since that heatmap compares methods' kept-gene sets against
+        #     EACH OTHER, not against a fixed reference -- a perfect 1.0
+        #     there only means two methods kept the same genes as each
+        #     other, not that neither of them deleted anything.
+        #   - The per-method gene-deletion boxplot below answers that other
+        #     question directly (how many genes did THIS method delete,
+        #     relative to the full annotated gene set), using Panaroo's
+        #     gene_data.csv as the reference universe when available (see
+        #     get_realdata_reference_gene_set).
         print("\n> Preparing plotting tasks (real-data mode: runtime, cluster-count "
               "and method-vs-method comparisons only)...")
 
@@ -3567,6 +4391,19 @@ def main():
             for assembly in assemblies
         ]
 
+        # === NEW: exact-cluster-match heatmap and core-genome estimation
+        # curve tasks (real data only). Both reuse the same
+        # method_labels_by_assembly[assembly] = {"run": {combo: {gene:label}}}
+        # structure as the other pairwise tasks above. ===
+        plottingtasks_exact_match = [
+            (method_labels_by_assembly.get(assembly, {}), namedict, args.outfolder, assembly, datatype, font_props)
+            for assembly in assemblies
+        ]
+        plottingtasks_core_genome = [
+            (method_labels_by_assembly.get(assembly, {}), namedict, args.outfolder, assembly, datatype, font_props)
+            for assembly in assemblies
+        ]
+
         # No total_genes_by_seed passed -> build_pairwise_f1_matrix falls
         # back to the plain, non-truth-penalised Dice/F1 score between
         # methods (see its docstring).
@@ -3579,7 +4416,60 @@ def main():
             for assembly in assemblies
         ]
 
+        # === NEW: per-method gene-deletion AND gene-addition check for
+        # real data ========================================================
+        # Reuses compute_gene_deletion_dataframe (unchanged, same function
+        # as the simulations pipeline) plus the new
+        # compute_gene_addition_dataframe (requirement 3B); the only
+        # real-data-specific piece is where the reference gene count comes
+        # from, since there's no ground truth here -- see
+        # get_realdata_reference_gene_set (Panaroo's gene_data.csv).
+        real_data_run_dir = gettinginfotasks[0][0]
+        reference_genes = get_realdata_reference_gene_set(real_data_run_dir)
+        if reference_genes is None:
+            warnings.warn(
+                "No Panaroo gene_data.csv found under "
+                f"{real_data_run_dir}; skipping the per-method gene-deletion/"
+                "addition check (no reference gene set available for real "
+                "data without a Panaroo run)",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            plottingtasks_gene_deletion = []
+            plottingtasks_pairwise_f1_added = []
+        else:
+            total_genes_by_seed_realdata = {"run": len(reference_genes)}
+            plottingtasks_gene_deletion = [
+                (
+                    method_labels_by_assembly.get(assembly, {}),
+                    addition_by_assembly.get(assembly, {}),
+                    total_genes_by_seed_realdata,
+                    namedict, args.outfolder, assembly, datatype, font_props,
+                )
+                for assembly in assemblies
+            ]
+
+            # === NEW (requirement 4, "added_as_fp" mode, now enabled) ===
+            # Separate, additional heatmap alongside the existing
+            # plot_pairwise_f1_heatmap output (that one is left exactly as
+            # it was -- unpenalised, since no total_genes_by_seed is passed
+            # to it above). This one penalises BOTH deleted genes (false
+            # negatives against the original gene set) AND Panaroo-added/
+            # refound genes (false positives), via
+            # build_pairwise_f1_matrix_with_additions(mode="added_as_fp").
+            plottingtasks_pairwise_f1_added = [
+                (
+                    method_labels_by_assembly.get(assembly, {}),
+                    total_genes_by_seed_realdata,
+                    addition_by_assembly.get(assembly, {}),
+                    namedict, args.outfolder, assembly, datatype, font_props,
+                )
+                for assembly in assemblies
+            ]
+
         print("\n> Plotting...")
+        deletion_dfs = []
+        addition_dfs = []
         if args.nthreads <= 1:
             for task in plottingtasks_pointplots:
                 plotter_pointplots(task)
@@ -3596,8 +4486,20 @@ def main():
                 plot_pairwise_ami_heatmap(task)
                 plot_pairwise_purity_heatmap(task)
                 plot_pairwise_vmeasure_heatmap(task)
+            for task in plottingtasks_exact_match:
+                plot_pairwise_exact_match_heatmap(task)
+            for task in plottingtasks_core_genome:
+                plot_core_genome_curve_realdata(task)
             for task in plottingtasks_pairwise_f1:
                 plot_pairwise_f1_heatmap(task)
+            for task in plottingtasks_pairwise_f1_added:
+                plot_pairwise_f1_heatmap_added_as_fp(task)
+            for task in plottingtasks_gene_deletion:
+                ddf, adf = plot_gene_deletion_and_addition_boxplot_realdata(task)
+                if ddf is not None and not ddf.empty:
+                    deletion_dfs.append(ddf)
+                if adf is not None and not adf.empty:
+                    addition_dfs.append(adf)
         else:
             pool = Pool(args.nthreads)
             pool.map(plotter_pointplots, plottingtasks_pointplots)
@@ -3609,7 +4511,17 @@ def main():
             pool.map(plot_pairwise_ami_heatmap, plottingtasks_pairwise_ari)
             pool.map(plot_pairwise_purity_heatmap, plottingtasks_pairwise_ari)
             pool.map(plot_pairwise_vmeasure_heatmap, plottingtasks_pairwise_ari)
+            pool.map(plot_pairwise_exact_match_heatmap, plottingtasks_exact_match)
+            pool.map(plot_core_genome_curve_realdata, plottingtasks_core_genome)
             pool.map(plot_pairwise_f1_heatmap, plottingtasks_pairwise_f1)
+            if plottingtasks_pairwise_f1_added:
+                pool.map(plot_pairwise_f1_heatmap_added_as_fp, plottingtasks_pairwise_f1_added)
+            if plottingtasks_gene_deletion:
+                for ddf, adf in pool.map(plot_gene_deletion_and_addition_boxplot_realdata, plottingtasks_gene_deletion):
+                    if ddf is not None and not ddf.empty:
+                        deletion_dfs.append(ddf)
+                    if adf is not None and not adf.empty:
+                        addition_dfs.append(adf)
             pool.close()
             pool.join()
 
@@ -3622,6 +4534,36 @@ def main():
             os.path.join(args.outfolder, "clustering_metrics_real_data.txt"),
             sep="\t"
         )
+
+        # === NEW: write out the per-method gene-deletion percentages
+        # (relative to Panaroo's gene_data.csv reference) as a single CSV,
+        # same pattern as the simulations pipeline's combined CSV ===
+        if deletion_dfs:
+            combined_deletion_df = pd.concat(deletion_dfs, ignore_index=True)
+            print("\n> Per-method gene deletion (relative to the full annotated gene set):")
+            print(
+                combined_deletion_df[["clusterer", "seqtype", "n_original_genes", "n_genes_kept", "n_genes_deleted", "deleted_pct"]]
+                .to_string(index=False)
+            )
+            combined_deletion_df.to_csv(
+                os.path.join(args.outfolder, "gene_deletion_percentages_real_data.csv"),
+                index=False,
+            )
+
+        # === NEW (requirement 3B): write out the per-method gene-addition
+        # percentages (Panaroo "refound" genes, relative to the same
+        # gene_data.csv reference) as a single CSV ===
+        if addition_dfs:
+            combined_addition_df = pd.concat(addition_dfs, ignore_index=True)
+            print("\n> Per-method gene addition (Panaroo refound genes, relative to the full annotated gene set):")
+            print(
+                combined_addition_df[["clusterer", "seqtype", "n_original_genes", "n_genes_added", "added_pct"]]
+                .to_string(index=False)
+            )
+            combined_addition_df.to_csv(
+                os.path.join(args.outfolder, "gene_addition_percentages_real_data.csv"),
+                index=False,
+            )
 
     print("\n> Done!\n")
 
