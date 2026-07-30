@@ -921,8 +921,19 @@ def get_df_from_clusterer_realdata(clusterer, folderpath):
             f"got {clusterer!r}"
         )
 
+    # NOTE on performance: CD-HIT/MMseqs2/DIAMOND clustering is a *partition*
+    # -- each gene belongs to exactly one cluster. Building the dense
+    # n_clusters x n_genes matrix (mostly -1.0 padding) with nested Python
+    # `for cluster: for gene:` loops is O(n_clusters * n_genes). That was
+    # fine on the small simulated benchmark data, but on real data, where
+    # gene/cluster counts can run into the tens of thousands, it blows up
+    # to billions of iterations in pure Python and looks like the script is
+    # stuck/hanging. The fix below builds the exact same DataFrame (same
+    # index/columns/values/sort order), but via vectorized pandas
+    # construction instead of nested Python loops, which is orders of
+    # magnitude faster and scales to real data sizes. This is unrelated to
+    # the geneid_N -> string identifier change; that part was already fine.
     if clusterer == "cdhit":
-        listoflists = []
         setofgenes = set()
         listofclusters = []
         tmpdict = {}
@@ -944,13 +955,17 @@ def get_df_from_clusterer_realdata(clusterer, folderpath):
         # a plain lexical sort gives a deterministic column order and has
         # no bearing on any metric computed downstream.
         listofgenes = sorted(setofgenes)
-        for cluster in listofclusters:
-            row = [cluster]
-            for gene in listofgenes:
-                row.append(tmpdict[cluster][gene] if gene in tmpdict[cluster] else -1.0)
-            listoflists.append(row)
-        outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + listofgenes)
-        return outdf.set_index("cluster_id")
+
+        # Vectorized equivalent of the old nested-loop dense-matrix build:
+        # tmpdict is already {cluster_id: {gene_id: value}}, so
+        # pd.DataFrame.from_dict does the row/column alignment in C rather
+        # than Python, then we just reindex to the desired column order and
+        # fill the "not a member" cells with -1.0.
+        outdf = pd.DataFrame.from_dict(tmpdict, orient="index")
+        outdf = outdf.reindex(index=listofclusters, columns=listofgenes)
+        outdf = outdf.fillna(-1.0)
+        outdf.index.name = "cluster_id"
+        return outdf
 
     # mmseqs2 and diamond share an output format: 2 columns, tab separated,
     # (cluster representative gene id, member gene id).
@@ -960,20 +975,21 @@ def get_df_from_clusterer_realdata(clusterer, folderpath):
         names=["cluster_id", "gene_id"],
         sep="\t",
     )
-    clusterlist = sorted(firstdf["cluster_id"].unique().tolist())
-    genelist = sorted(firstdf["gene_id"].unique().tolist())
-    cluster_to_genes = firstdf.groupby("cluster_id")["gene_id"].apply(set)
 
-    listoflists = []
-    for cluster_index, cluster_id in enumerate(clusterlist):
-        tmpset = cluster_to_genes[cluster_id]
-        row = [cluster_index] + [
-            1.0 if gene in tmpset else -1.0 for gene in genelist
-        ]
-        listoflists.append(row)
-
-    outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
-    return outdf.set_index("cluster_id")
+    # pd.crosstab builds the dense (sorted-cluster x sorted-gene) membership
+    # matrix in one vectorized call -- same result as the old
+    # "for cluster_index, cluster_id: for gene: ..." double loop, but
+    # without the O(n_clusters * n_genes) Python-level iteration. Since
+    # clustering is a partition, every (cluster, gene) count is 0 or 1.
+    crosstab = pd.crosstab(firstdf["cluster_id"], firstdf["gene_id"])
+    outdf = crosstab.astype(float)
+    outdf[outdf == 0] = -1.0
+    # crosstab's index is the *original* cluster_id, sorted -- the old code
+    # discarded that value and just renumbered clusters 0..n-1 in sorted
+    # order, so replicate that here for output-compatibility.
+    outdf = outdf.reset_index(drop=True)
+    outdf.index.name = "cluster_id"
+    return outdf
 
 
 def get_dfs_from_sketch(folderpath, true_max_gene=None):
@@ -1734,7 +1750,7 @@ def plotter(theargs):
             for x_index, x_value in enumerate(xs):
                 tmpdf = subdf[
                     (subdf["st"] == seqtype)
-                    & (subdf.index.get_level_values("simulations") == True)
+                    & (subdf.index.get_level_values("simulations") == (datatype == "simulations"))
                     & (subdf.index.get_level_values("assembly") == assembly)
                     & (subdf.index.get_level_values("clusterer") == ynam.split("/")[0])
                     & (subdf["c"] == x_value)
@@ -1794,7 +1810,6 @@ def plotter(theargs):
         label.set_fontproperties(ibmplexsans)
 
     plt.text(0, 1.01, namedict[assembly], fontproperties=ibmplexsansitalics, horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
-    plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans, horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
     plt.legend(loc="best", frameon=False, prop=ibmplexsans, handlelength=0.5, handletextpad=0.75, labelspacing=0.3)
 
     for ext in ["png", "pdf", "svg"]:
@@ -1844,7 +1859,7 @@ def plotter_pointplots(theargs):
     ycount = []
     for x_value in x:
         tmpdf = subdf[
-            (subdf.index.get_level_values("simulations") == True)
+            (subdf.index.get_level_values("simulations") == (datatype == "simulations"))
             & (subdf.index.get_level_values("assembly") == assembly)
             & (subdf.index.get_level_values("clusterer") == x_value.split("/")[0])
             & (subdf["st"] == x_value.split("/")[1])
@@ -1920,7 +1935,6 @@ def plotter_pointplots(theargs):
         label.set_fontproperties(ibmplexsans)
 
     plt.text(0, 1.01, namedict[assembly], fontproperties=ibmplexsansitalics, horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
-    plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans, horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
 
     # bracket under the sketching methods, so readers see they're one family
     add_sketch_bracket(ax, x, positions, bar_width=bar_width, fontprops=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1)
@@ -1976,7 +1990,7 @@ def number_of_clusters_violin(theargs):
     data, counts = [], []
     for x_value in x:
         tmpdf = subdf[
-            (subdf.index.get_level_values("simulations") == True)
+            (subdf.index.get_level_values("simulations") == (datatype == "simulations"))
             & (subdf.index.get_level_values("assembly") == assembly)
             & (subdf.index.get_level_values("clusterer") == x_value.split("/")[0])
             & (subdf["st"] == x_value.split("/")[1])
@@ -2027,7 +2041,6 @@ def number_of_clusters_violin(theargs):
         label.set_fontproperties(ibmplexsans)
 
     plt.text(0, 1.01, namedict[assembly], fontproperties=ibmplexsansitalics, horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
-    plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans, horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
 
     # bracket under the sketching methods, so readers see they're one family
     add_sketch_bracket(ax, x, positions, bar_width=0.5, fontprops=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1)
@@ -2093,7 +2106,7 @@ def number_of_clusters_stacked_bar(theargs):
 
     for x_value in x:
         tmpdf = subdf[
-            (subdf.index.get_level_values("simulations") == True)
+            (subdf.index.get_level_values("simulations") == (datatype == "simulations"))
             & (subdf.index.get_level_values("assembly") == assembly)
             & (subdf.index.get_level_values("clusterer") == x_value.split("/")[0])
             & (subdf["st"] == x_value.split("/")[1])
@@ -2154,8 +2167,6 @@ def number_of_clusters_stacked_bar(theargs):
 
     plt.text(0, 1.01, namedict[assembly], fontproperties=ibmplexsansitalics,
              horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
-    plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans,
-             horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
 
     # bracket(s) under each method family (sketch, embeddings, ...), so
     # readers see at a glance that they're one family of methods.
@@ -2255,7 +2266,7 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
     for m_idx, x_value in enumerate(x):
         for c_idx, c_value in enumerate(xs):
             tmpdf = subdf[
-                (subdf.index.get_level_values("simulations") == True)
+                (subdf.index.get_level_values("simulations") == (datatype == "simulations"))
                 & (subdf.index.get_level_values("assembly") == assembly)
                 & (subdf.index.get_level_values("clusterer") == x_value.split("/")[0])
                 & (subdf["st"] == x_value.split("/")[1])
@@ -2325,8 +2336,6 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
 
     plt.text(0, 1.01, namedict[assembly], fontproperties=ibmplexsansitalics,
              horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
-    plt.text(1, 1.01, "Simulations", fontproperties=ibmplexsans,
-             horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
 
     method_handles = [
         mpatches.Patch(facecolor=CONFIGDICT_COLOURS[k], label=FANCYDICT[k]) for k in x
@@ -2467,8 +2476,6 @@ def methods_comparison_heatmap(theargs):
 
     plt.text(0, 1.03, namedict[assembly], fontproperties=ibmplexsansitalics,
              horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
-    plt.text(1, 1.03, "Simulations", fontproperties=ibmplexsans,
-             horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
 
     family_footnote = get_family_footnote(x)
     if family_footnote is not None:
@@ -2519,6 +2526,71 @@ def build_pairwise_ari_matrix(combo_list, labels_by_seed):
 
             if seed_aris:
                 mat[j, i] = float(np.mean(seed_aris))
+
+    return mat
+
+
+def _pairwise_purity_score(labels_i, labels_j):
+    """Symmetric purity between two clusterings. Purity itself is not a
+    symmetric measure (it depends on which clustering is treated as the
+    'truth'), so for a method-vs-method comparison we average the score
+    computed in both directions."""
+    from sklearn.metrics.cluster import contingency_matrix
+
+    cm = contingency_matrix(labels_i, labels_j)
+    total = np.sum(cm)
+    purity_i_as_truth = float(np.sum(np.amax(cm, axis=1))) / float(total)
+    purity_j_as_truth = float(np.sum(np.amax(cm, axis=0))) / float(total)
+    return (purity_i_as_truth + purity_j_as_truth) / 2.0
+
+
+# Metric functions used by build_pairwise_metric_matrix below. Each takes
+# two same-length label lists (already restricted to the genes common to
+# both methods) and returns a single float agreement score.
+PAIRWISE_METRIC_FUNCTIONS = {
+    "ari": metrics.adjusted_rand_score,
+    "ami": adjusted_mutual_info_score,
+    "purity": _pairwise_purity_score,
+    "v_measure": metrics.v_measure_score,
+}
+
+
+def build_pairwise_metric_matrix(combo_list, labels_by_seed, metric_name):
+    """Generic version of build_pairwise_ari_matrix, parameterised by which
+    agreement metric to use (see PAIRWISE_METRIC_FUNCTIONS). Matrix is
+    symmetric, so only the lower triangle (mat[j, i] with j > i) is
+    computed and stored; the upper triangle is left as NaN on purpose, and
+    _plot_triangular_pairwise_heatmap masks NaNs to white so only a
+    lower-triangle heatmap is drawn instead of the redundant full grid.
+    """
+    metric_function = PAIRWISE_METRIC_FUNCTIONS[metric_name]
+    n = len(combo_list)
+    mat = np.full((n, n), np.nan)
+
+    for i, combo_i in enumerate(combo_list):
+        mat[i, i] = 1.0
+        for j in range(i + 1, len(combo_list)):
+            combo_j = combo_list[j]
+            seed_scores = []
+            for seed, combo_dict in labels_by_seed.items():
+                if combo_i not in combo_dict or combo_j not in combo_dict:
+                    continue
+                labels_i = combo_dict[combo_i]
+                labels_j = combo_dict[combo_j]
+
+                # Match on genes both methods actually assigned to a cluster.
+                common_genes = [g for g in labels_i if g in labels_j]
+                if len(common_genes) < 2:
+                    continue
+
+                score = metric_function(
+                    [labels_i[g] for g in common_genes],
+                    [labels_j[g] for g in common_genes],
+                )
+                seed_scores.append(float(score))
+
+            if seed_scores:
+                mat[j, i] = float(np.mean(seed_scores))
 
     return mat
 
@@ -2842,8 +2914,6 @@ def _plot_triangular_pairwise_heatmap(
 
     plt.text(0, 1.03, namedict[assembly], fontproperties=ibmplexsansitalics,
              horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
-    plt.text(1, 1.03, "Simulations", fontproperties=ibmplexsans,
-             horizontalalignment="right", verticalalignment="bottom", transform=ax.transAxes)
 
     family_footnote = get_family_footnote(x)
     if family_footnote is not None:
@@ -2905,6 +2975,94 @@ def plot_pairwise_ari_heatmap(theargs):
         cbar_label="Adjusted Rand index between methods (adim.)",
         filename_prefix="plot_heatmap_pairwise_ari",
     )
+
+
+# Display name / colourbar label / output-filename info for each of the
+# non-ARI pairwise agreement metrics, so plot_pairwise_metric_heatmap can
+# stay generic (see build_pairwise_metric_matrix for the matching matrix
+# builders, and plot_pairwise_ari_heatmap above for the ARI-specific
+# version this mirrors).
+PAIRWISE_METRIC_PLOT_INFO = {
+    "ami": {
+        "display_name": "AMI",
+        "cbar_label": "Adjusted mutual information between methods (adim.)",
+        "filename_prefix": "plot_heatmap_pairwise_ami",
+    },
+    "purity": {
+        "display_name": "purity",
+        "cbar_label": "Purity between methods (adim.)",
+        "filename_prefix": "plot_heatmap_pairwise_purity",
+    },
+    "v_measure": {
+        "display_name": "V-measure",
+        "cbar_label": "V-measure between methods (adim.)",
+        "filename_prefix": "plot_heatmap_pairwise_vmeasure",
+    },
+}
+
+
+def plot_pairwise_metric_heatmap(theargs, metric_name):
+    """Equivalent of plot_pairwise_ari_heatmap, but for one of the other
+    method-vs-method agreement metrics (AMI, purity, V-measure); see
+    PAIRWISE_METRIC_PLOT_INFO for the per-metric labelling/filename info,
+    and build_pairwise_metric_matrix for how the underlying matrix is
+    computed."""
+    labels_by_seed, namedict, outfolder, assembly, datatype, font_props = theargs
+    plot_info = PAIRWISE_METRIC_PLOT_INFO[metric_name]
+
+    print(
+        f"\t- Plotting pairwise inter-method {plot_info['display_name']} heatmap "
+        f"for simulations of {namedict[assembly]}"
+    )
+
+    if not labels_by_seed:
+        warnings.warn(
+            f"No per-method label data available for {assembly}/{datatype}; "
+            f"skipping pairwise {plot_info['display_name']} heatmap",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    combos_present = set()
+    for combo_dict in labels_by_seed.values():
+        combos_present.update(combo_dict.keys())
+
+    x = [combo for combo in COMBO_ORDER if combo in combos_present and combo in FANCYDICT]
+
+    if not x:
+        warnings.warn(
+            f"No clusterer/sequence-type combos available for {assembly}/{datatype}; "
+            f"skipping pairwise {plot_info['display_name']} heatmap",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return
+
+    mat = build_pairwise_metric_matrix(x, labels_by_seed, metric_name)
+
+    labels = [
+        FANCYDICT[c] + (" *" if c.split("/")[0] in SKETCH_METHOD_NAMES or c.split("/")[0] in EMBED_METHOD_NAMES else "")
+        for c in x
+    ]
+
+    _plot_triangular_pairwise_heatmap(
+        mat, x, labels, namedict, outfolder, assembly, datatype, font_props,
+        cbar_label=plot_info["cbar_label"],
+        filename_prefix=plot_info["filename_prefix"],
+    )
+
+
+def plot_pairwise_ami_heatmap(theargs):
+    plot_pairwise_metric_heatmap(theargs, "ami")
+
+
+def plot_pairwise_purity_heatmap(theargs):
+    plot_pairwise_metric_heatmap(theargs, "purity")
+
+
+def plot_pairwise_vmeasure_heatmap(theargs):
+    plot_pairwise_metric_heatmap(theargs, "v_measure")
 
 
 def plot_pairwise_f1_heatmap(theargs):
@@ -3193,6 +3351,7 @@ def main():
             namedict[tmpout[1]] = tmpout[2]
             method_labels_by_assembly.setdefault(tmpout[1], {})[tmpout[3]] = tmpout[4]
             total_genes_by_assembly.setdefault(tmpout[1], {})[tmpout[3]] = tmpout[5]
+        print("\n> All real data retrieved, now waiting on plots...")
     elif args.nthreads <= 1:
         for task in gettinginfotasks:
             tmpout = get_info_from_folder(task)
@@ -3304,6 +3463,9 @@ def main():
                 methods_comparison_heatmap(task)
             for task in plottingtasks_pairwise_ari:
                 plot_pairwise_ari_heatmap(task)
+                plot_pairwise_ami_heatmap(task)
+                plot_pairwise_purity_heatmap(task)
+                plot_pairwise_vmeasure_heatmap(task)
             for task in plottingtasks_pairwise_f1:
                 plot_pairwise_f1_heatmap(task)
             for task in plottingtasks_gene_deletion:
@@ -3320,6 +3482,9 @@ def main():
             pool.map(number_of_clusters_stacked_bar_vs_c, plottingtasks_stackedbar_c)
             pool.map(methods_comparison_heatmap, plottingtasks_heatmap)
             pool.map(plot_pairwise_ari_heatmap, plottingtasks_pairwise_ari)
+            pool.map(plot_pairwise_ami_heatmap, plottingtasks_pairwise_ari)
+            pool.map(plot_pairwise_purity_heatmap, plottingtasks_pairwise_ari)
+            pool.map(plot_pairwise_vmeasure_heatmap, plottingtasks_pairwise_ari)
             pool.map(plot_pairwise_f1_heatmap, plottingtasks_pairwise_f1)
             for ddf in pool.map(plot_gene_deletion_boxplot, plottingtasks_gene_deletion):
                 if ddf is not None and not ddf.empty:
@@ -3428,6 +3593,9 @@ def main():
                 number_of_clusters_stacked_bar_vs_c(task)
             for task in plottingtasks_pairwise_ari:
                 plot_pairwise_ari_heatmap(task)
+                plot_pairwise_ami_heatmap(task)
+                plot_pairwise_purity_heatmap(task)
+                plot_pairwise_vmeasure_heatmap(task)
             for task in plottingtasks_pairwise_f1:
                 plot_pairwise_f1_heatmap(task)
         else:
@@ -3438,6 +3606,9 @@ def main():
             pool.map(number_of_clusters_stacked_bar, plottingtasks_stackedbar)
             pool.map(number_of_clusters_stacked_bar_vs_c, plottingtasks_stackedbar_c)
             pool.map(plot_pairwise_ari_heatmap, plottingtasks_pairwise_ari)
+            pool.map(plot_pairwise_ami_heatmap, plottingtasks_pairwise_ari)
+            pool.map(plot_pairwise_purity_heatmap, plottingtasks_pairwise_ari)
+            pool.map(plot_pairwise_vmeasure_heatmap, plottingtasks_pairwise_ari)
             pool.map(plot_pairwise_f1_heatmap, plottingtasks_pairwise_f1)
             pool.close()
             pool.join()
