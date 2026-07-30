@@ -188,10 +188,28 @@ CONFIGDICT_COLOURS = {
 
 
 def nicesp(uglysp):
+    """Turn a dotted species/assembly identifier (e.g. "genus.species") into
+    a human-readable, title-cased string for use in plot titles/labels.
+
+    Input:  uglysp -- a string with words separated by "." (dots).
+    Output: the same words joined by spaces, with the whole string
+            capitalised (first letter upper-case, rest unchanged by
+            str.capitalize's usual rules).
+    """
     return " ".join(uglysp.split(".")).capitalize()
 
 
 def get_font_properties(args):
+    """Build the three matplotlib FontProperties objects (regular, italic,
+    bold) used throughout the plotting functions in this script, from the
+    font file paths supplied on the command line.
+
+    Input:  args -- parsed argparse namespace with .font_regular,
+            .font_italic and .font_bold attributes (paths to .ttf files).
+    Output: a 3-tuple (regular, italic, bold) of FontProperties objects,
+            unpacked by every plotting function as
+            `ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props`.
+    """
     return (
         FontProperties(fname=args.font_regular),
         FontProperties(fname=args.font_italic),
@@ -200,6 +218,19 @@ def get_font_properties(args):
 
 
 def get_param_dict_from_splits(thesplits):
+    """Parse a list of "key-value" tokens (as produced by splitting a
+    result-folder name like "mmseqs2_st-aa_c-0.9" on "_") into a
+    dictionary of clustering parameters.
+
+    Input:  thesplits -- list of strings, each expected to be of the form
+            "<key>-<value>" (e.g. "st-aa", "c-0.9").
+    Output: dict mapping key -> value, where value is cast to float if it
+            looks numeric (digits/decimal point only), otherwise kept as
+            a string (e.g. {"st": "aa"} or {"c": 0.9}).
+    Raises: ValueError if a token doesn't split into exactly two parts on
+            "-", so malformed folder names fail loudly instead of
+            silently producing a wrong parameter set.
+    """
     outdict = {}
     for split in thesplits:
         subsplits = split.split("-")
@@ -213,11 +244,22 @@ def get_param_dict_from_splits(thesplits):
 
 
 def get_labels_list_from_df(indf):
-    """Returns (genes, labels): for each gene (column) that was actually
-    assigned to a cluster by this clusterer, its gene id and the cluster
-    label it was assigned to. Genes with no cluster assignment at all
-    (e.g. dropped/filtered by the clusterer, left as -1 everywhere) are
-    simply skipped rather than forced into a fake cluster."""
+    """Convert a dense cluster-membership matrix into parallel gene/label
+    lists, i.e. flatten "which cluster is each gene in" out of the matrix
+    representation used elsewhere in this script.
+
+    Input:  indf -- a (cluster_id x gene_id) DataFrame where a cell is
+            >= 0 (e.g. a CD-HIT identity score, or 1.0 for a hard
+            membership) if that gene belongs to that cluster, and -1.0
+            (or similar sentinel) if it does not.
+    Output: (genes, labels) -- two same-length lists; genes[i] is a gene
+            id (column) and labels[i] is the cluster_id (index value) it
+            was assigned to. Genes with no cluster assignment at all
+            (e.g. dropped/filtered by the clusterer, left as -1 everywhere)
+            are simply skipped rather than forced into a fake cluster,
+            since a clusterer choosing to discard a gene is different
+            from it truly belonging to a cluster.
+    """
     genes = []
     labels = []
     for column in indf.columns:
@@ -234,6 +276,31 @@ def get_labels_list_from_df(indf):
 # values from 0 to 1 : the higher the better
 
 def get_purity(inlab, truthdf, gene_ids=None):
+    """Compute clustering purity of a predicted clustering against a
+    ground-truth clustering: for each TRUE class, count how many of its
+    genes fall into each PREDICTED cluster, keep only the best-matching
+    predicted cluster's count, and sum these "best matches" over all true
+    classes, normalised by the total number of genes.
+
+    Purity ranges from 0 to 1 (higher = better agreement with ground
+    truth); a purity of 1 means every true class maps entirely into a
+    single predicted cluster (no cross-contamination), while a low purity
+    means genes belonging to the same true class are scattered across
+    many different predicted clusters.
+
+    Input:
+        inlab   -- list/array of predicted cluster labels, aligned with
+                   gene_ids (or with truthdf.index if gene_ids is None).
+        truthdf -- ground-truth membership DataFrame: one column per true
+                   class, one row per gene, boolean True where that gene
+                   belongs to that true class.
+        gene_ids -- optional list of gene ids that inlab's entries refer
+                   to (needed because clusterers can drop genes, so
+                   `inlab` is not guaranteed to be aligned to
+                   truthdf.index by position any more -- see the note
+                   below).
+    Output: float purity score in [0, 1].
+    """
     # Recode les labels pour qu'ils soient consécutifs
     le = LabelEncoder()
     inlab_encoded = le.fit_transform(inlab)
@@ -251,6 +318,11 @@ def get_purity(inlab, truthdf, gene_ids=None):
 
     sumofmaxes = 0
 
+    # For each true class (column of truthdf), tally how many of its
+    # member genes ended up in each predicted cluster (countlist), then
+    # keep only the largest tally -- i.e. assume every gene in this true
+    # class "should" have landed in whichever predicted cluster captured
+    # the most of them, and count that as correctly classified.
     for column in truthdf.columns:
         countlist = [0] * nclusters
         for gene in truthdf[truthdf[column] == True].index:
@@ -268,7 +340,29 @@ def get_purity(inlab, truthdf, gene_ids=None):
 # for mathematical expression see documentation
 
 def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
+    """Compare one clusterer's predicted clustering against the simulation's
+    known ground-truth clustering, and compute a full row of
+    clustering-agreement statistics (simulation pipeline only -- real data
+    has no ground truth and never calls this function).
 
+    Input:
+        infotuple -- tuple of bookkeeping values (e.g. assembly, seed,
+                     clusterer name) copied straight through into the
+                     output row.
+        indf      -- this clusterer's (cluster_id x gene_id) membership
+                     matrix, as returned by get_df_from_clusterer.
+        truthlab  -- list of ground-truth cluster labels, aligned to
+                     truthdf.index.
+        truthdf   -- ground-truth membership DataFrame (see get_purity).
+    Output: a flat list (one row) combining the bookkeeping fields with:
+        adjusted Rand index, purity, adjusted mutual information, the
+        permutation-test p-value for the Rand index, and
+        homogeneity/completeness/V-measure -- the same set of metrics
+        recorded in `outdf` and later plotted as boxplots/pointplots/
+        heatmaps for the simulation pipeline. All of these range roughly
+        0 (no agreement, worse than random for AMI/ARI) to 1 (perfect
+        agreement with the ground truth), so higher is always better.
+    """
     genes_present, probelab = get_labels_list_from_df(indf)
 
     # ---------------------------------------------------------------
@@ -297,6 +391,9 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
         truthlab_matched = truthlab
         truthdf_matched = truthdf
 
+    # Empirical p-value for "is the observed Adjusted Rand Index better
+    # than chance agreement", via random relabelling permutations -- see
+    # permutation_test_agreement for the algorithm.
     _, ari_p = permutation_test_agreement(
         truthlab_matched,
         probelab_matched,
@@ -309,22 +406,61 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
         infotuple[0],
         infotuple[1],
         infotuple[2],
+        # Adjusted Rand index: pairwise agreement between the predicted and
+        # true clusterings, corrected for chance grouping; 0 = random, 1 = perfect.
         float(metrics.adjusted_rand_score(truthlab_matched, probelab_matched)),
+        # Purity: fraction of genes whose predicted cluster matches the
+        # majority true class of that predicted cluster (see get_purity).
         get_purity(probelab_matched, truthdf_matched, matched_genes),
+        # Adjusted mutual information: information-theoretic agreement
+        # score, corrected for chance, between predicted and true labels.
         float(adjusted_mutual_info_score(truthlab_matched, probelab_matched)),
         ari_p,
     ]
+    # Homogeneity (each predicted cluster contains only members of a
+    # single true class), completeness (all members of a true class are
+    # assigned to the same predicted cluster), and V-measure (their
+    # harmonic mean) -- standard sklearn cluster-agreement metrics.
     outlist += [float(el) for el in metrics.homogeneity_completeness_v_measure(truthlab_matched, probelab_matched)]
     return outlist
 
 
 def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjusted_rand_score, nperm=10000, seed=None):
+    """Empirical permutation test for whether the agreement between two
+    label sets (e.g. predicted vs. true clustering) is stronger than
+    would be expected by chance.
+
+    Algorithm: compute the observed agreement score, then repeatedly
+    shuffle `labels1` at random (breaking any real correspondence to
+    `labels2`) and recompute the score each time; the p-value is the
+    fraction of these random-shuffle scores that are >= the observed
+    score (i.e. how often chance alone could produce as strong or
+    stronger an agreement). A "+1" is added to both numerator and
+    denominator (add-one/Laplace correction) so the p-value can never be
+    reported as exactly 0, which would be misleading with a finite number
+    of permutations.
+
+    Input:
+        labels1, labels2 -- two same-length label sequences to compare.
+        metric_function   -- agreement metric to use (default: Adjusted
+                              Rand index).
+        nperm             -- number of random permutations to draw.
+        seed              -- optional RNG seed for reproducibility.
+    Output: (observed_score, pvalue) -- the true (unshuffled) metric
+        value, and its empirical permutation p-value. A small p-value
+        means the observed agreement is unlikely to have arisen from
+        random label assignment, i.e. the clustering genuinely agrees
+        with the reference more than chance would predict.
+    """
     rng = default_rng(seed)
     labels1 = np.asarray(labels1)
     labels2 = np.asarray(labels2)
 
     observed = metric_function(labels1, labels2)
 
+    # Null distribution: shuffle labels1 nperm times and recompute the
+    # metric against the (unshuffled) labels2 each time, to see how large
+    # an agreement score chance alone can produce.
     permuted = np.empty(nperm)
     for i in range(nperm):
         permuted[i] = metric_function(rng.permutation(labels1), labels2)
@@ -335,6 +471,13 @@ def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjuste
 
 
 def parse_cdhit_identity(line):
+    """Extract the sequence-identity percentage from one member line of a
+    CD-HIT .clstr file (e.g. "...at 95.00%" or "...at 1:98:99/95%") and
+    convert it to a fraction in [0, 1].
+
+    Input:  line -- a single line of text from a .clstr file, member entry.
+    Output: float sequence identity, e.g. 0.95 for "95.00%".
+    """
     identity = line.strip().split("at", 1)[1].strip().replace("%", "")
     if "/" in identity:
         identity = identity.split("/")[-1]
@@ -342,6 +485,33 @@ def parse_cdhit_identity(line):
 
 
 def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
+    """Parse one clustering tool's raw output files (simulation pipeline)
+    into a common dense (cluster_id x gene_id) membership matrix, so every
+    downstream function can treat all clusterers uniformly regardless of
+    their native output format.
+
+    Input:
+        clusterer     -- name of the tool whose output to parse; one of
+                          the entries in CLUSTERERS (cdhit, mmseqs2,
+                          diamond, panaroo, ppanggolin, panta, panx,
+                          sketch, embeddings).
+        folderpath    -- path to this tool's result folder for one
+                          assembly/seed/parameter combination.
+        true_max_gene -- highest simulated gene index expected (genes are
+                          named "geneid_0".."geneid_true_max_gene" in the
+                          simulation), used to pad the matrix so every
+                          clusterer's output covers the same full gene
+                          universe, even genes it silently dropped.
+    Output: a pandas DataFrame indexed by cluster_id, one column per gene
+        id, where a cell is >= 0 (membership, e.g. a CD-HIT sequence
+        identity score, or 1.0) if that gene belongs to that cluster, and
+        -1.0 if it does not. Each clusterer's native output format (CD-HIT
+        .clstr, MMseqs2/DIAMOND 2-column TSV, Panaroo's internal CD-HIT
+        clustering + gene_data.csv id lookup, ppanggolin's TSV, panta's
+        TSV, panX's JSON orthogroups, or the sketch/embeddings HDBSCAN
+        label files) is parsed by its own branch below into this same
+        common shape.
+    """
     if clusterer == "cdhit":
         listoflists = []
         setofgenes = set()
@@ -592,6 +762,11 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
         )
 
         def extract_geneid(raw):
+            # PPanGGOLiN's gene_id field embeds our simulation's own
+            # "geneid_N" (optionally with an "_iso_M" isoform suffix)
+            # inside a longer, tool-specific identifier string; pull just
+            # that recognisable token back out via regex so downstream
+            # code can match genes across tools by a common id.
             match = re.search(r"geneid_\d+(?:_iso_\d+)?", raw)
             return match.group(0) if match else None
 
@@ -676,6 +851,10 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
             clusters = json.load(f)
 
         def extract_geneid(raw):
+            # Same rationale as the ppanggolin branch above: Panta's own
+            # gene id string embeds our simulation's "geneid_N" token
+            # inside extra tool-specific formatting, so pull it back out
+            # via regex to get a common id usable across tools.
             match = re.search(r"geneid_\d+(?:_iso_\d+)?", raw)
             return match.group(0) if match else None
 
@@ -780,9 +959,14 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
             )
  
         def extract_geneid(raw):
+            # Same rationale as the ppanggolin/panta branches above: PanX's
+            # allclusters_final.tsv embeds the simulation's "geneid_N"
+            # token inside its own gene id formatting, so extract it via
+            # regex (PanX has no "_iso_M" isoform suffix to worry about,
+            # unlike ppanggolin/panta, hence the simpler pattern here).
             match = re.search(r"geneid_\d+", raw)
             return match.group(0) if match else None
- 
+
         listofclusters = []
         cluster_to_genes = {}
         setofgenes = set()
@@ -1103,7 +1287,21 @@ def get_df_from_clusterer_realdata(clusterer, folderpath):
 
 
 def get_dfs_from_sketch(folderpath, true_max_gene=None):
-    
+    """Parse the sketch/HDBSCAN clustering outputs (one run can contain
+    several sub-methods, e.g. hdbscan_dist/hdbscan_tsne/hdbscan_umap, all
+    stored together in one clusters.tsv) into the common
+    (cluster_id x gene_id) membership-matrix format used elsewhere.
+
+    Input:
+        folderpath    -- path to the sketch method's result folder.
+        true_max_gene -- highest simulated gene index expected, used to
+                          pad each sub-method's matrix so it covers the
+                          full gene universe even for genes it dropped.
+    Output: dict mapping sub-method name (e.g. "hdbscan_dist") -> a
+        (cluster_id x gene_id) DataFrame in the same -1.0/1.0 convention
+        as get_df_from_clusterer. Returns {} if the expected clusters.tsv
+        file is missing (this sketch run didn't complete/wasn't run).
+    """
     tsv_path = os.path.join(folderpath, "distance_clustering", "clusters.tsv")
     if not os.path.isfile(tsv_path):
         return {}
@@ -1147,6 +1345,10 @@ def get_dfs_from_sketch(folderpath, true_max_gene=None):
             ]
             listoflists.append(row)
  
+        # Every padded/missing gene (dropped by this clusterer) is grouped
+        # into one extra "unassigned" pseudo-cluster, so it still shows up
+        # in the matrix without being falsely counted as a member of a
+        # real cluster.
         if missing:
             missingset = set(missing)
             new_cluster_id = len(cluster_ids)
@@ -1162,7 +1364,18 @@ def get_dfs_from_sketch(folderpath, true_max_gene=None):
 
 
 def get_dfs_from_embeddings(folderpath, true_max_gene=None):
+    """Embeddings/HDBSCAN equivalent of get_dfs_from_sketch: parses the
+    embeddings clustering output (multiple sub-methods in one
+    clusters.tsv, e.g. embed_hdbscan_raw/embed_hdbscan_tsne/
+    embed_hdbscan_umap) into the common (cluster_id x gene_id)
+    membership-matrix format.
 
+    Input/Output: identical shape to get_dfs_from_sketch, except read
+        from a different file ("clustering/clusters.tsv" instead of
+        "distance_clustering/clusters.tsv") and each output dict key is
+        prefixed with "embed_" (e.g. "embed_hdbscan_raw") to distinguish
+        it from the plain sketch sub-methods sharing the same base names.
+    """
     tsv_path = os.path.join(folderpath, "clustering", "clusters.tsv")
     if not os.path.isfile(tsv_path):
         return {}
@@ -1206,6 +1419,8 @@ def get_dfs_from_embeddings(folderpath, true_max_gene=None):
             ]
             listoflists.append(row)
 
+        # As above: dropped/padded genes are grouped into one extra
+        # pseudo-cluster rather than silently mixed into a real cluster.
         if missing:
             missingset = set(missing)
             new_cluster_id = len(cluster_ids)
@@ -1221,16 +1436,45 @@ def get_dfs_from_embeddings(folderpath, true_max_gene=None):
 
 
 def count_singleton_clusters(thedf):
+    """Count clusters that contain exactly one gene ("orphan" genes with
+    no detected homologues).
+
+    Input:  thedf -- a (cluster_id x gene_id) membership matrix (cells
+            >= 0 mean membership, see get_df_from_clusterer).
+    Output: int, the number of rows (clusters) with exactly one member.
+    Biological reading: a high singleton count usually signals either a
+    genuinely large accessory/strain-specific gene pool, or overly
+    strict clustering (e.g. too high a sequence-identity threshold)
+    artificially splitting true gene families apart.
+    """
     
     member_counts = (thedf >= 0.0).sum(axis=1)
     return int((member_counts == 1).sum())
 
 def count_pairs_clusters(thedf):
-    
+    """Count clusters that contain exactly two genes.
+
+    Input:  thedf -- a (cluster_id x gene_id) membership matrix.
+    Output: int, the number of clusters with exactly 2 members. Together
+    with count_singleton_clusters, this is used (as a stacked bar) to show
+    how the cluster-size distribution shifts between methods/parameters --
+    e.g. an inflated pair count alongside singletons can indicate a
+    clusterer that is splitting true multi-member gene families into
+    many small fragments.
+    """
     member_counts = (thedf >= 0.0).sum(axis=1)
     return int((member_counts == 2).sum())
 
 def get_time_diff_from_file(inpath):
+    """Parse a "timebenchmark.txt"-style file containing one line with a
+    "<start_time>=>[<end_time>]" timestamp pair, and return the elapsed
+    wall-clock runtime in seconds.
+
+    Input:  inpath -- path to the timing file (format
+            "%d/%m/%Y-%H:%M:%S=>%d/%m/%Y-%H:%M:%S").
+    Output: float, runtime in seconds (end - start), used to populate the
+    "runtime" column plotted by plotter/plotter_pointplots.
+    """
     time0 = None
     time1 = None
     with open(inpath, "r") as f:
@@ -1263,6 +1507,13 @@ def parse_time_per_method_file(inpath):
 
 
 def get_species_name(inpath):
+    """Read the first line of a species-name file (one plain-text line
+    naming the simulated/real organism for this assembly).
+
+    Input:  inpath -- path to the species-name text file.
+    Output: str, the species name with surrounding whitespace stripped,
+    or "" if the file is empty. Used to build namedict for plot titles.
+    """
     with open(inpath, "r") as f:
         for line in f:
             return line.strip()
@@ -1270,6 +1521,18 @@ def get_species_name(inpath):
 
 
 def check_status_of_folder(clusterer, path):
+    """Sanity-check that a clustering tool actually produced its expected
+    main output file in a given result folder, before we attempt to parse
+    it (avoids crashing deep inside a parser on a partially-run/failed job).
+
+    Input:
+        clusterer -- name of the clustering tool (see CLUSTERERS).
+        path      -- path to that tool's result folder to check.
+    Output: bool, True if the tool-specific expected output file exists
+        under `path` (e.g. "cdhit.clstr" for CD-HIT, "diamond" for
+        DIAMOND, ...), False otherwise (also prints a diagnostic message
+        in both the "unknown clusterer" and "missing file" cases).
+    """
     if clusterer == "cdhit":
         filenam = "cdhit.clstr"
     elif clusterer == "mmseqs2":
@@ -1299,6 +1562,20 @@ def check_status_of_folder(clusterer, path):
 
 
 def get_truth_matrix_path(datapath, assembly, seed):
+    """Locate the single ground-truth cluster-membership file for one
+    simulated assembly/seed (simulation pipeline only), by looking for
+    the one file in that seed's data directory whose name contains
+    "truth_matrix".
+
+    Input:
+        datapath -- root path to the simulation data.
+        assembly -- assembly identifier (subdirectory name).
+        seed     -- random-seed identifier (subdirectory name).
+    Output: str, full path to the truth-matrix file.
+    Raises: (implicitly, via len(matches) check just below) if zero or
+        more than one candidate file is found, since the ground truth
+        must be unambiguous.
+    """
     truth_seed_dir = os.path.join(datapath, "simulations", str(assembly), str(seed))
     matches = [
         os.path.join(truth_seed_dir, el)
@@ -1313,11 +1590,30 @@ def get_truth_matrix_path(datapath, assembly, seed):
 
 
 def get_info_from_folder(theargs):
+    """Top-level orchestration function for one (assembly, seed) unit of
+    work in the SIMULATION pipeline: loads the ground truth, then runs
+    every requested clusterer's output through get_df_from_clusterer /
+    calculate_values_from_cluster_matrix, and collects everything needed
+    downstream (metric rows, per-method label dicts, gene counts).
+
+    Input:  theargs -- (thedir, theass, theseed, datapath) tuple, where
+        thedir is this seed's result directory, theass/theseed are the
+        assembly/seed identifiers, and datapath is the root simulation
+        data path (needed to locate the ground-truth truth_matrix file).
+    Output: a tuple analogous to get_info_from_folder_realdata's return
+        value -- (listoflists, theass, nameofass, theseed,
+        method_labels_out, n_genes_seen) -- consumed by main() to build
+        outdf and the various per-assembly lookup dicts
+        (method_labels_by_assembly, total_genes_by_assembly, ...).
+    """
     thedir, theass, theseed, datapath = theargs
     truthpath = get_truth_matrix_path(datapath, theass, theseed)
     truthmatrix = pd.read_csv(truthpath, sep="\t")
     truthmatrix = truthmatrix.set_index("gene_id")
     truthlabels = list(truthmatrix["original_gene"])
+    # One-hot encode the ground-truth cluster assignment (one boolean
+    # column per true gene family) to build the truthdf format expected
+    # by get_purity/calculate_values_from_cluster_matrix.
     one_hot = pd.get_dummies(truthmatrix["original_gene"])
     truthdf = truthmatrix.drop("original_gene", axis=1)
     truthdf = truthdf.join(one_hot)
@@ -1890,6 +2186,42 @@ def add_sketch_bracket(ax, x, positions, bar_width=0.5, y_top=-0.16, y_bottom=-0
 
 
 def plotter(theargs):
+    """Line plot ("c-plot"): shows how a given clustering-quality or
+    performance metric varies with the minimum sequence-identity threshold
+    `c` used by each clustering method, for one simulated assembly.
+
+    Figure interpretation:
+        - X axis: minimum sequence identity threshold `c` (adimensional,
+          0-1) that each clusterer was run with -- i.e. how similar two
+          sequences must be to be merged into the same gene cluster.
+        - Y axis: the requested metric `name` (e.g. Adjusted Rand index,
+          purity, adjusted mutual information, V-measure, or runtime in
+          seconds), averaged over all available random-seed replicates at
+          that (clusterer, seqtype, c) combination.
+        - Each coloured line is one (clusterer, sequence-type) combination
+          (e.g. "CD-HIT (NT)"), using the fixed CONFIGDICT_COLOURS palette
+          so the same method always gets the same colour across all plots
+          in this script; markers are individual data points, and the
+          shaded band around each line is +/- 1 standard deviation across
+          seeds (only drawn where at least 2 seeds are available).
+        - Sketch/HDBSCAN and embeddings/HDBSCAN methods are excluded here
+          since they are run once per seed on a fixed embedding and have
+          no `c` parameter to sweep (see FAMILY_METHOD_NAMES).
+    Biological/methodological reading: for the agreement metrics (ARI,
+    purity, AMI, V-measure), a curve that stays high and flat across `c`
+    indicates a clusterer robust to the identity-threshold choice, while a
+    curve that degrades sharply at high `c` suggests the method starts
+    fragmenting true gene families once sequences must be near-identical
+    to cluster together. For "runtime", the plot instead shows raw
+    computational cost as a function of `c` (Y axis switched to log scale
+    below, except for runtime).
+
+    Input:  theargs -- (name, datadf, namedict, outfolder, assembly,
+        datatype, font_props) tuple; `name` selects which metric column
+        of `datadf` to plot, `datadf` is the full simulation results
+        table (outdf), and the rest control labelling/output location.
+    Output: none (saves a PNG/PDF/SVG figure to `outfolder`).
+    """
     name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
     print(f"\t- Plotting c-plot {name} for simulations of {namedict[assembly]}")
@@ -2006,6 +2338,36 @@ def plotter(theargs):
 # now we compare clustering methods between them for this fixed c
 
 def plotter_pointplots(theargs):
+    """Bar/point plot comparing all clustering methods to each other at a
+    FIXED sequence-identity threshold (`c` == DEFAULT_PARAMS["c"], the
+    "default" operating point), for one simulated assembly and one metric.
+
+    Figure interpretation:
+        - X axis: one bar per (clusterer, sequence-type) combination
+          (e.g. "CD-HIT (NT)", "Panaroo"), in COMBO_ORDER, coloured by
+          CONFIGDICT_COLOURS (the same palette used everywhere else in
+          this script, so a given method is always the same colour).
+        - Y axis: the requested metric `name` (e.g. Adjusted Rand index,
+          purity, runtime), averaged across all available random-seed
+          replicates for that method at the default `c`.
+        - Black error bars show +/- 1 standard deviation across seeds
+          (only drawn when >= 2 seeds are available); for "runtime" the
+          lower whisker is clipped so it can't extend below zero seconds.
+        - A bracket annotation under the sketch/embeddings bars marks
+          them as a distinct method "family" (see add_sketch_bracket),
+          since those methods don't have a `c` parameter at all.
+    Biological/methodological reading: taller bars for the agreement
+    metrics mean that method recovers the simulated ground-truth gene
+    families more faithfully at the field-standard identity threshold;
+    for "runtime" taller means slower. This plot answers "which method
+    performs best in practice, at the threshold people actually use?",
+    complementing plotter's "how does performance change as the
+    threshold is varied?".
+
+    Input/Output: same shape as plotter (see its docstring); this
+        function additionally filters out DIAMOND/panx-runtime outliers
+        from the runtime plot and orders methods via build_ordered_combo_list.
+    """
     name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
     print(f"\t- Plotting point-plot {name} for simulations of {namedict[assembly]}")
@@ -2138,6 +2500,29 @@ def plotter_pointplots(theargs):
     del fig, ax
 
 def number_of_clusters_violin(theargs):
+    """Violin plot of the number of clusters ("n_clusters", i.e. inferred
+    gene families) each method produces at the default sequence-identity
+    threshold, showing the full distribution across random-seed replicates
+    rather than just its mean (contrast with plotter_pointplots's bar+
+    error-bar summary of the same underlying data).
+
+    Figure interpretation:
+        - X axis: one violin per (clusterer, sequence-type) combination.
+        - Y axis: number of clusters inferred by that method (count of
+          distinct gene families/clusters it output).
+        - Violin width at a given Y value is proportional to how many
+          seed replicates produced that cluster count -- a wide, short
+          violin means the method is very consistent across seeds; a
+          tall, thin violin means the cluster count varies a lot from
+          one random simulation replicate to the next.
+    Biological reading: the simulated ground truth has a known,
+    fixed number of true gene families, so a method whose violin sits
+    close to that number (and is narrow) is both accurate and
+    reproducible; systematic over- or under-clustering shows up as the
+    whole violin sitting well above or below the true value.
+
+    Input/Output: same shape/behaviour as plotter_pointplots.
+    """
     name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
 
@@ -2246,6 +2631,30 @@ def number_of_clusters_violin(theargs):
 
 
 def number_of_clusters_stacked_bar(theargs):
+    """Stacked bar chart breaking down each method's total cluster count
+    into singleton clusters, pair (2-member) clusters, and everything
+    else, at the default sequence-identity threshold.
+
+    Figure interpretation:
+        - X axis: one stacked bar per (clusterer, sequence-type)
+          combination.
+        - Y axis: number of clusters (count).
+        - Each bar is split into (typically) three stacked segments:
+          singleton clusters (n_clusters with exactly 1 gene, see
+          count_singleton_clusters), pair clusters (exactly 2 genes, see
+          count_pairs_clusters), and the remainder (clusters with 3+
+          genes) -- segment colours/labels are set where the bars are
+          actually drawn further down in this function.
+    Biological reading: singleton-heavy bars suggest a method is
+    reporting a lot of strain-specific/orphan genes (or over-splitting
+    true families into fragments), whereas a bar dominated by the "3+"
+    segment suggests larger, well-populated gene families are being
+    correctly merged. Comparing the relative segment sizes across
+    methods highlights differences in clustering "granularity" that a
+    single total cluster-count number would hide.
+
+    Input/Output: same shape/behaviour as plotter_pointplots.
+    """
     name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
 
@@ -2396,6 +2805,29 @@ def number_of_clusters_stacked_bar(theargs):
 
 
 def number_of_clusters_stacked_bar_vs_c(theargs):
+    """Same singleton/pair/3+ cluster-size breakdown as
+    number_of_clusters_stacked_bar, but shown across the full sweep of
+    sequence-identity thresholds `c` (one small multiple/subplot per `c`
+    value, or bars grouped by `c` along the X axis -- see the plotting
+    code below for the exact layout) rather than at just the default `c`.
+
+    Figure interpretation:
+        - Same segment meaning as number_of_clusters_stacked_bar
+          (singleton / pair / 3+-member clusters), but repeated for every
+          `c` threshold tested, so the reader can see how a method's
+          cluster-size profile shifts as the identity cutoff is tightened
+          or relaxed.
+    Biological reading: as `c` increases (stricter identity requirement),
+    a healthy method should show its singleton fraction grow gradually
+    (genes on the edge of a family's identity range start falling out),
+    not suddenly fragment a large fraction of previously well-formed
+    clusters -- an abrupt jump in singleton/pair share at a particular
+    `c` is a sign the method is unstable around that threshold for this
+    dataset.
+
+    Input/Output: same shape/behaviour as plotter (full `c` sweep, not
+        fixed to the default).
+    """
     name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
 
@@ -2552,7 +2984,29 @@ def methods_comparison_heatmap(theargs):
     """Heatmap comparing all clustering methods side by side across the main
     agreement-with-truth metrics (mean over seeds, at the default c). This is
     the 'contingency-style' comparison view: rows = methods (in the requested
-    order), columns = metrics, colour = mean score."""
+    order), columns = metrics, colour = mean score.
+
+    Figure interpretation:
+        - Rows: one per (clusterer, sequence-type) combination, in
+          COMBO_ORDER.
+        - Columns: the four core truth-agreement metrics -- Adjusted Rand
+          index, purity, adjusted mutual information, V-measure -- each
+          in [0, 1] with 1 meaning perfect agreement with the simulated
+          ground truth.
+        - Cell colour/annotated value: the mean of that metric over all
+          seed replicates for that method at the default sequence-
+          identity threshold; brighter/darker shading follows the
+          colourmap used below to make strong vs. weak performers
+          visually obvious across all four metrics at once.
+    Biological reading: a row that is uniformly bright across all four
+    columns is a method that reliably recovers the true simulated gene
+    families from every angle (pairwise agreement, purity, information
+    content, and homogeneity/completeness balance); a row that is bright
+    on some columns but dark on others indicates a method with a
+    specific failure mode (e.g. good purity but poor completeness would
+    mean it is over-splitting true families into many small, "pure"
+    fragments rather than correctly merging them).
+    """
     name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
 
@@ -2677,10 +3131,29 @@ def methods_comparison_heatmap(theargs):
 
 
 def build_pairwise_ari_matrix(combo_list, labels_by_seed):
-    # Matrix is symmetric (ARI(i,j) == ARI(j,i)), so we only ever compute and
-    # store the lower triangle (mat[j, i] with j > i). The upper triangle is
-    # left as NaN on purpose; plot_pairwise_ari_heatmap masks NaNs to white so
-    # only a lower-triangle heatmap is drawn instead of the redundant full grid.
+    """Compute the pairwise Adjusted Rand Index (ARI) between every pair
+    of clustering methods (not against ground truth -- method vs.
+    method), averaged over random-seed replicates, for the pairwise ARI
+    heatmap.
+
+    Input:
+        combo_list    -- ordered list of "clusterer/seqtype" combo keys
+                          (e.g. "cdhit/aa") to include, in display order.
+        labels_by_seed -- {seed: {combo: {gene_id: cluster_label}}},
+                          i.e. each method's per-gene cluster assignment,
+                          per seed.
+    Output: an (n x n) numpy array `mat` where n = len(combo_list) and
+        mat[j, i] (j > i) holds the seed-averaged ARI between combo_list[i]
+        and combo_list[j], computed only over genes both methods actually
+        assigned to a cluster (their common gene set). ARI ranges from
+        ~0 (no better than random agreement) to 1 (identical clusterings).
+
+    Why only the lower triangle: ARI(i, j) == ARI(j, i) (the metric is
+    symmetric), so we only ever compute and store the lower triangle
+    (mat[j, i] with j > i). The upper triangle is left as NaN on purpose;
+    plot_pairwise_ari_heatmap masks NaNs to white so only a lower-triangle
+    heatmap is drawn instead of the redundant full grid.
+    """
     n = len(combo_list)
     mat = np.full((n, n), np.nan)
 
@@ -3460,7 +3933,19 @@ def plot_gene_deletion_boxplot(theargs):
 
     X-axis: clusterer/seqtype combo (e.g. "Panaroo", "PanX (AA)")
     Y-axis: % of genes deleted relative to the original dataset
-    Each box: distribution of deleted_pct across all seeds for that combo.
+    Each box: distribution of deleted_pct across all seeds for that combo,
+        i.e. the spread of the boxplot shows how consistently (narrow
+        box) or variably (wide box, long whiskers) a method drops genes
+        across different simulated replicates.
+    Biological reading: a method with a high median deletion percentage
+    is silently discarding a large fraction of the true simulated genes
+    before they ever reach the clustering step -- this is a hidden cost
+    that agreement metrics computed only on the genes actually retained
+    (ARI, purity, etc.) cannot reveal, since a method can score
+    "perfectly" on a small, easy, cherry-picked subset of genes while
+    deleting everything harder to place. Compare against the deletion-
+    penalised pairwise F1 heatmap (plot_pairwise_f1_heatmap) for a metric
+    that folds this deletion cost back into the agreement score itself.
     """
     labels_by_seed, total_genes_by_seed, namedict, outfolder, assembly, datatype, font_props = theargs
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
@@ -3606,8 +4091,36 @@ def _plot_triangular_pairwise_heatmap(
     cbar_label, filename_prefix,
 ):
     """Shared plotting code for the lower-triangle method-vs-method heatmaps
-    (pairwise ARI and pairwise gene-retention F1). `mat` is expected to
-    already have its upper triangle (j > i) set to NaN."""
+    (pairwise ARI, pairwise AMI/purity/V-measure, and pairwise gene-
+    retention F1). `mat` is expected to already have its upper triangle
+    (j > i) set to NaN by its caller's matrix-building function, since
+    every one of these metrics is symmetric between methods i and j.
+
+    Generic figure interpretation (shared by every caller of this
+    function): rows and columns are both clustering methods, in the same
+    order; only the lower triangle is drawn (upper triangle masked to
+    white via `cmap.set_bad`, since it would just duplicate the lower
+    triangle); the diagonal is always 1.0; cell shading follows the
+    "YlGnBu" colourmap, scaled between the matrix's own min/max value, so
+    darker/more saturated cells indicate stronger pairwise agreement (the
+    exact metric being shown, and how to read its value, is described by
+    `cbar_label` and by the specific calling function's own docstring).
+    Numeric values are also printed directly inside each cell, with text
+    colour flipped to white on dark cells for readability.
+
+    Input:
+        mat            -- (n x n) matrix to plot (lower triangle filled,
+                           upper triangle NaN, diagonal 1.0).
+        x              -- ordered list of combo keys (rows/columns).
+        labels         -- display labels for each row/column (usually
+                           FANCYDICT[...] with a sketch/embeddings marker).
+        namedict, outfolder, assembly, datatype, font_props -- standard
+                           plotting bookkeeping (see other plot functions).
+        cbar_label     -- text label for the colourbar, describing which
+                           metric this particular heatmap shows.
+        filename_prefix -- prefix used to build the output file name.
+    Output: none (saves PNG/PDF/SVG figures to `outfolder`).
+    """
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
 
     fig = plt.figure(
@@ -3683,7 +4196,31 @@ def _plot_triangular_pairwise_heatmap(
 
 
 def plot_pairwise_ari_heatmap(theargs):
-   
+    """Draw the lower-triangle heatmap of pairwise inter-method Adjusted
+    Rand Index (built by build_pairwise_ari_matrix).
+
+    Figure interpretation:
+        - Rows and columns are both clustering methods (clusterer/seqtype
+          combos), in COMBO_ORDER; only the lower triangle is drawn (the
+          metric is symmetric, so the upper triangle would be redundant
+          and is masked to white).
+        - Cell color/value = Adjusted Rand Index between that pair of
+          methods' clusterings, computed on the genes both methods
+          assigned to a cluster; darker/higher-value cells (colourbar,
+          "YlGnBu") mean the two methods agree more strongly with each
+          other on how genes should be grouped.
+        - The diagonal is always 1.0 (a method trivially agrees with
+          itself).
+    Biological reading: methods that consistently show high ARI with
+    every other method are giving a "consensus" pangenome structure;
+    a method that is an outlier (low ARI vs. everything else) is
+    clustering genes into families in a substantially different way from
+    the rest, which is worth investigating (over/under-splitting, or a
+    genuinely different notion of homology).
+
+    Input/Output: same tuple shape as the other pairwise-heatmap
+        functions; saves PNG/PDF/SVG via _plot_triangular_pairwise_heatmap.
+    """
     labels_by_seed, namedict, outfolder, assembly, datatype, font_props = theargs
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
 
@@ -3804,14 +4341,29 @@ def plot_pairwise_metric_heatmap(theargs, metric_name):
 
 
 def plot_pairwise_ami_heatmap(theargs):
+    """Lower-triangle pairwise heatmap of inter-method Adjusted Mutual
+    Information (see plot_pairwise_ari_heatmap for the shared figure
+    layout/interpretation -- same rows/columns/masking/colourbar
+    conventions, but cells hold AMI instead of ARI: an information-
+    theoretic agreement score between two methods' clusterings, also in
+    ~[0, 1] with 1 = identical clusterings)."""
     plot_pairwise_metric_heatmap(theargs, "ami")
 
 
 def plot_pairwise_purity_heatmap(theargs):
+    """Lower-triangle pairwise heatmap of inter-method purity (see
+    plot_pairwise_ari_heatmap for the shared figure layout -- here each
+    cell is the symmetrised purity score (_pairwise_purity_score) between
+    two methods' clusterings, i.e. how much one method's clusters map
+    onto single clusters of the other, averaged in both directions)."""
     plot_pairwise_metric_heatmap(theargs, "purity")
 
 
 def plot_pairwise_vmeasure_heatmap(theargs):
+    """Lower-triangle pairwise heatmap of inter-method V-measure (see
+    plot_pairwise_ari_heatmap for the shared figure layout -- here each
+    cell is the V-measure, the harmonic mean of homogeneity and
+    completeness, between two methods' clusterings)."""
     plot_pairwise_metric_heatmap(theargs, "v_measure")
 
 
@@ -3820,7 +4372,22 @@ def plot_pairwise_f1_heatmap(theargs):
     between methods: how much agreement there is between two methods' sets
     of *kept* (non-deleted/non-filtered) genes, now penalised (see
     build_pairwise_f1_matrix) for genes deleted relative to the original
-    dataset (requirement 1)."""
+    dataset (requirement 1).
+
+    Figure interpretation: same row/column/masking/colourbar conventions
+    as plot_pairwise_ari_heatmap (see its docstring), but here each cell
+    is the deletion-penalised Dice/F1 score between two methods' KEPT gene
+    sets (build_pairwise_f1_matrix), not a clustering-structure agreement
+    metric -- it answers "do these two methods keep (and thus implicitly
+    also delete) the same genes?", independent of how those genes end up
+    grouped into clusters.
+    Biological reading: a low score between two methods can mean either
+    that they disagree about which genes are real, or that one or both
+    have deleted a large fraction of the original gene set (since the
+    penalty term explicitly lowers the score as more of the fixed
+    original gene count N goes unrecovered) -- pair this heatmap with
+    plot_gene_deletion_boxplot to distinguish the two causes.
+    """
 
     # === CHANGE: theargs now also carries total_genes_by_seed (requirement 1) ===
     labels_by_seed, total_genes_by_seed, namedict, outfolder, assembly, datatype, font_props = theargs
@@ -3936,6 +4503,14 @@ def plot_pairwise_f1_heatmap_added_as_fp(theargs):
 
 
 def load_seeds(seedsfile):
+    """Read the list of random-seed integers to analyse (one per line)
+    from a plain-text file, sorted ascending.
+
+    Input:  seedsfile -- path to a text file with one integer seed per
+            (non-blank) line.
+    Output: sorted list of int seeds, later used to iterate over every
+    simulation replicate for each assembly.
+    """
     seeds = []
     with open(seedsfile, "r") as f:
         for line in f:
@@ -3947,6 +4522,22 @@ def load_seeds(seedsfile):
 
 
 def build_results_dataframe(listoflists):
+    """Assemble the flat list of per-(assembly, seed, clusterer) result
+    rows collected by get_info_from_folder / get_info_from_folder_realdata
+    into the single indexed DataFrame (`outdf`) used by every downstream
+    plotting/analysis function in this script.
+
+    Input:  listoflists -- list of rows, each matching the column order
+            below (simulations flag, assembly, seed, clusterer, the
+            truth-agreement metrics [NaN for real data], cluster counts,
+            clustering parameters in PARAMORDER, and runtime).
+    Output: a DataFrame with columns
+        [adj_rand_index, purity, adj_mutual_info, adj_rand_index_p,
+         homogeneity, completeness, v_measure, n_clusters, n_singletons,
+         n_pairs] + PARAMORDER + [runtime], indexed by a MultiIndex of
+        (simulations, assembly, seed, clusterer) so rows can be sliced by
+        any combination of those four keys elsewhere in the script.
+    """
     outdf = pd.DataFrame(
         listoflists,
         columns=[
@@ -3974,6 +4565,25 @@ def build_results_dataframe(listoflists):
 
 
 def discover_analysis_tasks(runfolder, datapath, seeds):
+    """Walk the SIMULATION results directory tree and build the list of
+    (assembly, seed) work units to analyse, verifying that both the
+    clustering-tool result folder AND the matching ground-truth folder
+    exist for each one before scheduling it.
+
+    Input:
+        runfolder -- root directory containing the "simulations"
+                     subfolder of clustering-tool outputs.
+        datapath  -- root directory containing the matching
+                     "simulations" subfolder of ground-truth data.
+        seeds     -- list of seed integers to look for under every
+                     discovered assembly (see load_seeds).
+    Output: (tasks, missing) -- `tasks` is a list of
+        (simulations_run_dir, assembly, seed, datapath) tuples ready to
+        be passed to get_info_from_folder; `missing` lists any
+        (assembly, seed) combination where either the result or the
+        ground-truth folder was absent, together with the paths that
+        were checked, so report_missing_tasks can explain the gap.
+    """
     simulations_run_dir = os.path.join(runfolder, "simulations")
     tasks = []
     missing = []
@@ -3993,6 +4603,19 @@ def discover_analysis_tasks(runfolder, datapath, seeds):
 
 
 def report_missing_tasks(missingtasks, gettinginfotasks):
+    """Print a human-readable warning listing every simulation
+    (assembly, seed) combination discover_analysis_tasks could not find a
+    complete result+ground-truth folder pair for, so a partial run
+    doesn't silently proceed unnoticed.
+
+    Input:
+        missingtasks     -- list of (assembly, seed, result_seed_dir,
+                             truth_seed_dir) tuples from
+                             discover_analysis_tasks.
+        gettinginfotasks -- list of tasks that WERE found (used only to
+                             report how many are being analysed anyway).
+    Output: none (prints/warns only); no-op if missingtasks is empty.
+    """
     if not missingtasks:
         return
 
@@ -4046,6 +4669,14 @@ def discover_analysis_tasks_realdata(runfolder, seeds):
 
 
 def report_missing_tasksrealdata(missingtasks, gettinginfotasks):
+    """Real-data equivalent of report_missing_tasks: warns if the expected
+    "real_data" result directory itself is missing (there's only ever one
+    such pseudo-task in real-data mode, see discover_analysis_tasks_realdata).
+
+    Input/Output: same shape/behaviour as report_missing_tasks, but for
+        the single flat real-data run directory rather than a per-
+        (assembly, seed) simulation grid.
+    """
     if not missingtasks:
         return
 
@@ -4061,6 +4692,31 @@ def report_missing_tasksrealdata(missingtasks, gettinginfotasks):
 
 
 def main():
+    """Command-line entry point for the whole clustering-benchmark
+    analysis pipeline.
+
+    High-level flow:
+      1. Parse CLI arguments (data/run folder paths, font paths, number
+         of parallel workers, and --real-data to switch pipelines).
+      2. SIMULATION mode (default): for every simulated assembly and
+         random seed, load each clustering tool's output and the known
+         ground truth, compute agreement metrics (ARI/purity/AMI/
+         V-measure/p-value) via get_info_from_folder, and generate the
+         full suite of comparison plots (c-sweeps, point plots, violin/
+         stacked-bar cluster-count plots, method-vs-method heatmaps,
+         gene-deletion boxplots) plus a combined results CSV.
+      3. REAL-DATA mode (--real-data): for the single flat real-data run
+         directory, load only the ground-truth-free clusterers (CD-HIT,
+         MMseqs2, DIAMOND, Panaroo) via get_info_from_folder_realdata,
+         and generate the subset of plots that don't require a known
+         truth (runtime, cluster counts, method-vs-method agreement
+         heatmaps including the new exact-cluster-match heatmap, the new
+         core-genome estimation curve, and gene-deletion/-addition CSVs),
+         since there is no simulated ground truth to score against here.
+    Output: none directly returned; writes PNG/PDF/SVG figures and CSV/
+        TXT summary tables into the output folder specified on the
+        command line, and prints progress messages throughout.
+    """
     parser = argparse.ArgumentParser(description="Analyse gene clustering benchmark runs.")
     parser.add_argument("runfolder", default="./")
     # === NEW (real-data support) ===
