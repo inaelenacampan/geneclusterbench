@@ -58,7 +58,7 @@ CLUSTERERS = [
 # restrict real-data analysis to only the methods that were explicitly
 # requested: CD-HIT, DIAMOND, and MMseqs2. This list is only consumed by the
 # new *_realdata functions below; it never touches the simulations code path.
-REAL_DATA_CLUSTERERS = ["cdhit", "mmseqs2", "diamond", "panaroo"]
+REAL_DATA_CLUSTERERS = ["cdhit", "mmseqs2", "diamond", "panaroo", "panta"]
 
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
@@ -1183,6 +1183,70 @@ def get_df_from_clusterer_realdata(clusterer, folderpath):
         outdf.index.name = "cluster_id"
         return outdf
 
+    if clusterer == "panta":
+        # Same input file and overall approach as the simulation branch
+        # above (get_df_from_clusterer's "panta" branch): parse
+        # "panta/annotated_clusters.json" and, for every group, collect
+        # the gene ids listed under "gene_id". The only real-data-specific
+        # change is how a clean gene id is pulled out of panta's raw gene
+        # id string: instead of regex-extracting a "geneid_N" simulation
+        # token, real gene ids are taken as the substring after the final
+        # "-", e.g. "ERR044869-contig00001-NLEIDEKG_00032" ->
+        # "NLEIDEKG_00032" (same rationale as the panaroo/cdhit/mmseqs2/
+        # diamond branches above: real gene IDs have no "geneid_N"
+        # structure to parse).
+        clusters_file = os.path.join(folderpath, "panta/annotated_clusters.json")
+        if not os.path.isfile(clusters_file):
+            raise RuntimeError(
+                f"Panta did not create expected file: {clusters_file}"
+            )
+
+        with open(clusters_file, "r") as f:
+            clusters = json.load(f)
+
+        def extract_geneid_realdata(raw):
+            return raw.rsplit("-", 1)[-1]
+
+        group_to_genes = {}
+        setofgenes = set()
+        for group, groupinfo in clusters.items():
+            genes_clean = set()
+            for raw_gene in groupinfo["gene_id"]:
+                geneid_clean = extract_geneid_realdata(raw_gene)
+                genes_clean.add(geneid_clean)
+                setofgenes.add(geneid_clean)
+            group_to_genes[group] = genes_clean
+
+        # group keys are "groups_N" and are NOT lexically sortable
+        # (groups_10 < groups_2), same as the simulation branch. Real-data
+        # panta output isn't guaranteed to use that "groups_N" convention,
+        # though, so fall back to a plain lexical sort for any group key
+        # without a digit in it instead of crashing.
+        def _group_sort_key(g):
+            match = re.search(r"\d+", g)
+            return (0, int(match.group(0))) if match else (1, g)
+
+        grouplist = sorted(clusters.keys(), key=_group_sort_key)
+
+        # Real gene IDs have no guaranteed numeric structure to sort on;
+        # a plain lexical sort gives a deterministic column order and has
+        # no bearing on any metric computed downstream (same rationale as
+        # the cdhit branch above). No true_max_gene padding either, for
+        # the same reason as the rest of this function: there is no
+        # ground truth gene universe to align to on real data.
+        genelist = sorted(setofgenes)
+
+        listoflists = []
+        for cluster_index, group in enumerate(grouplist):
+            genes_in_group = group_to_genes[group]
+            row = [cluster_index] + [
+                1.0 if gene in genes_in_group else -1.0 for gene in genelist
+            ]
+            listoflists.append(row)
+
+        outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
+        return outdf.set_index("cluster_id")
+
     # clusterer == "panaroo":
     #
     # === CHANGED (bugfix): parse gene_presence_absence.csv instead of the
@@ -1930,7 +1994,7 @@ def _process_one_realdata_folder(args):
     # get_info_from_folder's equivalent tmpseqtype line), so default it to
     # "aa" rather than DEFAULT_PARAMS["st"] ("nt") when "st" isn't in the
     # folder name.
-    tmpseqtype = paramdict.get("st", "aa" if tmpclusterer == "panaroo" else DEFAULT_PARAMS["st"])
+    tmpseqtype = paramdict.get("st", "aa" if tmpclusterer in ("panaroo", "panta") else DEFAULT_PARAMS["st"])
     if tmpclusterer == "diamond" and tmpseqtype == "nt":
         warnings.warn(
             f"Skipping disabled diamond+nt result folder {folderpath}",
@@ -1940,6 +2004,12 @@ def _process_one_realdata_folder(args):
     if tmpclusterer == "panaroo" and tmpseqtype == "nt":
         warnings.warn(
             f"Skipping disabled panaroo+nt result folder {folderpath}",
+            RuntimeWarning, stacklevel=2,
+        )
+        return None
+    if tmpclusterer == "panta" and tmpseqtype == "nt":
+        warnings.warn(
+            f"Skipping disabled panta+nt result folder {folderpath}",
             RuntimeWarning, stacklevel=2,
         )
         return None
@@ -5160,7 +5230,6 @@ def main():
             pool = Pool(args.nthreads)
             pool.map(plotter_pointplots, plottingtasks_pointplots)
             pool.map(plotter, plottingtasks)
-            pool.map(number_of_clusters_violin, plottingtasks_violin)
             pool.map(number_of_clusters_stacked_bar, plottingtasks_stackedbar)
             pool.map(number_of_clusters_stacked_bar_vs_c, plottingtasks_stackedbar_c)
             pool.map(plot_pairwise_ari_heatmap, plottingtasks_pairwise_ari)
