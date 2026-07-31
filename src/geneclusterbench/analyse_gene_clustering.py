@@ -58,7 +58,7 @@ CLUSTERERS = [
 # restrict real-data analysis to only the methods that were explicitly
 # requested: CD-HIT, DIAMOND, and MMseqs2. This list is only consumed by the
 # new *_realdata functions below; it never touches the simulations code path.
-REAL_DATA_CLUSTERERS = ["cdhit", "mmseqs2", "diamond", "panaroo", "panta"]
+REAL_DATA_CLUSTERERS = ["cdhit", "mmseqs2", "diamond", "panaroo", "ppanggolin", "panta", "panx"]
 
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
@@ -1247,6 +1247,162 @@ def get_df_from_clusterer_realdata(clusterer, folderpath):
         outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
         return outdf.set_index("cluster_id")
 
+    if clusterer == "ppanggolin":
+        # Same input file and overall approach as the simulation branch
+        # above (get_df_from_clusterer's "ppanggolin" branch): run
+        # `ppanggolin write_pangenome --families_tsv` against
+        # "ppanggolin/pangenome.h5" to materialize "gene_families.tsv",
+        # then parse that file. The only real-data-specific change is that
+        # PPanGGOLiN's gene_id field is now already the plain real gene id
+        # (e.g. "AFKLLJAB_01880") -- there is no embedded "geneid_N"
+        # simulation token to regex out, so it's used directly as-is
+        # (same rationale as the panta/panx/panaroo/cdhit/mmseqs2/diamond
+        # branches above: real gene IDs have no "geneid_N" structure to
+        # parse).
+        output_dir = os.path.join(folderpath, "ppanggolin_outputs/")
+        os.makedirs(output_dir, exist_ok=True)
+
+        try:
+            subprocess.run(
+                [
+                    "ppanggolin",
+                    "write_pangenome",
+                    "-p",
+                    os.path.join(folderpath, "ppanggolin/pangenome.h5"),
+                    "-o",
+                    output_dir,
+                    "--families_tsv",
+                    "-f",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(
+                "ppanggolin write_pangenome failed "
+                f"(exit code {exc.returncode}):\n{exc.stderr}"
+            ) from exc
+
+        families_file = os.path.join(output_dir, "gene_families.tsv")
+
+        if not os.path.isfile(families_file):
+            raise RuntimeError(
+                f"PPanGGOLiN did not create expected file: {families_file}"
+            )
+
+        # gene_families.tsv has no header, 4 columns:
+        # family_id, gene_id (now the plain real gene id), an always-empty column, fragment flag ("F"/"")
+        families = pd.read_csv(
+            families_file,
+            sep="\t",
+            header=None,
+            names=["family_id", "gene_id", "_unused", "fragment_flag"],
+            low_memory=False,
+        )
+
+        # Real gene IDs have no guaranteed numeric structure to sort on;
+        # a plain lexical sort gives a deterministic column order and has
+        # no bearing on any metric computed downstream (same rationale as
+        # the cdhit/panta/panx branches above). No true_max_gene padding
+        # either, for the same reason as the rest of this function: there
+        # is no ground truth gene universe to align to on real data.
+        genelist = sorted(families["gene_id"].unique())
+
+        familylist = sorted(families["family_id"].unique())
+        family_to_genes = families.groupby("family_id")["gene_id"].apply(set)
+
+        listoflists = []
+        for cluster_index, family in enumerate(familylist):
+            genes_in_family = family_to_genes[family]
+            row = [cluster_index] + [
+                1.0 if gene in genes_in_family else -1.0 for gene in genelist
+            ]
+            listoflists.append(row)
+
+        outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
+        return outdf.set_index("cluster_id")
+
+    if clusterer == "panx":
+        # Same input file and overall approach as the simulation branch
+        # above (get_df_from_clusterer's "panx" branch): parse
+        # "protein_faa/diamond_matches/allclusters_final.tsv" and, for
+        # every line (= one cluster), collect the gene ids listed in its
+        # tab-separated fields. The only real-data-specific change is how
+        # a clean gene id is pulled out of panX's raw gene id string:
+        # instead of regex-extracting a "geneid_N" simulation token, real
+        # gene ids are the substring after the "|" delimiter, e.g.
+        # "ERR045435|GPPBCAIM_00381" -> "GPPBCAIM_00381" (same rationale
+        # as the panta/panaroo/cdhit/mmseqs2/diamond branches above: real
+        # gene IDs have no "geneid_N" structure to parse).
+        clusters_file = os.path.join(folderpath, "protein_faa/diamond_matches/allclusters_final.tsv")
+        if not os.path.isfile(clusters_file):
+            raise RuntimeError(
+                f"PanX did not create expected file: {clusters_file}"
+            )
+
+        def extract_geneid_realdata(raw):
+            return raw.rsplit("|", 1)[-1]
+
+        listofclusters = []
+        cluster_to_genes = {}
+        setofgenes = set()
+        n_skipped_lines = 0
+
+        with open(clusters_file, "r") as f:
+            for line_number, raw_line in enumerate(f, start=1):
+                line = raw_line.strip()
+                if not line:
+                    continue
+                fields = line.split("\t")
+                genes_in_cluster = set()
+                corrupted = False
+                for field in fields:
+                    if "|" not in field:
+                        corrupted = True
+                        break
+                    geneid_clean = extract_geneid_realdata(field)
+                    if not geneid_clean:
+                        corrupted = True
+                        break
+                    genes_in_cluster.add(geneid_clean)
+
+                if corrupted:
+                    n_skipped_lines += 1
+                    continue
+
+                setofgenes.update(genes_in_cluster)
+                cluster_index = len(listofclusters)
+                listofclusters.append(cluster_index)
+                cluster_to_genes[cluster_index] = genes_in_cluster
+
+        if n_skipped_lines:
+            warnings.warn(
+                f"panx: skipped {n_skipped_lines} corrupted cluster line(s) "
+                f"(missing '|' delimiter) in {clusters_file}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
+        # Real gene IDs have no guaranteed numeric structure to sort on;
+        # a plain lexical sort gives a deterministic column order and has
+        # no bearing on any metric computed downstream (same rationale as
+        # the cdhit/panta branches above). No true_max_gene padding either,
+        # for the same reason as the rest of this function: there is no
+        # ground truth gene universe to align to on real data.
+        genelist = sorted(setofgenes)
+
+        listoflists = []
+        for cluster_index in listofclusters:
+            genes_in_group = cluster_to_genes[cluster_index]
+            row = [cluster_index] + [
+                1.0 if gene in genes_in_group else -1.0 for gene in genelist
+            ]
+            listoflists.append(row)
+
+        outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
+        return outdf.set_index("cluster_id")
+
     # clusterer == "panaroo":
     #
     # === CHANGED (bugfix): parse gene_presence_absence.csv instead of the
@@ -1994,7 +2150,7 @@ def _process_one_realdata_folder(args):
     # get_info_from_folder's equivalent tmpseqtype line), so default it to
     # "aa" rather than DEFAULT_PARAMS["st"] ("nt") when "st" isn't in the
     # folder name.
-    tmpseqtype = paramdict.get("st", "aa" if tmpclusterer in ("panaroo", "panta") else DEFAULT_PARAMS["st"])
+    tmpseqtype = paramdict.get("st", "aa" if tmpclusterer in ("panaroo", "ppanggolin", "panta", "panx") else DEFAULT_PARAMS["st"])
     if tmpclusterer == "diamond" and tmpseqtype == "nt":
         warnings.warn(
             f"Skipping disabled diamond+nt result folder {folderpath}",
@@ -2010,6 +2166,12 @@ def _process_one_realdata_folder(args):
     if tmpclusterer == "panta" and tmpseqtype == "nt":
         warnings.warn(
             f"Skipping disabled panta+nt result folder {folderpath}",
+            RuntimeWarning, stacklevel=2,
+        )
+        return None
+    if tmpclusterer == "panx" and tmpseqtype == "nt":
+        warnings.warn(
+            f"Skipping disabled panx+nt result folder {folderpath}",
             RuntimeWarning, stacklevel=2,
         )
         return None
