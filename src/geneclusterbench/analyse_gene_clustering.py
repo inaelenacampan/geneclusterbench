@@ -3838,6 +3838,295 @@ def plot_core_genome_curve_realdata(theargs):
     plt.close(fig)
 
 
+# === NEW: cluster-occupancy "U plot" (real data only) ===
+def compute_cluster_occupancy_percentages(gene_label_dict, total_strains):
+    """Given one tool's {gene_id: cluster_label} dict and the total number
+    of strains/isolates in the dataset (see estimate_total_strains), return
+    a list with one entry per cluster: the percentage of all strains that
+    are represented in that cluster (100 * distinct strains in cluster /
+    total_strains). Reuses extract_strain_from_geneid, exactly like
+    compute_cluster_strain_counts above, so it stays consistent with the
+    core genome estimation curve's notion of "which strain a gene belongs
+    to"."""
+    if total_strains == 0:
+        return []
+    clusters = {}
+    for gene, label in gene_label_dict.items():
+        clusters.setdefault(label, set()).add(extract_strain_from_geneid(gene))
+    return [100.0 * len(strains) / total_strains for strains in clusters.values()]
+
+
+def compute_adaptive_occupancy_bins(pooled_percentages, n_bins=50):
+    """Classic equal-width bin edges (0-100 %) for the cluster-occupancy
+    histogram (the standard "frequency distribution of gene clusters
+    across isolates" plot used e.g. for pangenome core/accessory
+    breakdowns).
+
+    Unlike a quantile/adaptive scheme, every bin is exactly the same
+    width (100 / n_bins percentage points, 2 % wide by default), so the
+    shape of the distribution -- including how sharply clusters pile up
+    right at 0% and 100% -- is shown faithfully instead of being smeared
+    out by wide bins in the sparse middle. Bins are always anchored at 0
+    and 100 so every plot using this function shares the same edges and
+    stays directly comparable.
+    """
+    return np.linspace(0.0, 100.0, n_bins + 1)
+
+
+def compute_occupancy_by_combo(labels_by_seed, x, total_strains):
+    """Shared helper for the U-plot functions: merges per-seed label dicts
+    (real data only ever has one, "run") into {combo: [percentages]},
+    exactly the same merge plot_core_genome_curve_realdata does for strain
+    counts. Used by both plot_cluster_occupancy_uplot (all methods
+    overlaid) and plot_cluster_occupancy_uplot_single (one figure per
+    method) so the two stay consistent with each other."""
+    occupancy = {}
+    for combo in x:
+        percentages = []
+        for combo_dict in labels_by_seed.values():
+            if combo in combo_dict:
+                percentages.extend(
+                    compute_cluster_occupancy_percentages(combo_dict[combo], total_strains)
+                )
+        if percentages:
+            occupancy[combo] = percentages
+    return occupancy
+
+
+def plot_cluster_occupancy_uplot(theargs):
+    """Cluster-occupancy "U plot" (real data only): for each tool, the
+    distribution of clusters across "percentage of isolates/strains
+    represented in the cluster" (x-axis), with the y-axis giving the
+    number of clusters falling into each percentage bin. A cluster made
+    up of genes from every isolate contributes to the 100% end; a cluster
+    drawn from a single isolate contributes near the 0% end. Bin edges are
+    fixed-width, 2 percentage points each (see compute_adaptive_occupancy_bins)
+    and shared across all tools so the curves stay directly comparable, and
+    are computed on the default sequence-identity threshold `c` only
+    (same DEFAULT_PARAMS["c"]-filtered combos as every other real-data
+    plot in this pipeline, since labels_by_seed is already restricted to
+    that when it's built upstream in get_info_from_folder_realdata)."""
+    labels_by_seed, namedict, outfolder, assembly, datatype, font_props = theargs
+    ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
+
+    print(f"\t- Plotting cluster-occupancy U plot for {namedict[assembly]}")
+
+    if not labels_by_seed:
+        warnings.warn(
+            f"No per-method label data available for {assembly}/{datatype}; "
+            "skipping cluster-occupancy U plot",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    combos_present = set()
+    for combo_dict in labels_by_seed.values():
+        combos_present.update(combo_dict.keys())
+
+    x = [combo for combo in COMBO_ORDER if combo in combos_present and combo in FANCYDICT]
+
+    if not x:
+        warnings.warn(
+            f"No clusterer/sequence-type combos available for {assembly}/{datatype}; "
+            "skipping cluster-occupancy U plot",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    total_strains = estimate_total_strains(labels_by_seed)
+    if total_strains == 0:
+        warnings.warn(
+            f"Could not infer any strain identifiers for {assembly}/{datatype}; "
+            "skipping cluster-occupancy U plot",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    # Merge across seeds (real data only ever has one, "run") by combo,
+    # exactly as plot_core_genome_curve_realdata does.
+    occupancy = compute_occupancy_by_combo(labels_by_seed, x, total_strains)
+
+    if not occupancy:
+        warnings.warn(
+            f"No cluster/strain data available for {assembly}/{datatype}; "
+            "skipping cluster-occupancy U plot",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    pooled_percentages = [pct for percentages in occupancy.values() for pct in percentages]
+    bin_edges = compute_adaptive_occupancy_bins(pooled_percentages)
+    bin_midpoints = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+
+    fig = plt.figure(1, dpi=150, figsize=DEFAULT_FIGSIZE)
+    ax = fig.subplots()
+
+    # Grouped-bar histogram: within each bin, give every present method its
+    # own thin bar side-by-side (rather than one line per method), so the
+    # combined plot reads as a histogram like plot_cluster_occupancy_uplot_single.
+    combos_to_plot = [combo for combo in x if combo in occupancy]
+    n_methods = len(combos_to_plot)
+    bin_widths = np.diff(bin_edges)
+    bar_width = bin_widths / n_methods
+
+    for i, combo in enumerate(combos_to_plot):
+        percentages = occupancy[combo]
+        counts, _ = np.histogram(percentages, bins=bin_edges)
+        color = CONFIGDICT_COLOURS.get(combo)
+        label = f"{FANCYDICT[combo]} (n={len(percentages)})"
+        # offset this method's bars within each bin
+        lefts = bin_edges[:-1] + i * bar_width
+        ax.bar(
+            lefts, counts, width=bar_width, align="edge",
+            label=label, color=color, edgecolor="black", linewidth=0.3,
+        )
+
+    ax.set_xlabel(
+        "isolates/strains represented in cluster (%)",
+        fontsize=AXIS_TITLE_FONT_SIZE, fontproperties=ibmplexsans,
+    )
+    ax.set_ylabel(
+        "number of clusters", fontsize=AXIS_TITLE_FONT_SIZE, fontproperties=ibmplexsans,
+    )
+    ax.set_xlim(left=0, right=100)
+    ax.set_ylim(bottom=0)
+    ax.xaxis.set_minor_locator(AutoMinorLocator())
+    ax.yaxis.set_minor_locator(AutoMinorLocator())
+    ax.legend(loc="upper left", fontsize=BASE_FONT_SIZE, frameon=True)
+    ax.set_title(
+        f"Cluster occupancy distribution (U plot) — {namedict[assembly]} ({datatype})",
+        fontproperties=ibmplexsansbold,
+    )
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(ibmplexsans)
+    fig.tight_layout()
+
+    for ext in ["png", "pdf", "svg"]:
+        fig.savefig(
+            os.path.join(
+                outfolder,
+                "_".join(["plot_cluster_occupancy_uplot", datatype, assembly]) + "." + ext,
+            ),
+        )
+    plt.close(fig)
+
+
+def plot_cluster_occupancy_uplot_single(theargs):
+    """Same cluster-occupancy distribution as plot_cluster_occupancy_uplot,
+    but rendered as one bar-chart figure per method instead of everything
+    overlaid on one set of axes -- much easier to read when you just want
+    to look at a single method's U shape without the other curves getting
+    in the way.
+
+    Two differences from the overlaid version, both deliberate:
+      1. Rendered as bars (one bar per adaptive bin) rather than a line,
+         since a lone curve reads less clearly as a "distribution" than a
+         histogram does.
+      2. Bins are the same fixed-width 2-percentage-point edges as the
+         overlaid plot (compute_adaptive_occupancy_bins), so a single
+         method's histogram lines up exactly with its curve on the
+         combined plot.
+
+    One PNG/PDF/SVG file is written per method (filename includes the
+    method name), in addition to the combined overlaid plot.
+    """
+    labels_by_seed, namedict, outfolder, assembly, datatype, font_props = theargs
+    ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
+
+    print(f"\t- Plotting per-method cluster-occupancy U plots for {namedict[assembly]}")
+
+    if not labels_by_seed:
+        warnings.warn(
+            f"No per-method label data available for {assembly}/{datatype}; "
+            "skipping per-method cluster-occupancy U plots",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    combos_present = set()
+    for combo_dict in labels_by_seed.values():
+        combos_present.update(combo_dict.keys())
+
+    x = [combo for combo in COMBO_ORDER if combo in combos_present and combo in FANCYDICT]
+
+    if not x:
+        warnings.warn(
+            f"No clusterer/sequence-type combos available for {assembly}/{datatype}; "
+            "skipping per-method cluster-occupancy U plots",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    total_strains = estimate_total_strains(labels_by_seed)
+    if total_strains == 0:
+        warnings.warn(
+            f"Could not infer any strain identifiers for {assembly}/{datatype}; "
+            "skipping per-method cluster-occupancy U plots",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    occupancy = compute_occupancy_by_combo(labels_by_seed, x, total_strains)
+
+    if not occupancy:
+        warnings.warn(
+            f"No cluster/strain data available for {assembly}/{datatype}; "
+            "skipping per-method cluster-occupancy U plots",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    # Safe filename stem per combo, e.g. "cdhit/nt" -> "cdhit_nt".
+    combo_slug = lambda combo: combo.replace("/", "_")
+
+    for combo in x:
+        if combo not in occupancy:
+            continue
+        percentages = occupancy[combo]
+        bin_edges = compute_adaptive_occupancy_bins(percentages)
+        counts, _ = np.histogram(percentages, bins=bin_edges)
+        widths = np.diff(bin_edges)
+        color = CONFIGDICT_COLOURS.get(combo)
+
+        fig = plt.figure(1, dpi=150, figsize=(7, 5))
+        ax = fig.subplots()
+        ax.bar(
+            bin_edges[:-1], counts, width=widths, align="edge",
+            color=color, edgecolor="black", linewidth=0.5,
+        )
+
+        ax.set_xlabel(
+            "isolates/strains represented in cluster (%)",
+            fontsize=AXIS_TITLE_FONT_SIZE, fontproperties=ibmplexsans,
+        )
+        ax.set_ylabel(
+            "number of clusters", fontsize=AXIS_TITLE_FONT_SIZE, fontproperties=ibmplexsans,
+        )
+        ax.set_xlim(left=0, right=100)
+        ax.set_ylim(bottom=0)
+        ax.xaxis.set_minor_locator(AutoMinorLocator())
+        ax.yaxis.set_minor_locator(AutoMinorLocator())
+        ax.set_title(
+            f"Cluster occupancy — {FANCYDICT[combo]}, {namedict[assembly]} ({datatype}), "
+            f"n={len(percentages)}",
+            fontproperties=ibmplexsansbold, fontsize=AXIS_TITLE_FONT_SIZE,
+        )
+        for label in ax.get_xticklabels() + ax.get_yticklabels():
+            label.set_fontproperties(ibmplexsans)
+        fig.tight_layout()
+
+        for ext in ["png", "pdf", "svg"]:
+            fig.savefig(
+                os.path.join(
+                    outfolder,
+                    "_".join(
+                        ["plot_cluster_occupancy_uplot_single", datatype, assembly, combo_slug(combo)]
+                    ) + "." + ext,
+                ),
+            )
+        plt.close(fig)
+
+
 # === NEW (requirement 2): percentage of genes deleted, per method & seed ===
 def get_realdata_reference_gene_set(real_data_run_dir):
     """Find a 'total genes' reference for real data, so gene-deletion
@@ -5130,6 +5419,14 @@ def main():
             for assembly in assemblies
         ]
 
+        # === NEW: cluster-occupancy U plot task list, same
+        # method_labels_by_assembly[assembly] = {"run": {combo: {gene:label}}}
+        # structure as the core genome estimation curve above ===
+        plottingtasks_uplot = [
+            (method_labels_by_assembly.get(assembly, {}), namedict, args.outfolder, assembly, datatype, font_props)
+            for assembly in assemblies
+        ]
+
         # No total_genes_by_seed passed -> build_pairwise_f1_matrix falls
         # back to the plain, non-truth-penalised Dice/F1 score between
         # methods (see its docstring).
@@ -5216,6 +5513,9 @@ def main():
                 plot_pairwise_exact_match_heatmap(task)
             for task in plottingtasks_core_genome:
                 plot_core_genome_curve_realdata(task)
+            for task in plottingtasks_uplot:
+                plot_cluster_occupancy_uplot(task)
+                plot_cluster_occupancy_uplot_single(task)
             for task in plottingtasks_pairwise_f1:
                 plot_pairwise_f1_heatmap(task)
             for task in plottingtasks_pairwise_f1_added:
@@ -5238,6 +5538,8 @@ def main():
             pool.map(plot_pairwise_vmeasure_heatmap, plottingtasks_pairwise_ari)
             pool.map(plot_pairwise_exact_match_heatmap, plottingtasks_exact_match)
             pool.map(plot_core_genome_curve_realdata, plottingtasks_core_genome)
+            pool.map(plot_cluster_occupancy_uplot, plottingtasks_uplot)
+            pool.map(plot_cluster_occupancy_uplot_single, plottingtasks_uplot)
             pool.map(plot_pairwise_f1_heatmap, plottingtasks_pairwise_f1)
             if plottingtasks_pairwise_f1_added:
                 pool.map(plot_pairwise_f1_heatmap_added_as_fp, plottingtasks_pairwise_f1_added)
