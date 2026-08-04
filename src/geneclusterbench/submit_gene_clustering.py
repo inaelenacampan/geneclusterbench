@@ -124,20 +124,30 @@ SKETCH_SCAFFOLD_NT = (
 
 # --- real-data sketch workflow: all genes, no CD-HIT dedup ---
 # For real data only: instead of CD-HIT-deduplicating the gene pool before
-# sketching, every gene is included and sketchlib's all-vs-all `dist` matrix
-# is computed over all of them. The resulting distance file is then filtered
-# to drop entries where the distance value (3rd column) equals 1, and that
-# filtered file is what's passed on to cluster_distance_file.py.
+# sketching, every gene is included and sketchlib's `dist` is restricted to
+# each gene's REALDATA_KNN nearest neighbours (--knn) rather than computing
+# the full all-vs-all matrix -- at real-data scale (800k+ genes) the full
+# all-vs-all distance file is hundreds of GB and downstream clustering would
+# need an equally huge dense matrix to consume it. Restricting to --knn
+# nearest neighbours keeps the file (and the sparse matrix built from it)
+# proportional to n * REALDATA_KNN instead of n^2.
+#
+# The resulting distance file is then filtered to drop entries where the
+# distance value (3rd column) equals 1, and that filtered file is passed to
+# cluster_distance_file.py with --sparse, so it's parsed straight into a
+# scipy.sparse matrix (only the measured pairs are stored -- missing pairs
+# are treated as "not measured", never filled with a placeholder distance)
+# and clustered/embedded without ever materialising a dense n x n matrix.
 SKETCH_SCAFFOLD_AA_REALDATA = (
     "mkdir -p {workdir} && mkdir -p {sketchdir} && "
     "cd {workdir} && "
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
     "{execexec} sketch -f {inputfile} -o {outputprefix} "
     "-s 64 -k 5 --seq-type aa --threads {ncores} -v && "
-    "{execexec} dist {outputprefix} -o {distoutput} -k 5 --threads {ncores} -v && "
+    "{execexec} dist {outputprefix} -o {distoutput} -k 5 --knn {knn} --threads {ncores} -v && "
     "awk -F'\\t' '$3 != 1' {distoutput} > {filtereddistoutput} && "
     "uv run --project {gcbrepo} python -m geneclusterbench.cluster_distance_file "
-    "--dist-file {filtereddistoutput} --nthreads {ncores} && "
+    "--dist-file {filtereddistoutput} --nthreads {ncores} --sparse && "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
 
@@ -147,12 +157,17 @@ SKETCH_SCAFFOLD_NT_REALDATA = (
     "inittime=$(date +'%d/%m/%Y-%H:%M:%S') && "
     "{execexec} sketch -f {inputfile} -o {outputprefix} "
     "-s 1000 -k 17 --seq-type dna --threads {ncores} -v && "
-    "{execexec} dist {outputprefix} -o {distoutput} -k 17 --threads {ncores} -v && "
+    "{execexec} dist {outputprefix} -o {distoutput} -k 17 --knn {knn} --threads {ncores} -v && "
     "awk -F'\\t' '$3 != 1' {distoutput} > {filtereddistoutput} && "
     "uv run --project {gcbrepo} python -m geneclusterbench.cluster_distance_file "
-    "--dist-file {filtereddistoutput} --nthreads {ncores} && "
+    "--dist-file {filtereddistoutput} --nthreads {ncores} --sparse && "
     "echo $inittime'=>'$(date +'%d/%m/%Y-%H:%M:%S') > timebenchmark.txt && cd -"
 )
+
+# Number of nearest neighbours sketchlib's `dist` keeps per gene for
+# real-data runs (its --knn option). Only used for the *_REALDATA scaffolds
+# above; simulated-data runs keep computing the full all-vs-all matrix.
+REALDATA_KNN = 1000
 
 # ProstT5 embeddings + HDBSCAN/UMAP/t-SNE clustering. Only sensible for AA
 # input (ProstT5 expects amino-acid, or lower-case 3Di, sequences).
@@ -465,6 +480,7 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
                     filtereddistoutput=os.path.join(sketchdir, "output_filtered.dist"),
                     gcbrepo=gcbrepo,
                     ncores=nthreads,
+                    knn=REALDATA_KNN,
                 )
             else:
                 return SKETCH_SCAFFOLD_AA_REALDATA.format(
@@ -477,6 +493,7 @@ def get_command_for_process(proc, seqtype, infile, outfolder, nthreads, maxmem, 
                     filtereddistoutput=os.path.join(sketchdir, "output_filtered.dist"),
                     gcbrepo=gcbrepo,
                     ncores=nthreads,
+                    knn=REALDATA_KNN,
                 )
 
         if seqtype == "nt" :
@@ -1216,7 +1233,7 @@ def main():
     parser.add_argument("--max-simultaneous-cores", "-M", default=2000, type=int)
     parser.add_argument("--preset-timestamp", "-P", default=-1, type=int)
     parser.add_argument("--pretend", "-p", action="store_true")
-    parser.add_argument("--process", "-pr", default="cdhit,mmseqs2,diamond,panaroo,ppanggolin,panta,panx,sketch,embeddings")
+    parser.add_argument("--process", "-pr", default="sketch,embeddings")
     parser.add_argument("--sequence-type", "-st", default="nt,aa")
     parser.add_argument("--softwaredir", default=DEFAULT_SOFTWAREDIR)
     parser.add_argument("--benchmark-runner", default=DEFAULT_RUNNER)

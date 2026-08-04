@@ -9,6 +9,7 @@ from pathlib import Path
 import hdbscan
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.sparse as sp
 from sklearn.cluster import AgglomerativeClustering, KMeans
 from sklearn.manifold import TSNE
 from sklearn.mixture import GaussianMixture
@@ -83,6 +84,22 @@ def parse_args():
         help="Plot formats to write.",
     )
     parser.add_argument(
+        "--sparse",
+        action="store_true",
+        help=(
+            "Build and cluster a sparse (scipy.sparse CSR) distance matrix "
+            "instead of a dense numpy array. Required for real-data runs "
+            "where sketchlib's `dist` was restricted with --knn/--neighbourhood, "
+            "so the file only contains a subset of pairwise distances. "
+            "Missing pairs are treated as 'no measured edge' rather than "
+            "filled with a placeholder distance, so no full n x n matrix is "
+            "ever built in memory. HDBSCAN and UMAP consume the sparse "
+            "matrix directly; t-SNE is attempted on the sparse precomputed "
+            "graph and is skipped (not densified) if that isn't supported "
+            "for the given data."
+        ),
+    )
+    parser.add_argument(
         "--sweep",
         action="store_true",
         help=(
@@ -98,10 +115,29 @@ def parse_args():
     return parser.parse_args()
 
 
-def parse_distance_file(path):
-    """Load a triangular pairwise distance file into sample names and a full matrix."""
+def parse_distance_file(path, sparse=False):
+    """Load a triangular pairwise distance file into sample names and a matrix.
+
+    With sparse=False (default, unchanged behaviour): builds a dense n x n
+    numpy array and requires every one of the n*(n-1)/2 pairs to be present
+    (as before). This is fine for small/simulated datasets with a complete
+    all-vs-all distance file.
+
+    With sparse=True: builds a scipy.sparse CSR matrix containing only the
+    pairs actually present in the file, and does NOT require completeness.
+    This is the path for real-data runs where sketchlib's `dist` was run
+    with --knn/--neighbourhood, so only a subset of pairwise distances was
+    ever computed/written. A missing (a, b) pair means "no distance was
+    measured between a and b" -- it is left unstored (no implicit edge),
+    never filled with a placeholder value, so memory stays proportional to
+    the number of measured pairs rather than n^2.
+    """
     samples = []
-    distances = {}
+    sample_index = {}
+    rows = []
+    cols = []
+    data = []
+    n_pairs = 0
 
     with path.open("r", encoding="utf-8") as handle:
         for line_number, line in enumerate(handle, start=1):
@@ -120,19 +156,52 @@ def parse_distance_file(path):
             distance = float(fields[-1])
 
             for sample in (sample_a, sample_b):
-                if sample not in samples:
+                if sample not in sample_index:
+                    sample_index[sample] = len(samples)
                     samples.append(sample)
 
-            distances[(sample_a, sample_b)] = distance
+            i = sample_index[sample_a]
+            j = sample_index[sample_b]
+
+            if sparse:
+                rows.append(i)
+                cols.append(j)
+                data.append(distance)
+                rows.append(j)
+                cols.append(i)
+                data.append(distance)
+                n_pairs += 1
+            # else: dense path re-reads the file below (keeps the original
+            # code path/behaviour untouched), so nothing to accumulate here.
 
     if len(samples) < 2:
         raise ValueError("The distance file must contain at least two samples")
 
-    index = {sample: i for i, sample in enumerate(samples)}
-    matrix = np.zeros((len(samples), len(samples)), dtype=float)
+    if sparse:
+        n = len(samples)
+        matrix = sp.coo_matrix((data, (rows, cols)), shape=(n, n)).tocsr()
+        matrix.eliminate_zeros()
+        # Note: a genuinely-zero measured distance and a missing/unmeasured
+        # pair are indistinguishable once eliminate_zeros() runs (both read
+        # as "no stored entry"). Sketchlib distances between distinct genes
+        # are essentially never exactly 0.0 in practice, so this is safe
+        # here, but keep it in mind if the distance metric changes.
+        return samples, matrix
 
-    # The original scripts expect triangular pairwise distances. Using sample names
-    # to fill the matrix makes the parser independent of the exact row ordering.
+    # Dense path: rebuild the (sample_a, sample_b) -> distance mapping and
+    # keep the original completeness check, unchanged from before.
+    distances = {}
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            fields = line.split("\t")
+            sample_a, sample_b = fields[0], fields[1]
+            distances[(sample_a, sample_b)] = float(fields[-1])
+
+    index = sample_index
+    matrix = np.zeros((len(samples), len(samples)), dtype=float)
     for (sample_a, sample_b), distance in distances.items():
         i = index[sample_a]
         j = index[sample_b]
@@ -143,7 +212,9 @@ def parse_distance_file(path):
     if len(distances) != expected_pairs:
         raise ValueError(
             f"Expected {expected_pairs} unique pairwise distances for {len(samples)} "
-            f"samples, found {len(distances)}"
+            f"samples, found {len(distances)}. Pass --sparse if this file was "
+            f"generated with a restricted neighbourhood/kNN and is expected "
+            f"to be incomplete."
         )
 
     return samples, matrix
@@ -266,7 +337,22 @@ def choose_best_combination(
 def fit_tsne(matrix, nthreads):
     """Embed the precomputed distance matrix into two dimensions with t-SNE.
     t-SNE = t-distributed Stochastic Neighbor Embedding
+
+    Works with either a dense numpy array or a scipy.sparse CSR matrix in
+    `matrix` -- sklearn's TSNE(metric="precomputed") accepts a sparse CSR
+    precomputed *graph* (i.e. only the stored/measured distances, as produced
+    by --sparse) and never requires it to be densified first. Each sample
+    needs at least ~3*perplexity stored neighbours for this to work; with a
+    sketchlib --knn/--neighbourhood value in the hundreds/thousands and the
+    perplexity used here, that's comfortably satisfied.
+
+    If fitting on a sparse matrix fails for a genuine data reason (e.g. some
+    samples end up with too few stored neighbours, or the neighbour graph is
+    disconnected in a way sklearn can't route through), this does NOT fall
+    back to a dense computation -- per policy, t-SNE is simply skipped for
+    this run. Returns (None, None) in that case; callers must check for this.
     """
+    is_sparse = sp.issparse(matrix)
     perplexity = min(TSNE_PERPLEXITY, max(1, matrix.shape[0] - 1))
     model = TSNE(
         metric="precomputed",
@@ -277,12 +363,30 @@ def fit_tsne(matrix, nthreads):
         verbose=3,
         max_iter=TSNE_MAX_ITER,
     )
-    coords = model.fit_transform(matrix)
-    return model, coords
+    if not is_sparse:
+        coords = model.fit_transform(matrix)
+        return model, coords
+
+    try:
+        coords = model.fit_transform(matrix)
+        return model, coords
+    except Exception as exc:  # noqa: BLE001 - deliberately broad, see docstring
+        print(
+            "t-SNE on the sparse precomputed distance matrix failed "
+            f"({type(exc).__name__}: {exc}). Skipping t-SNE for this run "
+            "rather than densifying the matrix."
+        )
+        return None, None
 
 
 def fit_umap(matrix, nthreads):
-    """Embed the precomputed distance matrix into two dimensions with UMAP."""
+    """Embed the precomputed distance matrix into two dimensions with UMAP.
+
+    Accepts either a dense numpy array or a scipy.sparse CSR matrix. UMAP's
+    metric="precomputed" natively supports a sparse precomputed distance
+    graph (only stored/measured entries are treated as neighbours) and never
+    requires densifying it first.
+    """
     # umap = Uniform Manifold Approximation and Projection
     # UMAP with precomputed distances is useful for visualising the same distance
     # matrix as HDBSCAN sees it. Parallel UMAP can be non-deterministic.
@@ -293,6 +397,7 @@ def fit_umap(matrix, nthreads):
         n_neighbors=UMAP_NEIGHBOURS,
         min_dist=UMAP_MIN_DIST,
         n_epochs=UMAP_EPOCHS,
+        force_approximation_algorithm=sp.issparse(matrix),
     )
     coords = model.fit_transform(matrix)
     return model, coords
@@ -419,8 +524,22 @@ def representative_for_cluster(member_indices, matrix):
     if len(member_indices) == 1:
         return member_indices[0]
 
-    submatrix = matrix[np.ix_(member_indices, member_indices)]
-    mean_distances = submatrix.sum(axis=1) / (len(member_indices) - 1)
+    if sp.issparse(matrix):
+        submatrix = matrix[member_indices, :][:, member_indices]
+        # With a sparse matrix, an unstored entry means "distance not
+        # measured" rather than "distance 0" -- dividing by the full
+        # (cluster_size - 1) would silently treat missing neighbours as
+        # perfectly identical and bias the representative towards members
+        # with the fewest measured distances. Instead, average only over
+        # the distances that were actually measured for each member.
+        row_sums = np.asarray(submatrix.sum(axis=1)).ravel()
+        row_counts = np.diff(submatrix.indptr)
+        row_counts = np.where(row_counts == 0, 1, row_counts)  # avoid /0
+        mean_distances = row_sums / row_counts
+    else:
+        submatrix = matrix[np.ix_(member_indices, member_indices)]
+        mean_distances = submatrix.sum(axis=1) / (len(member_indices) - 1)
+
     return member_indices[int(np.argmin(mean_distances))]
 
 
@@ -498,7 +617,33 @@ def write_timings(out_dir, timings):
 
 
 def matrix_stats(matrix):
-    """Summarise only the non-redundant upper triangle of the distance matrix."""
+    """Summarise only the non-redundant upper triangle of the distance matrix.
+
+    For a sparse matrix, "pairwise_distances" is the count of pairs that
+    actually had a measured/stored distance (which will be far smaller than
+    n*(n-1)/2 when built from a --knn/--neighbourhood-restricted file), not
+    the full theoretical pair count.
+    """
+    if sp.issparse(matrix):
+        coo = matrix.tocoo()
+        mask = coo.row < coo.col  # upper triangle only, matrix is symmetric
+        upper_triangle = coo.data[mask]
+        if upper_triangle.size == 0:
+            return {
+                "min_distance": None,
+                "max_distance": None,
+                "nonzero_distances": 0,
+                "nonone_distances": 0,
+                "pairwise_distances": 0,
+            }
+        return {
+            "min_distance": float(np.min(upper_triangle)),
+            "max_distance": float(np.max(upper_triangle)),
+            "nonzero_distances": int(np.count_nonzero(upper_triangle)),
+            "nonone_distances": int(np.count_nonzero(upper_triangle != 1.0)),
+            "pairwise_distances": int(upper_triangle.size),
+        }
+
     upper_triangle = matrix[np.triu_indices_from(matrix, k=1)]
     return {
         "min_distance": float(np.min(upper_triangle)),
@@ -567,9 +712,9 @@ def main():
     np.random.seed(RANDOM_SEED)
     plt.rcParams.update({"figure.max_open_warning": 0})
 
-    print(f"Loading distances from {args.dist_file}")
+    print(f"Loading distances from {args.dist_file}" + (" (sparse)" if args.sparse else ""))
     t0 = time.time()
-    samples, matrix = parse_distance_file(args.dist_file)
+    samples, matrix = parse_distance_file(args.dist_file, sparse=args.sparse)
     timings.append(("load_distance_matrix", time.time() - t0))
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -621,7 +766,12 @@ def main():
     tsne_model, tsne_coords = fit_tsne(matrix, args.nthreads)
     tsne_embed_time = time.time() - t0
     timings.append(("tsne_embedding", tsne_embed_time))
-    save_pickle(model_dir / "tsne.pk", model=tsne_model, coords=tsne_coords)
+    tsne_available = tsne_coords is not None
+    if tsne_available:
+        save_pickle(model_dir / "tsne.pk", model=tsne_model, coords=tsne_coords)
+    else:
+        print("t-SNE skipped (see message above); no tsne.pk written, "
+              "t-SNE plots/clustering will be omitted from this run.")
 
     print("Training UMAP")
     t0 = time.time()
@@ -639,14 +789,18 @@ def main():
     timings.append(("hdbscan_dist_fit", hdbs_dist_time))
     save_pickle(model_dir / "hdbs_dist.pk", model=hdbs_dist_model, labels=hdbs_dist_labels)
 
-    print("Clustering t-SNE coordinates")
-    t0 = time.time()
-    hdbs_tsne_model, hdbs_tsne_labels = fit_hdbscan_embedding(
-        tsne_coords, args.nthreads, min_cluster_size, min_samples
-    )
-    hdbs_tsne_time = time.time() - t0
-    timings.append(("hdbscan_tsne_fit", hdbs_tsne_time))
-    save_pickle(model_dir / "hdbs_tsne.pk", model=hdbs_tsne_model, labels=hdbs_tsne_labels)
+    if tsne_available:
+        print("Clustering t-SNE coordinates")
+        t0 = time.time()
+        hdbs_tsne_model, hdbs_tsne_labels = fit_hdbscan_embedding(
+            tsne_coords, args.nthreads, min_cluster_size, min_samples
+        )
+        hdbs_tsne_time = time.time() - t0
+        timings.append(("hdbscan_tsne_fit", hdbs_tsne_time))
+        save_pickle(model_dir / "hdbs_tsne.pk", model=hdbs_tsne_model, labels=hdbs_tsne_labels)
+    else:
+        hdbs_tsne_model, hdbs_tsne_labels = None, None
+        hdbs_tsne_time = 0.0
 
     print("Clustering UMAP coordinates")
     t0 = time.time()
@@ -662,29 +816,32 @@ def main():
     # embedding step, so its total is just its own fit time; the other two
     # methods pay for their embedding as well as their HDBSCAN fit.
     timings.append(("method_hdbscan_dist_total", hdbs_dist_time))
-    timings.append(("method_hdbscan_tsne_total", tsne_embed_time + hdbs_tsne_time))
+    if tsne_available:
+        timings.append(("method_hdbscan_tsne_total", tsne_embed_time + hdbs_tsne_time))
     timings.append(("method_hdbscan_umap_total", umap_embed_time + hdbs_umap_time))
 
     label_sets = {
         "hdbscan_dist": hdbs_dist_labels,
-        "hdbscan_tsne": hdbs_tsne_labels,
         "hdbscan_umap": hdbs_umap_labels,
     }
+    if tsne_available:
+        label_sets["hdbscan_tsne"] = hdbs_tsne_labels
 
     print("Writing plots")
     t0 = time.time()
-    plot_clusters(
-        tsne_coords,
-        hdbs_dist_labels,
-        plot_dir / "cluster_TSNE_HDBSCANdist",
-        args.formats,
-    )
-    plot_clusters(
-        tsne_coords,
-        hdbs_tsne_labels,
-        plot_dir / "cluster_TSNE_HDBSCAN",
-        args.formats,
-    )
+    if tsne_available:
+        plot_clusters(
+            tsne_coords,
+            hdbs_dist_labels,
+            plot_dir / "cluster_TSNE_HDBSCANdist",
+            args.formats,
+        )
+        plot_clusters(
+            tsne_coords,
+            hdbs_tsne_labels,
+            plot_dir / "cluster_TSNE_HDBSCAN",
+            args.formats,
+        )
     plot_clusters(
         umap_coords,
         hdbs_dist_labels,
