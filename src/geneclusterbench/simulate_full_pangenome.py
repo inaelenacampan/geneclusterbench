@@ -17,6 +17,7 @@ from dendropy.model import reconcile
 from dendropy import TaxonNamespace
 import copy
 import math
+import warnings
 from Bio.SeqFeature import SeqFeature, FeatureLocation
 from BCBio import GFF
 import matplotlib.pyplot as plt
@@ -174,14 +175,26 @@ def normalise_deletion_indices(indices):
     return np.unique(indices.astype(int))
 
 
-def cds_intervals_overlap(left_entry, right_entry):
-    if left_entry.seqid != right_entry.seqid:
-        return False
-    return left_entry.start <= right_entry.stop and right_entry.start <= left_entry.stop
+def find_isolated_cds(entries):
+    """Return entries overlapping no other entry on the same seqid, on 1-based
+    inclusive [start, stop]. Requiring isolation rather than greedily keeping
+    the first of an overlapping run makes any subset safe to sample."""
+    by_seqid = defaultdict(list)
+    for entry in entries:
+        by_seqid[entry.seqid].append(entry)
 
-
-def overlaps_any_fixed_core(entry, fixed_core_entries):
-    return any(cds_intervals_overlap(entry, fixed_entry) for fixed_entry in fixed_core_entries)
+    isolated = []
+    for seqid in by_seqid:
+        ordered = sorted(by_seqid[seqid], key=lambda e: (e.start, e.stop))
+        max_stop_before = -1
+        for i, entry in enumerate(ordered):
+            overlaps_previous = max_stop_before >= entry.start
+            overlaps_next = (i + 1 < len(ordered)
+                             and ordered[i + 1].start <= entry.stop)
+            if not (overlaps_previous or overlaps_next):
+                isolated.append(entry)
+            max_stop_before = max(max_stop_before, entry.stop)
+    return isolated
 
 
 def simulate_img_with_mutation(in_tree,
@@ -189,10 +202,17 @@ def simulate_img_with_mutation(in_tree,
                                loss_rate,
                                mutation_rate,
                                random_state,
-                               ngenes    = 100,
-                               min_ncore = 10,
-                               max_ncore = 99999999):
+                               max_ngenes = 100,
+                               n_core     = 500):
     # simulate accessory p/a using infintely many genes model -> see paper of Baumdicker
+    if n_core < 0:
+        raise RuntimeError("--n_core must be non-negative")
+    if n_core > max_ngenes:
+        raise RuntimeError(
+            f"--n_core={n_core} exceeds --n_sim_genes={max_ngenes}; no locus "
+            "budget is left for accessory genes."
+        )
+
     n_additions = 0
 
     # in_tree : phylogenetic tree
@@ -230,25 +250,18 @@ def simulate_img_with_mutation(in_tree,
                 range(n_additions, n_additions + n_new))
             n_additions += n_new
 
-    print("\t- Accessory size: ", n_additions)
-    # Now add core. Gene IDs must stay within the sampled source genes.
-    remaining_gene_slots = ngenes - n_additions
-    if remaining_gene_slots < 0:
+    if n_additions + n_core > max_ngenes:
         raise RuntimeError(
-            f"Simulated {n_additions} accessory genes, but only {ngenes} "
-            "source genes were sampled. Increase --n_sim_genes or lower "
-            "--gain_rate/--pop_size."
+            f"Simulated {n_additions} accessory gene gains plus {n_core} core genes "
+            f"need {n_additions + n_core} source loci, but --n_sim_genes={max_ngenes}. "
+            "Raise --n_sim_genes, lower --n_core, or lower --gain_rate/--pop_size."
         )
 
-    ncore = min(remaining_gene_slots, max_ncore)
-    if ncore < min_ncore:
-        print(
-            "\t- Core size capped by sampled source genes: ",
-            ncore,
-            f"(requested minimum {min_ncore})",
-        )
+    print("\t- Accessory size: ", n_additions)
+    print("\t- Core size: ", n_core)
+    print("\t- Loci absent from every isolate: ", max_ngenes - n_additions - n_core)
 
-    core_genes = list(range(n_additions, n_additions + ncore))
+    core_genes = list(range(n_additions, n_additions + n_core))
     for node in in_tree.preorder_node_iter():
         node.acc_genes += core_genes
 
@@ -274,11 +287,11 @@ def simulate_img_with_mutation(in_tree,
                              for l in locations]
                 node.gene_mutations[g] += mutations
 
-    return in_tree
+    return in_tree, n_additions
 
 
-def simulate_pangenome(ngenes, nisolates, effective_pop_size, gain_rate,
-                       loss_rate, mutation_rate, max_core, random_state):
+def simulate_pangenome(max_ngenes, nisolates, effective_pop_size, gain_rate,
+                       loss_rate, mutation_rate, n_core, random_state):
 
     # simulate a phylogeny using the coalscent
     
@@ -293,21 +306,26 @@ def simulate_pangenome(ngenes, nisolates, effective_pop_size, gain_rate,
 
     # simulate gene p/a and mutation
     # using infintely many genes model 
-    sim_tree = simulate_img_with_mutation(sim_tree,
-                                          gain_rate     = gain_rate,
-                                          loss_rate     = loss_rate,
-                                          mutation_rate = mutation_rate,
-                                          ngenes        = ngenes,
-                                          max_ncore     = max_core,
-                                          random_state  = random_state,)
+    sim_tree, n_additions = simulate_img_with_mutation(
+        sim_tree,
+        gain_rate     = gain_rate,
+        loss_rate     = loss_rate,
+        mutation_rate = mutation_rate,
+        max_ngenes    = max_ngenes,
+        n_core        = n_core,
+        random_state  = random_state,)
 
-    # get genes and mutations for each isolate
+    # get genes and mutations for each isolate. The taxon label is recorded
+    # too: isolate i is the i-th leaf in this iteration order, which is
+    # otherwise unrecoverable from the written Newick tree.
     gene_mutations = []
+    taxon_labels = []
     for leaf in sim_tree.leaf_node_iter():
         gene_mutations.append([[g, leaf.gene_mutations[g]]
                                for g in leaf.acc_genes])
+        taxon_labels.append(leaf.taxon.label if leaf.taxon is not None else "")
 
-    return (gene_mutations, basic_tree)
+    return (gene_mutations, taxon_labels, n_additions, basic_tree)
 
 
 def get_gene_id(seq):
@@ -335,7 +353,8 @@ def draw_phylogenetic_tree(filepath, folder, gain_rate, loss_rate, mutation_rate
 
 # Main function
 def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
-                  mutation_rate, n_sim_genes, prefix, max_core, random_state):
+                  mutation_rate, n_sim_genes, prefix, n_core, random_state,
+                  sim_params):
 
     # nisolates : number of simulation to produce
 
@@ -361,6 +380,8 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
     original_gene_ids = {}
     # geneid_* is protein-based; keep exact nucleotide sequences separately.
     original_gene_sequences = {}
+    # Reference translations, held back until we know which exact genes are sampled.
+    reference_aa_seqs = {}
 
     parsed_gff = gffutils.create_db(
         clean_gff_string(split[0]),
@@ -374,16 +395,20 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
 
     # Get gene entries to modify
     all_gene_locations  = []
-    gene_locations      = []
-    prev_end_by_seqid   = defaultdict(lambda: -1)
     gene_seqs           = []
 
     # CD = coding sequence
 
     print("> Iterating over CDS entries...")
-    for entry in parsed_gff.all_features(featuretype=()):
-        if "CDS" not in entry.featuretype: continue
+    cds_entries = [entry for entry in parsed_gff.all_features(featuretype=())
+                   if "CDS" in entry.featuretype]
 
+    seqid_order = {}
+    for entry in cds_entries:
+        seqid_order.setdefault(entry.seqid, len(seqid_order))
+    cds_entries.sort(key=lambda e: (seqid_order[e.seqid], e.start, e.stop, e.id))
+
+    for entry in cds_entries:
         left  = entry.start - 1
         right = entry.stop
 
@@ -413,16 +438,12 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
         original_gene_sequences[entry.id] = str(gene_seq_to_save)
         gene_seq_dict.setdefault(gene_id, str(gene_seq_to_save))
 
-        gene_seqs.append(SeqRecord(gene_sequence, id=entry.id, description=gene_id))
+        reference_aa_seqs[entry.id] = gene_sequence
 
         all_gene_locations.append(entry)
-        prev_end = prev_end_by_seqid[entry.seqid]
-        if entry.start <= prev_end:
-            prev_end_by_seqid[entry.seqid] = max(prev_end, entry.end)
-            continue
-        prev_end_by_seqid[entry.seqid] = entry.end
-        gene_locations.append(entry)
     print("> Done!")
+
+    gene_locations = find_isolated_cds(all_gene_locations)
 
 
     # print(seq_dict)
@@ -446,52 +467,32 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
     if n_sim_genes > len(gene_locations):
         raise RuntimeError(
             f"Requested --n_sim_genes={n_sim_genes}, but only "
-            f"{len(gene_locations)} non-overlapping CDS entries are available"
+            f"{len(gene_locations)} isolated CDS entries are available"
         )
     print("> Subsampling genes...")
-    sampled_gene_locations = []
-    available_gene_locations = gene_locations.copy()
-
-    while len(sampled_gene_locations) < n_sim_genes:
-        if not available_gene_locations:
-            raise RuntimeError(
-                f"Could only sample {len(sampled_gene_locations)} CDS entries "
-                f"without fixed-core overlaps, but --n_sim_genes={n_sim_genes}"
-            )
-
-        candidate = random_state.sample(available_gene_locations, 1)[0]
-        available_gene_locations.remove(candidate)
-
-        tentative_sample = sampled_gene_locations + [candidate]
-        tentative_sample_ids = {entry.id for entry in tentative_sample}
-        fixed_core_entries = [
-            entry for entry in all_gene_locations
-            if entry.id not in tentative_sample_ids
-        ]
-
-        if overlaps_any_fixed_core(candidate, fixed_core_entries):
-            print(
-                "WARNING: sampled CDS overlaps fixed core CDS; resampling:",
-                candidate.id,
-            )
-            continue
-
-        sampled_gene_locations.append(candidate)
-
-    gene_locations = sampled_gene_locations
+    # Every eligible locus is isolated, so any subset is non-overlapping.
+    gene_locations = random_state.sample(gene_locations, n_sim_genes)
     sampled_gene_ids = {entry.id for entry in gene_locations}
     print("> Done!")
 
+    # Fixed-core loci go unmutated into every isolate, so emit them once.
+    for entry in all_gene_locations:
+        if entry.id in sampled_gene_ids:
+            continue
+        gene_seqs.append(SeqRecord(reference_aa_seqs[entry.id],
+                                   id = entry.id,
+                                   description = original_gene_ids[entry.id]))
+
     print("> Simulating presence/absence matrix and gene mutations...")
     # simulate presence/absence matrix and gene mutations (only swap codons)
-    pan_sim, sim_tree = simulate_pangenome(
-        ngenes        = len(gene_locations),
+    pan_sim, taxon_labels, n_additions, sim_tree = simulate_pangenome(
+        max_ngenes    = len(gene_locations),
         nisolates     = nisolates,
         effective_pop_size = effective_pop_size,
         gain_rate     = gain_rate,
         loss_rate     = loss_rate,
         mutation_rate = mutation_rate,
-        max_core      = max_core,
+        n_core        = n_core,
         random_state  = random_state,
     )
     max_gene_index = max((gene[0] for pan in pan_sim for gene in pan), default=-1)
@@ -512,6 +513,10 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
     print("> Modifying all genes from the simulated pangenome...")
 
     # print((pan_sim[0][4])); sys.exit()
+
+    isolate_stats = []
+    accessory_budget = sim_params["max_n_sim_genes"] - sim_params["n_core"]
+    low_accessory_threshold = 0.10 * accessory_budget
 
     for i, pan in enumerate(pan_sim): # Iterate over samples/isolates/assemblies
         print("\n\t- Modifying simulated genome", i)
@@ -576,6 +581,7 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
                 deleted_genes += 1
                 d_index[entry.seqid] = np.append(d_index[entry.seqid],
                                                  np.arange(left, right))
+                continue
 
             gene_sequence = Seq(''.join(
                 temp_seq_dict[entry.seqid][left:right]))
@@ -700,18 +706,25 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
                     #     print("\t========= HEY!!!!!")
 
                     contig_gene_seq = str(record_list[-1].seq[iG.start - 1 : iG.stop])
+                    if iG.strand == "-":
+                        contig_gene_seq = reverse_complement_text(contig_gene_seq)
                     expected_gene_seq = feature_seq_dict[iG.id]
-                    if iG.strand == "+":
-                        # if record_list[-1].seq[iG.start - 1 : iG.stop] != gene_seq_dict[iG.id.split(" ")[1]]:
-                        # if record_list[-1].seq[iG.start - 1 : iG.stop - 3] != gene_seq_dict[iG.id.split(" ")[1]][:-3]:
-                        if contig_gene_seq[2:-3] != expected_gene_seq[2:-3]:
-                            raise RuntimeError(f"CDS sequence mismatch for {iG.id} ({iG.seqid}:{iG.start}-{iG.stop}, strand {iG.strand})\nSeq from the contig:\n" + contig_gene_seq + f"\n> Expected CDS sequence:\n" + expected_gene_seq)
-                    else:
-                        # if "".join(["A" if el == "T" else "T" if el == "A" else "G" if el == "C" else "C" for el in record_list[-1].seq[iG.start - 1 : iG.stop][::-1] ]) != gene_seq_dict[iG.id.split(" ")[1]]:
-                        # if "".join(["A" if el == "T" else "T" if el == "A" else "G" if el == "C" else "C" for el in record_list[-1].seq[iG.start - 1 : iG.stop][::-1] ])[:-3] != gene_seq_dict[iG.id.split(" ")[1]][:-3]:
-                        contig_gene_rc = reverse_complement_text(contig_gene_seq)
-                        if contig_gene_rc[2:-3] != expected_gene_seq[2:-3]:
-                            raise RuntimeError(f"CDS sequence mismatch for {iG.id} ({iG.seqid}:{iG.start}-{iG.stop}, strand {iG.strand})\nSeq from the contig:\n" + contig_gene_seq + f"\n> Expected CDS sequence:\n" + expected_gene_seq + f"\n> Seq. reversed-complement:\n" + contig_gene_rc)
+                    if contig_gene_seq != expected_gene_seq:
+                        raise RuntimeError(
+                            f"CDS sequence mismatch for {iG.id} "
+                            f"({iG.seqid}:{iG.start}-{iG.stop}, strand {iG.strand})\n"
+                            f"> Seq from the contig:\n{contig_gene_seq}\n"
+                            f"> Expected CDS sequence:\n{expected_gene_seq}"
+                        )
+
+                    written_seq = str(feature.extract(record_list[-1].seq))
+                    if written_seq != expected_gene_seq[:-3]:
+                        raise RuntimeError(
+                            "Written CDS feature does not match the expected CDS "
+                            f"minus its stop codon, for {iG.id}\n"
+                            f"> Written:\n{written_seq}\n"
+                            f"> Expected:\n{expected_gene_seq[:-3]}"
+                        )
 
                     record_list[-1].features.append(feature)
 
@@ -721,6 +734,28 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
         print("# CDS written: ", written_cds)
         print("# Mutations in genome: ", n_mutations)
         print("# Genes deleted: ",       deleted_genes)
+
+        # Accessory loci are those numbered below n_additions; the core
+        # occupies [n_additions, n_additions + n_core).
+        n_accessory = sum(1 for g in included_genes if g < n_additions)
+        low_accessory = n_accessory < low_accessory_threshold
+        if low_accessory:
+            warnings.warn(
+                f"Isolate {i} carries {n_accessory} accessory genes, under 10% of "
+                f"the {accessory_budget}-locus accessory budget "
+                f"(--n_sim_genes minus --n_core).",
+                RuntimeWarning, stacklevel=2,
+            )
+
+        isolate_stats.append({
+            "isolate"           : prefix.split("/")[-1] + "_iso_" + str(i),
+            "tree_taxon_label"  : taxon_labels[i],
+            "n_core_genes"      : sum(1 for g in included_genes if g >= n_additions),
+            "n_accessory_genes" : n_accessory,
+            "n_fixed_core_genes": len(all_gene_locations) - len(sampled_gene_ids),
+            "n_genes_total"     : written_cds,
+            "low_accessory"     : low_accessory,
+        })
 
         # write out sequences
         print("# Writing sequences...")
@@ -812,6 +847,31 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
         SeqIO.write(gene_seqs_clustering, clusteroutfile, 'fasta')
     print("> Done!")
 
+    # One row per isolate, parameters repeated on each row so files from
+    # different seeds and rate combinations concatenate directly.
+    print("> Writing simulation statistics...")
+    stats_cols = ["isolate", "tree_taxon_label", "n_core_genes", "n_accessory_genes",
+                  "n_fixed_core_genes", "n_genes_total", "low_accessory",
+                  "n_distinct_geneid_total", "gain_rate", "loss_rate", "mutation_rate",
+                  "pop_size", "nisolates", "max_n_sim_genes", "n_core", "seed"]
+    with open(prefix + "_simulation_stats.tsv", "w") as handle:
+        handle.write("\t".join(stats_cols) + "\n")
+        for row in isolate_stats:
+            row = {**row, "n_distinct_geneid_total": len(totalgeneset), **sim_params}
+            handle.write("\t".join(str(row[c]) for c in stats_cols) + "\n")
+
+    n_low = sum(1 for row in isolate_stats if row["low_accessory"])
+    if n_low:
+        counts = [row["n_accessory_genes"] for row in isolate_stats]
+        warnings.warn(
+            f"{n_low}/{len(isolate_stats)} isolates fell below 10% of the "
+            f"{accessory_budget}-locus accessory budget (min {min(counts)}, "
+            f"max {max(counts)}). Lower --n_sim_genes, raise --gain_rate, or lower "
+            "--loss_rate if this is not intended.",
+            RuntimeWarning, stacklevel=2,
+        )
+    print("> Done!")
+
     print("> Writing truth matrix")
     truth_matrix_name = prefix + "_truth_matrix.tsv"
     with open(truth_matrix_name, 'w') as truthmatrixoutfile:
@@ -834,7 +894,7 @@ def add_diversity(gfffile, nisolates, effective_pop_size, gain_rate, loss_rate,
     with open(out_name, 'w') as outfile:
         outfile.write("\t".join(
             ["Gene"] + ["iso" + str(i)
-                        for i in range(1, nisolates + 1)]) + "\n")
+                        for i in range(nisolates)]) + "\n")
         for g, entry in enumerate(gene_locations):
             seen.add(entry.id)
             outfile.write("\t".join(
@@ -906,16 +966,16 @@ def main():
         dest='n_sim_genes',
         type=int,
         default=1000,
-        help=('max number of genes that may be '
-              'affected by the simulation. The rest will be left as is.'
-              'Default = 1000'))
+        help=('maximum number of loci the simulation may use, i.e. n_core '
+              'plus accessory gains. The rest will be left as is. Exceeding '
+              'it is an error. Default = 1000'))
 
-    parser.add_argument('--max_core',
-                        dest='max_core',
+    parser.add_argument('--n_core',
+                        dest='n_core',
                         type=int,
-                        default=99999999,
-                        help=('max number of core genes' +
-                              'default=n_sim-accessory'))
+                        default=500,
+                        help=('Number of core genes: simulated loci present in '
+                              'every isolate. Default = 500'))
 
     parser.add_argument('-o',
                         '--out',
@@ -940,6 +1000,19 @@ def main():
     prefix = (args.output_dir + "sim_gr_" + str(args.gain_rate) + "_lr_" +
               str(args.loss_rate) + "_mu_" + str(args.mutation_rate))
 
+    # Captured before the pop-size scaling below, so the statistics file and
+    # the tree plot report the rates that were actually passed in.
+    sim_params = {
+        "gain_rate"      : args.gain_rate,
+        "loss_rate"      : args.loss_rate,
+        "mutation_rate"  : args.mutation_rate,
+        "pop_size"       : args.pop_size,
+        "nisolates"      : args.nisolates,
+        "max_n_sim_genes": args.n_sim_genes,
+        "n_core"         : args.n_core,
+        "seed"           : args.seed,
+    }
+
     # adjust rates for popsize
     args.gain_rate      = 2.0 * args.pop_size * args.gain_rate
     args.loss_rate      = 2.0 * args.pop_size * args.loss_rate
@@ -962,11 +1035,14 @@ def main():
                   mutation_rate     = args.mutation_rate,
                   n_sim_genes       = args.n_sim_genes,
                   prefix            = prefix,
-                  max_core          = args.max_core,
+                  n_core            = args.n_core,
                   random_state      = rstate,
+                  sim_params        = sim_params,
     )
 
-    draw_phylogenetic_tree(f"{prefix}_sim_tree.nwk", args.output_dir, args.gain_rate, args.loss_rate, args.mutation_rate)
+    draw_phylogenetic_tree(f"{prefix}_sim_tree.nwk", args.output_dir,
+                           sim_params["gain_rate"], sim_params["loss_rate"],
+                           sim_params["mutation_rate"])
     print("> Simulation finished!")
     return
 
