@@ -180,12 +180,16 @@ def parse_distance_file(path, sparse=False):
     if sparse:
         n = len(samples)
         matrix = sp.coo_matrix((data, (rows, cols)), shape=(n, n)).tocsr()
-        matrix.eliminate_zeros()
-        # Note: a genuinely-zero measured distance and a missing/unmeasured
-        # pair are indistinguishable once eliminate_zeros() runs (both read
-        # as "no stored entry"). Sketchlib distances between distinct genes
-        # are essentially never exactly 0.0 in practice, so this is safe
-        # here, but keep it in mind if the distance metric changes.
+        # Deliberately do NOT call eliminate_zeros() here. A genuinely-measured
+        # zero distance (e.g. two samples with identical/near-identical
+        # sketches, which do occur on real data -- duplicate or highly similar
+        # gene sequences) must stay distinguishable from a pair whose distance
+        # was never measured (no stored entry at all). Collapsing the two by
+        # stripping explicit zeros silently disconnects the mutual-reachability
+        # graph HDBSCAN builds internally, which is why relative_validity_ can
+        # come back NaN for every combination in the sweep. Explicit zero
+        # entries cost a little extra memory in the CSR structure but keep the
+        # graph connectivity (and therefore relative_validity_) correct.
         return samples, matrix
 
     # Dense path: rebuild the (sample_a, sample_b) -> distance mapping and
