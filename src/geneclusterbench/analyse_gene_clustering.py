@@ -57,8 +57,16 @@ CLUSTERERS = [
 # "geneid_N" simulation format, so of the original CLUSTERERS list above we
 # restrict real-data analysis to only the methods that were explicitly
 # requested: CD-HIT, DIAMOND, MMseqs2, Panaroo, Ppanggolin, Panta, PanX, and
-# (sketch-based) HDBSCAN. This list is only consumed by the new *_realdata
+# sketch-based clustering. This list is only consumed by the new *_realdata
 # functions below; it never touches the simulations code path.
+#
+# Within "sketch", real data now clusters via UMAP+HDBSCAN and a
+# single-linkage connected-components threshold sweep (see
+# CONNECTED_COMPONENTS_METHOD_NAMES above) -- t-SNE-based and direct
+# distance-based ("hdbscan_dist") clustering are no longer produced for real
+# data, since both performed poorly on it. get_dfs_from_sketch_realdata is
+# generic over whatever sub-method names actually appear in clusters.tsv, so
+# no change is needed there.
 REAL_DATA_CLUSTERERS = ["cdhit", "mmseqs2", "diamond", "panaroo", "ppanggolin", "panta", "panx", "sketch"]
 
 SEQTYPES = ["nt", "aa"]
@@ -68,7 +76,37 @@ AXIS_TITLE_FONT_SIZE = 10
 BASE_FONT_SIZE = 7
 DOPREM = True
 
-SKETCH_METHOD_NAMES = ["hdbscan_dist", "hdbscan_tsne", "hdbscan_umap"]
+# Simulation-only sub-methods (unchanged). Real gene families are frequently
+# small so these still apply to the simulated-data path exactly as before.
+SIM_ONLY_SKETCH_METHOD_NAMES = ["hdbscan_dist", "hdbscan_tsne"]
+
+# === NEW (real-data clustering strategy) ===
+# For real data, cluster_distance_file.py no longer runs hdbscan_dist or
+# hdbscan_tsne (both perform poorly on real data, per the pipeline change);
+# it replaces them with single-linkage connected-components clustering swept
+# over several thresholds, run directly on the sparse nearest-neighbour
+# distance graph via networkx. hdbscan_umap is unaffected and still produced
+# for both simulated and real data. These threshold values/label names must
+# match cluster_distance_file.CONNECTED_COMPONENTS_THRESHOLDS and its
+# f"connected_components_t{threshold}" label naming exactly.
+CONNECTED_COMPONENTS_THRESHOLDS = (0.01, 0.05, 0.1, 0.15, 0.2, 0.3)
+CONNECTED_COMPONENTS_METHOD_NAMES = [
+    f"connected_components_t{threshold}" for threshold in CONNECTED_COMPONENTS_THRESHOLDS
+]
+
+# SKETCH_METHOD_NAMES is the union of every sub-method name that can appear
+# under the "sketch" clusterer's clusters.tsv "method" column, across BOTH
+# pipelines. Simulated-data runs only ever emit SIM_ONLY_SKETCH_METHOD_NAMES
+# + "hdbscan_umap"; real-data runs only ever emit
+# CONNECTED_COMPONENTS_METHOD_NAMES + "hdbscan_umap" (see cluster_distance_
+# file.py's --sparse branch). Keeping one combined list means every place
+# below that families/italicises/excludes-from-c-sweep "sketch" sub-methods
+# (by checking membership in SKETCH_METHOD_NAMES) works unchanged for
+# whichever pipeline actually produced the data, with no per-mode branching
+# needed at each call site.
+SKETCH_METHOD_NAMES = (
+    SIM_ONLY_SKETCH_METHOD_NAMES + ["hdbscan_umap"] + CONNECTED_COMPONENTS_METHOD_NAMES
+)
 
 EMBED_METHOD_NAMES = ["embed_hdbscan_raw", "embed_hdbscan_tsne", "embed_hdbscan_umap"]
 
@@ -100,6 +138,17 @@ FANCYDICT = {
     "hdbscan_tsne/nt": "Sketch - t-SNE* (NT)",
     "hdbscan_umap/nt": "Sketch - UMAP* (NT)",
 
+    # === NEW (real-data clustering strategy): connected-components sweep,
+    # one entry per threshold, per seqtype ===
+    **{
+        f"connected_components_t{threshold}/aa": f"Sketch - Connected components t={threshold}* (AA)"
+        for threshold in CONNECTED_COMPONENTS_THRESHOLDS
+    },
+    **{
+        f"connected_components_t{threshold}/nt": f"Sketch - Connected components t={threshold}* (NT)"
+        for threshold in CONNECTED_COMPONENTS_THRESHOLDS
+    },
+
     "embed_hdbscan_raw/aa": "Embeddings - dist* (AA)",
     "embed_hdbscan_tsne/aa": "Embeddings - t-SNE* (AA)",
     "embed_hdbscan_umap/aa": "Embeddings - UMAP* (AA)",
@@ -121,14 +170,20 @@ COMBO_ORDER = [
     "hdbscan_dist/nt",
     "hdbscan_tsne/nt",
     "hdbscan_umap/nt",
+    # === NEW (real-data clustering strategy) ===
+    *[f"connected_components_t{threshold}/aa" for threshold in CONNECTED_COMPONENTS_THRESHOLDS],
+    *[f"connected_components_t{threshold}/nt" for threshold in CONNECTED_COMPONENTS_THRESHOLDS],
     "embed_hdbscan_raw/aa",
     "embed_hdbscan_tsne/aa",
     "embed_hdbscan_umap/aa",
 ]
 
 SKETCH_FOOTNOTE = (
-    "* Sketch/HDBSCAN methods run once per seed on a fixed embedding; "
-    "there is no c (minimum sequence identity) sweep, so no averaging over c is performed."
+    "* Sketch sub-methods (HDBSCAN on distance/t-SNE/UMAP for simulated "
+    "data; HDBSCAN on UMAP plus a single-linkage connected-components "
+    "threshold sweep for real data) run once per seed on a fixed sketch "
+    "distance matrix; there is no c (minimum sequence identity) sweep, so "
+    "no averaging over c is performed."
 )
 
 EMBED_FOOTNOTE = (
@@ -181,6 +236,23 @@ CONFIGDICT_COLOURS = {
     "hdbscan_dist/nt": "#5DA12F",
     "hdbscan_tsne/nt": "#34751B",
     "hdbscan_umap/nt": "#7FBE5A",
+
+    # === NEW (real-data clustering strategy): a green gradient across
+    # thresholds, distinct from the hdbscan_* greens above ===
+    **{
+        f"connected_components_t{threshold}/aa": colour
+        for threshold, colour in zip(
+            CONNECTED_COMPONENTS_THRESHOLDS,
+            ["#1B4D3E", "#256B4E", "#2F8960", "#3AA671", "#52C285", "#7ADBA0"],
+        )
+    },
+    **{
+        f"connected_components_t{threshold}/nt": colour
+        for threshold, colour in zip(
+            CONNECTED_COMPONENTS_THRESHOLDS,
+            ["#123328", "#184936", "#1F5F44", "#277653", "#358C64", "#4FA47C"],
+        )
+    },
 
     "embed_hdbscan_raw/aa": "#F2A03D",
     "embed_hdbscan_tsne/aa": "#D9770B",

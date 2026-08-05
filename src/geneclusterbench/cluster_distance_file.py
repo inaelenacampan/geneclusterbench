@@ -8,6 +8,7 @@ from pathlib import Path
 
 import hdbscan
 import matplotlib.pyplot as plt
+import networkx as nx
 import numpy as np
 import scipy.sparse as sp
 from sklearn.cluster import AgglomerativeClustering, KMeans
@@ -51,6 +52,18 @@ SWEEP_MIN_SAMPLES = (1, 2, 3, 5)
 # eligible to be picked.
 SWEEP_MAX_ELIGIBLE_MIN_CLUSTER_SIZE = 8
 
+# === NEW (real-data clustering strategy) ===
+# For --sparse (real-data) runs, t-SNE-based and direct distance-based
+# ("hdbscan_dist") clustering are replaced with single-linkage connected
+# components computed directly on the sparse nearest-neighbour distance
+# graph. UMAP (embedding) + HDBSCAN-on-UMAP is left unchanged.
+#
+# A single-linkage clustering is exactly "connected components of the graph
+# where an edge (a, b) exists iff dist(a, b) <= threshold" -- so trying
+# several thresholds is equivalent to cutting the single-linkage dendrogram
+# at several heights. Edit this tuple directly to widen/narrow the sweep.
+CONNECTED_COMPONENTS_THRESHOLDS = (0.01, 0.05, 0.1, 0.15, 0.2, 0.3)
+
 
 def parse_args():
     """Read command-line options that describe input/output paths and execution resources."""
@@ -93,10 +106,13 @@ def parse_args():
             "so the file only contains a subset of pairwise distances. "
             "Missing pairs are treated as 'no measured edge' rather than "
             "filled with a placeholder distance, so no full n x n matrix is "
-            "ever built in memory. HDBSCAN and UMAP consume the sparse "
-            "matrix directly; t-SNE is attempted on the sparse precomputed "
-            "graph and is skipped (not densified) if that isn't supported "
-            "for the given data."
+            "ever built in memory. This also switches the clustering "
+            "strategy used for the final result: t-SNE and direct "
+            "distance-based ('hdbscan_dist') clustering, which both perform "
+            "poorly on real data, are skipped entirely, and single-linkage "
+            "connected-components clustering is run directly on the sparse "
+            "distance graph instead (see CONNECTED_COMPONENTS_THRESHOLDS). "
+            "UMAP + HDBSCAN-on-UMAP is unaffected and still runs."
         ),
     )
     parser.add_argument(
@@ -511,6 +527,75 @@ def fit_hdbscan_embedding(
     return model, labels
 
 
+def build_single_linkage_graph(matrix, samples):
+    """Build a networkx graph directly from the sparse nearest-neighbour
+    distance matrix, one node per sample and one weighted edge per stored
+    (measured) pairwise distance.
+
+    No additional distance filtering is applied here: the distance file
+    feeding into this script has already been restricted to each sample's
+    closest neighbours upstream (sketchlib's --knn plus the dist==1 awk
+    filter -- see SKETCH_SCAFFOLD_*_REALDATA in the submit script), so every
+    stored entry in `matrix` is used as-is as a candidate single-linkage
+    edge. Cutting this graph at different weight thresholds (see
+    connected_components_at_thresholds) is what turns it into a clustering.
+
+    Input:
+        matrix  -- scipy.sparse CSR (or dense) precomputed distance matrix.
+        samples -- list of sample names, matrix row/col i <-> samples[i].
+    Output: an undirected networkx.Graph with `weight` edge attributes.
+    """
+    graph = nx.Graph()
+    graph.add_nodes_from(range(len(samples)))
+
+    if sp.issparse(matrix):
+        coo = matrix.tocoo()
+        mask = coo.row < coo.col  # upper triangle only; matrix is symmetric
+        rows = coo.row[mask]
+        cols = coo.col[mask]
+        weights = coo.data[mask]
+    else:
+        rows, cols = np.triu_indices_from(matrix, k=1)
+        weights = matrix[rows, cols]
+
+    graph.add_weighted_edges_from(zip(rows.tolist(), cols.tolist(), weights.tolist()))
+    return graph
+
+
+def connected_components_at_thresholds(graph, n_samples, thresholds):
+    """Single-linkage clustering: for each threshold, keep only the edges of
+    `graph` with weight <= threshold and take connected components as
+    clusters. A sample with no surviving edge at a given threshold ends up
+    as its own singleton component (there is no HDBSCAN-style "noise" label
+    of -1 here -- singletons are just components of size 1).
+
+    Input:
+        graph      -- networkx.Graph from build_single_linkage_graph, with
+                      `weight` edge attributes.
+        n_samples  -- total number of samples (= graph.number_of_nodes()),
+                      passed explicitly so labels always cover every sample
+                      even if a threshold leaves some totally isolated.
+        thresholds -- iterable of distance cutoffs to try.
+    Output: dict mapping threshold -> np.ndarray of int cluster labels
+        (length n_samples, labels 0..k-1, contiguous, no gaps).
+    """
+    results = {}
+    for threshold in thresholds:
+        subgraph_edges = [
+            (u, v) for u, v, w in graph.edges(data="weight") if w <= threshold
+        ]
+        sub = nx.Graph()
+        sub.add_nodes_from(range(n_samples))
+        sub.add_edges_from(subgraph_edges)
+
+        labels = np.full(n_samples, -1, dtype=int)
+        for cluster_id, component in enumerate(nx.connected_components(sub)):
+            for node in component:
+                labels[node] = cluster_id
+        results[threshold] = labels
+    return results
+
+
 def plot_clusters(coords, labels, output_stem, formats):
     """Draw one scatter plot for a set of coordinates coloured by cluster label."""
     fig = plt.figure(1, dpi=150)
@@ -738,6 +823,18 @@ def main():
     """Run the full load, sweep, embedding, clustering, plotting, and
     reporting workflow.
 
+    Clustering strategy depends on --sparse (i.e. real-data vs simulated
+    data, see that flag's help text):
+      - Simulated data (--sparse not set): unchanged -- hdbscan_dist
+        (direct on the precomputed distance matrix), hdbscan_tsne (on a
+        t-SNE embedding) and hdbscan_umap (on a UMAP embedding) are all
+        computed.
+      - Real data (--sparse set): hdbscan_dist and hdbscan_tsne are
+        replaced by single-linkage connected-components clustering run
+        directly on the sparse nearest-neighbour distance graph (via
+        networkx), swept over CONNECTED_COMPONENTS_THRESHOLDS. UMAP +
+        hdbscan_umap is still computed.
+
     The parameter sweep now always runs (not just with --sweep): it's cheap
     relative to the rest of the pipeline, and the full pipeline needs a
     (min_cluster_size, min_samples) pair to run with anyway. --sweep is kept
@@ -808,17 +905,33 @@ def main():
     model_dir.mkdir(parents=True, exist_ok=True)
     plot_dir.mkdir(parents=True, exist_ok=True)
 
-    print("Training t-SNE")
-    t0 = time.time()
-    tsne_model, tsne_coords = fit_tsne(matrix, args.nthreads)
-    tsne_embed_time = time.time() - t0
-    timings.append(("tsne_embedding", tsne_embed_time))
-    tsne_available = tsne_coords is not None
-    if tsne_available:
-        save_pickle(model_dir / "tsne.pk", model=tsne_model, coords=tsne_coords)
+    # === Real-data (--sparse) branch: t-SNE and direct distance-based
+    # ("hdbscan_dist") clustering are both skipped -- they perform poorly on
+    # real data -- and replaced with single-linkage connected-components
+    # clustering computed directly on the sparse distance graph. UMAP +
+    # HDBSCAN-on-UMAP is unchanged either way. ===
+    real_data_mode = args.sparse
+
+    if real_data_mode:
+        tsne_model, tsne_coords = None, None
+        tsne_embed_time = 0.0
+        tsne_available = False
+        print(
+            "Skipping t-SNE (real-data mode: t-SNE-based clustering performs "
+            "poorly on real data, see --sparse help)."
+        )
     else:
-        print("t-SNE skipped (see message above); no tsne.pk written, "
-              "t-SNE plots/clustering will be omitted from this run.")
+        print("Training t-SNE")
+        t0 = time.time()
+        tsne_model, tsne_coords = fit_tsne(matrix, args.nthreads)
+        tsne_embed_time = time.time() - t0
+        timings.append(("tsne_embedding", tsne_embed_time))
+        tsne_available = tsne_coords is not None
+        if tsne_available:
+            save_pickle(model_dir / "tsne.pk", model=tsne_model, coords=tsne_coords)
+        else:
+            print("t-SNE skipped (see message above); no tsne.pk written, "
+                  "t-SNE plots/clustering will be omitted from this run.")
 
     print("Training UMAP")
     t0 = time.time()
@@ -827,27 +940,60 @@ def main():
     timings.append(("umap_embedding", umap_embed_time))
     save_pickle(model_dir / "umap.pk", model=umap_model, coords=umap_coords)
 
-    print("Clustering precomputed distances")
-    t0 = time.time()
-    hdbs_dist_model, hdbs_dist_labels = fit_hdbscan_dist(
-        matrix, args.nthreads, min_cluster_size, min_samples
-    )
-    hdbs_dist_time = time.time() - t0
-    timings.append(("hdbscan_dist_fit", hdbs_dist_time))
-    save_pickle(model_dir / "hdbs_dist.pk", model=hdbs_dist_model, labels=hdbs_dist_labels)
+    label_sets = {}
 
-    if tsne_available:
-        print("Clustering t-SNE coordinates")
-        t0 = time.time()
-        hdbs_tsne_model, hdbs_tsne_labels = fit_hdbscan_embedding(
-            tsne_coords, args.nthreads, min_cluster_size, min_samples
+    if real_data_mode:
+        print(
+            "Clustering via single-linkage connected components on the "
+            f"sparse distance graph (thresholds={CONNECTED_COMPONENTS_THRESHOLDS})"
         )
-        hdbs_tsne_time = time.time() - t0
-        timings.append(("hdbscan_tsne_fit", hdbs_tsne_time))
-        save_pickle(model_dir / "hdbs_tsne.pk", model=hdbs_tsne_model, labels=hdbs_tsne_labels)
+        t0 = time.time()
+        graph = build_single_linkage_graph(matrix, samples)
+        cc_results = connected_components_at_thresholds(
+            graph, len(samples), CONNECTED_COMPONENTS_THRESHOLDS
+        )
+        cc_time = time.time() - t0
+        timings.append(("connected_components_fit", cc_time))
+        save_pickle(
+            model_dir / "connected_components.pk",
+            thresholds=CONNECTED_COMPONENTS_THRESHOLDS,
+            labels_by_threshold=cc_results,
+        )
+        timings.append(("method_connected_components_total", cc_time))
+
+        for threshold, labels in cc_results.items():
+            label_sets[f"connected_components_t{threshold}"] = labels
+
+        hdbs_dist_model, hdbs_dist_labels = None, None
+        hdbs_dist_time = 0.0
     else:
-        hdbs_tsne_model, hdbs_tsne_labels = None, None
-        hdbs_tsne_time = 0.0
+        print("Clustering precomputed distances")
+        t0 = time.time()
+        hdbs_dist_model, hdbs_dist_labels = fit_hdbscan_dist(
+            matrix, args.nthreads, min_cluster_size, min_samples
+        )
+        hdbs_dist_time = time.time() - t0
+        timings.append(("hdbscan_dist_fit", hdbs_dist_time))
+        save_pickle(model_dir / "hdbs_dist.pk", model=hdbs_dist_model, labels=hdbs_dist_labels)
+        label_sets["hdbscan_dist"] = hdbs_dist_labels
+
+        if tsne_available:
+            print("Clustering t-SNE coordinates")
+            t0 = time.time()
+            hdbs_tsne_model, hdbs_tsne_labels = fit_hdbscan_embedding(
+                tsne_coords, args.nthreads, min_cluster_size, min_samples
+            )
+            hdbs_tsne_time = time.time() - t0
+            timings.append(("hdbscan_tsne_fit", hdbs_tsne_time))
+            save_pickle(model_dir / "hdbs_tsne.pk", model=hdbs_tsne_model, labels=hdbs_tsne_labels)
+            label_sets["hdbscan_tsne"] = hdbs_tsne_labels
+        else:
+            hdbs_tsne_model, hdbs_tsne_labels = None, None
+            hdbs_tsne_time = 0.0
+
+        timings.append(("method_hdbscan_dist_total", hdbs_dist_time))
+        if tsne_available:
+            timings.append(("method_hdbscan_tsne_total", tsne_embed_time + hdbs_tsne_time))
 
     print("Clustering UMAP coordinates")
     t0 = time.time()
@@ -857,22 +1003,9 @@ def main():
     hdbs_umap_time = time.time() - t0
     timings.append(("hdbscan_umap_fit", hdbs_umap_time))
     save_pickle(model_dir / "hdbs_umap.pk", model=hdbs_umap_model, labels=hdbs_umap_labels)
-
-    # Per-method totals: "method" here means one of the three ways of getting
-    # from the distance matrix to a final clustering. hdbscan_dist has no
-    # embedding step, so its total is just its own fit time; the other two
-    # methods pay for their embedding as well as their HDBSCAN fit.
-    timings.append(("method_hdbscan_dist_total", hdbs_dist_time))
-    if tsne_available:
-        timings.append(("method_hdbscan_tsne_total", tsne_embed_time + hdbs_tsne_time))
     timings.append(("method_hdbscan_umap_total", umap_embed_time + hdbs_umap_time))
 
-    label_sets = {
-        "hdbscan_dist": hdbs_dist_labels,
-        "hdbscan_umap": hdbs_umap_labels,
-    }
-    if tsne_available:
-        label_sets["hdbscan_tsne"] = hdbs_tsne_labels
+    label_sets["hdbscan_umap"] = hdbs_umap_labels
 
     print("Writing plots")
     t0 = time.time()
@@ -889,12 +1022,23 @@ def main():
             plot_dir / "cluster_TSNE_HDBSCAN",
             args.formats,
         )
-    plot_clusters(
-        umap_coords,
-        hdbs_dist_labels,
-        plot_dir / "cluster_UMAP_HDBSCANdist",
-        args.formats,
-    )
+    if not real_data_mode:
+        plot_clusters(
+            umap_coords,
+            hdbs_dist_labels,
+            plot_dir / "cluster_UMAP_HDBSCANdist",
+            args.formats,
+        )
+    else:
+        # Real-data mode: plot each connected-components threshold result on
+        # the UMAP embedding instead (there's no hdbscan_dist to plot).
+        for threshold in CONNECTED_COMPONENTS_THRESHOLDS:
+            plot_clusters(
+                umap_coords,
+                label_sets[f"connected_components_t{threshold}"],
+                plot_dir / f"cluster_UMAP_ConnectedComponents_t{threshold}",
+                args.formats,
+            )
     plot_clusters(
         umap_coords,
         hdbs_umap_labels,

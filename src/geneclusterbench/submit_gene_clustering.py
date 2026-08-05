@@ -138,6 +138,17 @@ SKETCH_SCAFFOLD_NT = (
 # scipy.sparse matrix (only the measured pairs are stored -- missing pairs
 # are treated as "not measured", never filled with a placeholder distance)
 # and clustered/embedded without ever materialising a dense n x n matrix.
+#
+# --sparse also switches cluster_distance_file.py's clustering strategy:
+# t-SNE-based and direct distance-based ("hdbscan_dist") clustering are
+# skipped (both perform poorly on real data), and single-linkage
+# connected-components clustering is run directly on this sparse distance
+# graph instead, via networkx, swept over several distance thresholds. No
+# further distance filtering is applied beyond the dist==1 awk filter
+# already done above -- the sparse matrix's stored entries are used as-is
+# as candidate graph edges. UMAP + HDBSCAN-on-UMAP is unaffected and still
+# runs. See cluster_distance_file.py's CONNECTED_COMPONENTS_THRESHOLDS and
+# its --sparse help text for details.
 SKETCH_SCAFFOLD_AA_REALDATA = (
     "mkdir -p {workdir} && mkdir -p {sketchdir} && "
     "cd {workdir} && "
@@ -1217,7 +1228,12 @@ def main():
         help="Use the real-data (Prokka-annotated ERR* samples) workflow "
              "instead of simulated assemblies. Only cdhit, mmseqs2, diamond, "
              "panaroo, ppanggolin, panta, panx and sketch are supported in "
-             "this mode; any other --process value is skipped with a warning.",
+             "this mode; any other --process value is skipped with a warning. "
+             "For 'sketch', this mode clusters via UMAP+HDBSCAN and a "
+             "single-linkage connected-components threshold sweep on the "
+             "sparse nearest-neighbour distance graph; t-SNE-based and "
+             "direct distance-based ('hdbscan_dist') clustering, which both "
+             "perform poorly on real data, are not run.",
     )
     parser.add_argument(
         "--real-datapath", default=DEFAULT_REAL_DATAPATH,
