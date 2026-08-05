@@ -30,6 +30,7 @@ import argparse
 import re
 import itertools
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 
 import numpy as np
 import pandas as pd
@@ -373,16 +374,41 @@ def compute_diversity_across_seeds(diversity_root, seeds, k=21, sketch_size=1000
     if not tasks:
         return pd.DataFrame(columns=["seed", "n_isolates", "nucleotide_diversity"])
 
-    n_workers = n_workers or int(
-        os.environ.get("SLURM_CPUS_PER_TASK")
-        or os.environ.get("LSB_DJOB_NUMPROC")
-        or os.cpu_count()
-        or 1
-    )
+    if n_workers is None:
+        if os.environ.get("SLURM_CPUS_PER_TASK") or os.environ.get("LSB_DJOB_NUMPROC"):
+            # Running under a scheduler: trust the allocation given to the job.
+            n_workers = int(
+                os.environ.get("SLURM_CPUS_PER_TASK")
+                or os.environ.get("LSB_DJOB_NUMPROC")
+            )
+        else:
+            # No scheduler env vars -> likely running interactively on a
+            # shared/login node. os.cpu_count() reports the whole node's
+            # core count, not any per-user memory/CPU limit, so spawning
+            # that many workers can OOM-kill worker processes (which
+            # surfaces as an opaque BrokenProcessPool). Fall back to a
+            # small, conservative worker count instead.
+            n_workers = min(4, os.cpu_count() or 1)
 
     rows = []
-    with ProcessPoolExecutor(max_workers=n_workers) as executor:
-        for seed, n_iso, div in executor.map(_seed_diversity_task, tasks):
+    print(f"  Using {n_workers} worker process(es) for diversity computation.")
+    try:
+        with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            for seed, n_iso, div in executor.map(_seed_diversity_task, tasks):
+                msg = f"pi proxy = {div:.6g}" if not np.isnan(div) else "pi proxy = NA"
+                print(f"  Seed {seed}: {n_iso} isolates -> {msg}")
+                rows.append({"seed": seed, "n_isolates": n_iso, "nucleotide_diversity": div})
+    except BrokenProcessPool:
+        print(
+            "  WARNING: a worker process died unexpectedly (likely killed by "
+            "the OS/cgroup for exceeding a memory limit, or a segfault). "
+            "Retrying this step sequentially in the main process, which is "
+            "slower but will surface the real error if there is one and "
+            "avoids the memory spike of many concurrent workers."
+        )
+        rows = []
+        for t in tasks:
+            seed, n_iso, div = _seed_diversity_task(t)
             msg = f"pi proxy = {div:.6g}" if not np.isnan(div) else "pi proxy = NA"
             print(f"  Seed {seed}: {n_iso} isolates -> {msg}")
             rows.append({"seed": seed, "n_isolates": n_iso, "nucleotide_diversity": div})
