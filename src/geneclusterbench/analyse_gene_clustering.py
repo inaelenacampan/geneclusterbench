@@ -56,9 +56,10 @@ CLUSTERERS = [
 # Real biological data has no ground truth and gene IDs are not in the
 # "geneid_N" simulation format, so of the original CLUSTERERS list above we
 # restrict real-data analysis to only the methods that were explicitly
-# requested: CD-HIT, DIAMOND, and MMseqs2. This list is only consumed by the
-# new *_realdata functions below; it never touches the simulations code path.
-REAL_DATA_CLUSTERERS = ["cdhit", "mmseqs2", "diamond", "panaroo", "ppanggolin", "panta", "panx"]
+# requested: CD-HIT, DIAMOND, MMseqs2, Panaroo, Ppanggolin, Panta, PanX, and
+# (sketch-based) HDBSCAN. This list is only consumed by the new *_realdata
+# functions below; it never touches the simulations code path.
+REAL_DATA_CLUSTERERS = ["cdhit", "mmseqs2", "diamond", "panaroo", "ppanggolin", "panta", "panx", "sketch"]
 
 SEQTYPES = ["nt", "aa"]
 PARAMORDER = ["st", "c"]
@@ -1583,6 +1584,63 @@ def get_dfs_from_sketch(folderpath, true_max_gene=None):
     return outdict
 
 
+# === NEW (real-data support) ===================================
+def get_dfs_from_sketch_realdata(folderpath):
+    """Real-data equivalent of get_dfs_from_sketch, following the same
+    "restrict to what real data actually needs" rationale as
+    get_df_from_clusterer_realdata's docstring.
+
+    Differences from get_dfs_from_sketch, and why:
+      1. No "geneid_0_1" -> "geneid_0" isoform-suffix stripping. That
+         stripping only existed because the simulation pipeline encodes an
+         extra isoform-style suffix onto its synthetic "geneid_N" ids. Real
+         gene IDs are already correct as-is (per the real-data run), so the
+         "member" column is used unmodified.
+      2. No true_max_gene padding, and consequently no extra "unassigned"
+         pseudo-cluster for padded genes -- both existed purely to align a
+         clusterer's gene universe with the ground-truth gene universe
+         (see get_purity), and there is no ground truth for real data.
+         Every gene sketch actually emitted a row for is simply used as-is.
+      3. Gene lists are sorted lexically rather than by parsing out a
+         numeric "geneid_N" suffix, since real gene IDs (locus tags,
+         accessions, etc.) have no such guaranteed structure. Sort order
+         has no effect on any downstream metric.
+
+    Input:
+        folderpath -- path to the sketch method's result folder.
+    Output: dict mapping sub-method name (e.g. "hdbscan_dist") -> a
+        (cluster_id x gene_id) DataFrame in the same -1.0/1.0 convention
+        as get_df_from_clusterer_realdata. Returns {} if the expected
+        clusters.tsv file is missing (this sketch run didn't complete/
+        wasn't run).
+    """
+    tsv_path = os.path.join(folderpath, "distance_clustering", "clusters.tsv")
+    if not os.path.isfile(tsv_path):
+        return {}
+
+    alldf = pd.read_csv(tsv_path, sep="\t")
+
+    outdict = {}
+    for method_name, methoddf in alldf.groupby("method"):
+        genelist = sorted(set(methoddf["member"]))
+
+        cluster_ids = sorted(methoddf["cluster_id"].unique())
+        cluster_to_genes = methoddf.groupby("cluster_id")["member"].apply(set)
+
+        listoflists = []
+        for cluster_index, cid in enumerate(cluster_ids):
+            genes_in_cluster = cluster_to_genes[cid]
+            row = [cluster_index] + [
+                1.0 if gene in genes_in_cluster else -1.0 for gene in genelist
+            ]
+            listoflists.append(row)
+
+        outdf = pd.DataFrame(listoflists, columns=["cluster_id"] + genelist)
+        outdict[method_name] = outdf.set_index("cluster_id")
+
+    return outdict
+
+
 def get_dfs_from_embeddings(folderpath, true_max_gene=None):
     """Embeddings/HDBSCAN equivalent of get_dfs_from_sketch: parses the
     embeddings clustering output (multiple sub-methods in one
@@ -2119,7 +2177,13 @@ def _process_one_realdata_folder(args):
 
     Returns None if this folder should be skipped (wrong clusterer, bad
     params, disabled combo, missing expected output file), otherwise a
-    dict with everything the caller needs to fold into its accumulators.
+    LIST of result dicts (everything the caller needs to fold into its
+    accumulators) -- a list rather than a single dict because, like the
+    simulation "sketch" branch in get_info_from_folder, one sketch result
+    folder can contain several sub-methods (hdbscan_dist/hdbscan_tsne/
+    hdbscan_umap) sharing one clusters.tsv, each of which needs its own
+    row/combo_key. Every other (single-method) clusterer still returns a
+    one-element list, so callers can always just flatten and iterate.
     """
     folderpath, folder_name, theass, theseed = args
 
@@ -2178,6 +2242,83 @@ def _process_one_realdata_folder(args):
     if not check_status_of_folder(tmpclusterer, folderpath):
         return None
 
+    paramlist = [
+        paramdict[el] if el in paramdict else (tmpseqtype if el == "st" else DEFAULT_PARAMS[el])
+        for el in PARAMORDER
+    ]
+    c_value = paramlist[PARAMORDER.index("c")]
+
+    # === NEW (real-data support): sketch/HDBSCAN branch =================
+    # Same logic as the simulation path's "sketch" branch in
+    # get_info_from_folder, adapted for real data the same way
+    # get_df_from_clusterer_realdata adapts the other clusterers: no
+    # true_max_gene padding, and IDs are used exactly as they come out of
+    # clusters.tsv (they're already correct real gene IDs, so -- per the
+    # real-data run -- no extra mapping/modification is needed before they
+    # go into a result row/outdf). One sketch folder can hold several
+    # sub-methods (hdbscan_dist/hdbscan_tsne/hdbscan_umap), so this branch
+    # returns one list entry per sub-method rather than a single dict.
+    if tmpclusterer == "sketch":
+        print(f"\t\t- Reading sketch ({tmpseqtype}) from {folderpath} ...")
+        sketch_dfs = get_dfs_from_sketch_realdata(folderpath)
+        if not sketch_dfs:
+            warnings.warn(
+                f"No sketch clusters.tsv files found in {folderpath}",
+                RuntimeWarning, stacklevel=2,
+            )
+            return None
+
+        runtime_path = os.path.join(folderpath, "timebenchmark.txt")
+        runtime = get_time_diff_from_file(runtime_path) if os.path.isfile(runtime_path) else np.nan
+
+        # Prefer the per-method runtime breakdown, exactly as the
+        # simulation path does, when it's available.
+        time_per_method_path = os.path.join(folderpath, "distance_clustering", "time_per_method.txt")
+        method_runtimes = {}
+        if os.path.isfile(time_per_method_path):
+            method_runtimes = parse_time_per_method_file(time_per_method_path)
+
+        results = []
+        for method_name, thedf in sketch_dfs.items():
+            n_clusters = len(thedf.index)
+            n_singletons = count_singleton_clusters(thedf)
+            n_pairs = count_pairs_clusters(thedf)
+            method_runtime = method_runtimes.get(f"method_{method_name}_total", runtime)
+            print(
+                f"\t\t  done: {method_name} ({tmpseqtype}) -> "
+                f"{n_clusters} clusters, {len(thedf.columns)} genes, "
+                f"runtime={method_runtime if not (isinstance(method_runtime, float) and np.isnan(method_runtime)) else 'n/a'}s"
+            )
+
+            # Truth-dependent columns are NaN for real data, same as every
+            # other real-data row -- see the non-sketch branch below.
+            row = (
+                [False, theass, theseed, method_name,
+                 np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+                + [n_clusters, n_singletons, n_pairs]
+                + paramlist
+                + [method_runtime]
+            )
+
+            # IDs coming out of get_dfs_from_sketch_realdata are already the
+            # correct real-data gene IDs, so they go straight into
+            # genes/labels (and from there into outdf) with no mapping.
+            genes_i, labels_i = get_labels_list_from_df(thedf)
+
+            # Sketch/HDBSCAN methods have no c sweep, so always capture
+            # them for the pairwise method-vs-method comparisons (same as
+            # the simulation path).
+            combo_key = f"{method_name}/{tmpseqtype}"
+
+            results.append({
+                "row": row,
+                "genes": genes_i,
+                "labels": labels_i,
+                "combo_key": combo_key,
+                "n_refound": 0,
+            })
+        return results
+
     # === Per-method progress prints (real-data mode) ===
     # Printed from whichever process (main, or a Pool worker) handles this
     # folder -- with -j > 1 these interleave across methods running at the
@@ -2194,10 +2335,6 @@ def _process_one_realdata_folder(args):
         f"{n_clusters} clusters, {len(thedf.columns)} genes, "
         f"runtime={runtime if not np.isnan(runtime) else 'n/a'}s"
     )
-    paramlist = [
-        paramdict[el] if el in paramdict else (tmpseqtype if el == "st" else DEFAULT_PARAMS[el])
-        for el in PARAMORDER
-    ]
 
     # Truth-dependent columns (ARI, purity, AMI, v-measure, ...) do not
     # exist for real data -> NaN, but the row shape is kept identical to
@@ -2225,10 +2362,9 @@ def _process_one_realdata_folder(args):
 
     # Only keep the default-c run for the pairwise method-vs-method
     # comparisons, exactly as the simulation path does.
-    c_value = paramlist[PARAMORDER.index("c")]
     combo_key = f"{tmpclusterer}/{tmpseqtype}" if c_value == DEFAULT_PARAMS["c"] else None
 
-    return {
+    return [{
         "row": row,
         "genes": genes_i,
         "labels": labels_i,
@@ -2238,7 +2374,7 @@ def _process_one_realdata_folder(args):
         # meaningful when combo_key is not None (default-c run), same
         # scoping as genes/labels above.
         "n_refound": n_refound,
-    }
+    }]
 
 
 def get_info_from_folder_realdata(theargs, nthreads=1):
@@ -2330,14 +2466,19 @@ def get_info_from_folder_realdata(theargs, nthreads=1):
     # (equivalent to 0 added genes).
     n_refound_out = {}
     all_genes_seen = set()
-    for result in raw_results:
-        if result is None:
+    # === CHANGE: each folder task now returns a LIST of result dicts
+    # (usually one, but several for a sketch folder's sub-methods -- see
+    # _process_one_realdata_folder's docstring), so flatten before folding
+    # into the accumulators below. ===
+    for folder_results in raw_results:
+        if not folder_results:
             continue
-        listoflists.append(result["row"])
-        all_genes_seen.update(result["genes"])
-        if result["combo_key"] is not None:
-            method_labels_out[result["combo_key"]] = dict(zip(result["genes"], result["labels"]))
-            n_refound_out[result["combo_key"]] = result.get("n_refound", 0)
+        for result in folder_results:
+            listoflists.append(result["row"])
+            all_genes_seen.update(result["genes"])
+            if result["combo_key"] is not None:
+                method_labels_out[result["combo_key"]] = dict(zip(result["genes"], result["labels"]))
+                n_refound_out[result["combo_key"]] = result.get("n_refound", 0)
 
     if not listoflists:
         warnings.warn(
