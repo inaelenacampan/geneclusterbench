@@ -37,6 +37,29 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# All text (titles, axis labels, tick labels, legends, etc.) is fixed at a
+# small, uniform font size of 5. Since the number of simulations/seeds has
+# grown, figures are made proportionally larger (see FIGSIZE_SCALE and the
+# per-plot figsize values below) so that a fontsize-5 label doesn't look
+# lost or crowded on a small canvas.
+FONT_SIZE = 5
+plt.rcParams.update({
+    "font.size": FONT_SIZE,
+    "axes.titlesize": FONT_SIZE,
+    "axes.labelsize": FONT_SIZE,
+    "xtick.labelsize": FONT_SIZE,
+    "ytick.labelsize": FONT_SIZE,
+    "legend.fontsize": FONT_SIZE,
+    "legend.title_fontsize": FONT_SIZE,
+    "figure.titlesize": FONT_SIZE,
+})
+
+# Multiplier applied to every hardcoded plt.figure(figsize=(...)) call
+# below, so figures stay large/legible even though the font is now tiny
+# and the number of simulations (and thus data density / legend entries)
+# has increased.
+FIGSIZE_SCALE = 1.8
+
 from itertools import combinations
 from scipy.spatial.distance import pdist, squareform
 from scipy.cluster.hierarchy import linkage, dendrogram
@@ -375,7 +398,7 @@ def plot_nucleotide_diversity(diversity_df, out, assembly_name=None):
 
     diversity_df = diversity_df.sort_values("nucleotide_diversity")
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(18, 10.8))
 
     sns.barplot(
         data=diversity_df,
@@ -385,7 +408,7 @@ def plot_nucleotide_diversity(diversity_df, out, assembly_name=None):
         color="steelblue"
     )
 
-    plt.xticks(rotation=90, fontsize=7)
+    plt.xticks(rotation=90, fontsize=FONT_SIZE)
     plt.xlabel("Seed")
     plt.ylabel("Nucleotide diversity")
     title = "Nucleotide diversity across simulated populations"
@@ -408,7 +431,7 @@ def plot_diversity_comparison(diversity_all_df, out):
         print("No diversity data to compare.")
         return
 
-    plt.figure(figsize=(max(6, 1.5 * diversity_all_df["assembly"].nunique()), 6))
+    plt.figure(figsize=(FIGSIZE_SCALE * max(6, 1.5 * diversity_all_df["assembly"].nunique()), FIGSIZE_SCALE * 6))
 
     order = sorted(diversity_all_df["assembly"].unique())
     palette = sns.color_palette("tab10", len(order))
@@ -434,11 +457,11 @@ def plot_diversity_comparison(diversity_all_df, out):
         alpha=0.6
     )
 
-    plt.xticks(rotation=30, ha="right", fontsize=8)
-    plt.yticks(fontsize=8)
-    plt.xlabel("Assembly", fontsize=9)
-    plt.ylabel("Nucleotide diversity", fontsize=9)
-    plt.title("Nucleotide diversity across assemblies (one point per seed)", fontsize=10)
+    plt.xticks(rotation=30, ha="right", fontsize=FONT_SIZE)
+    plt.yticks(fontsize=FONT_SIZE)
+    plt.xlabel("Assembly", fontsize=FONT_SIZE)
+    plt.ylabel("Nucleotide diversity", fontsize=FONT_SIZE)
+    plt.title("Nucleotide diversity across assemblies (one point per seed)", fontsize=FONT_SIZE)
 
     plt.tight_layout()
     plt.savefig(
@@ -456,7 +479,7 @@ def plot_gene_length_distribution(gff_df, out):
 
     lengths = gff_df["end"] - gff_df["start"] + 1
 
-    plt.figure(figsize=(7, 6))
+    plt.figure(figsize=(12.6, 10.8))
     sns.histplot(lengths, bins=60, kde=True)
     plt.xlabel("Gene length (bp)")
     plt.ylabel("Count")
@@ -470,7 +493,7 @@ def plot_gene_density(gff_df, out):
 
     midpoint = (gff_df["start"] + gff_df["end"]) / 2
 
-    plt.figure(figsize=(10, 4))
+    plt.figure(figsize=(18, 7.2))
     sns.histplot(midpoint, bins=100)
     plt.xlabel("Genome position")
     plt.ylabel("Number of genes")
@@ -484,7 +507,7 @@ def plot_strand_bias(gff_df, out):
 
     counts = gff_df["strand"].value_counts()
 
-    plt.figure(figsize=(5, 5))
+    plt.figure(figsize=(9, 9))
     plt.pie(counts.values, labels=counts.index, autopct="%1.1f%%")
     plt.title("Strand orientation")
     plt.savefig(os.path.join(out, "strand_bias.png"), dpi=300)
@@ -500,7 +523,7 @@ def plot_intergenic_distances(gff_df, out):
 
     distances = np.maximum(0, starts[1:] - ends[:-1])
 
-    plt.figure(figsize=(7, 5))
+    plt.figure(figsize=(12.6, 9))
     sns.histplot(distances, bins=60)
     plt.xlabel("Intergenic distance (bp)")
     plt.ylabel("Frequency")
@@ -515,7 +538,7 @@ def plot_genome_architecture(gff_df, out, max_genes=300):
     gff_df = gff_df.sort_values("start")
     subset = gff_df.iloc[:max_genes]
 
-    plt.figure(figsize=(14, 3))
+    plt.figure(figsize=(25.2, 5.4))
 
     for _, row in subset.iterrows():
         color = "royalblue" if row["strand"] == "+" else "firebrick"
@@ -564,7 +587,7 @@ def plot_rarefaction_cloud(accumulations, out, seeds=None, assembly_name=None):
     sd = arr.std(axis=0)
     x = np.arange(1, len(mean) + 1)
 
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(14.4, 10.8))
 
     if seeds is not None:
         palette = sns.color_palette("husl", len(seeds))
@@ -578,18 +601,18 @@ def plot_rarefaction_cloud(accumulations, out, seeds=None, assembly_name=None):
     plt.fill_between(x, mean - sd, mean + sd, alpha=0.3)
 
     if seeds is not None:
-        legend = plt.legend(title="Seed", fontsize=5, ncol=2, bbox_to_anchor=(1.02, 1), loc="upper left")
+        legend = plt.legend(title="Seed", fontsize=FONT_SIZE, ncol=2, bbox_to_anchor=(1.02, 1), loc="upper left")
         if legend is not None and legend.get_title() is not None:
-            legend.get_title().set_fontsize(6)
+            legend.get_title().set_fontsize(FONT_SIZE)
 
-    plt.xlabel("Number of isolates", fontsize=9)
-    plt.ylabel("Pangenome size", fontsize=9)
-    plt.xticks(fontsize=8)
-    plt.yticks(fontsize=8)
+    plt.xlabel("Number of isolates", fontsize=FONT_SIZE)
+    plt.ylabel("Pangenome size", fontsize=FONT_SIZE)
+    plt.xticks(fontsize=FONT_SIZE)
+    plt.yticks(fontsize=FONT_SIZE)
     title = "Pangenome rarefaction (per seed)"
     if assembly_name:
         title += f" - {assembly_name}"
-    plt.title(title, fontsize=10)
+    plt.title(title, fontsize=FONT_SIZE)
 
     plt.tight_layout()
     plt.savefig(os.path.join(out, "rarefaction_cloud.png"), dpi=300)
@@ -599,7 +622,7 @@ def plot_rarefaction_cloud(accumulations, out, seeds=None, assembly_name=None):
 def plot_rarefaction_comparison(accum_by_assembly, out):
     """Mean +/- sd rarefaction curve per assembly, overlaid for comparison."""
 
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(14.4, 10.8))
     palette = sns.color_palette("tab10", len(accum_by_assembly))
 
     for (assembly_name, accumulations), colour in zip(accum_by_assembly.items(), palette):
@@ -616,7 +639,7 @@ def plot_rarefaction_comparison(accum_by_assembly, out):
     plt.xlabel("Number of isolates")
     plt.ylabel("Pangenome size")
     plt.title("Pangenome rarefaction - assembly comparison")
-    plt.legend(title="Assembly", fontsize=8)
+    plt.legend(title="Assembly", fontsize=FONT_SIZE)
     plt.tight_layout()
     plt.savefig(os.path.join(out, "rarefaction_cloud_comparison.png"), dpi=300)
     plt.close()
@@ -633,7 +656,7 @@ def plot_core_decay(core_curves, out, seeds=None, assembly_name=None):
     sd = arr.std(axis=0)
     x = np.arange(1, len(mean) + 1)
 
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(14.4, 10.8))
 
     if seeds is not None:
         palette = sns.color_palette("husl", len(seeds))
@@ -647,7 +670,7 @@ def plot_core_decay(core_curves, out, seeds=None, assembly_name=None):
     plt.fill_between(x, mean - sd, mean + sd, alpha=0.3)
 
     if seeds is not None:
-        plt.legend(title="Seed", fontsize=6, ncol=2, bbox_to_anchor=(1.02, 1), loc="upper left")
+        plt.legend(title="Seed", fontsize=FONT_SIZE, ncol=2, bbox_to_anchor=(1.02, 1), loc="upper left")
 
     plt.xlabel("Number of isolates")
     plt.ylabel("Core genes")
@@ -664,7 +687,7 @@ def plot_core_decay(core_curves, out, seeds=None, assembly_name=None):
 def plot_core_decay_comparison(core_by_assembly, out):
     """Mean +/- sd core-decay curve per assembly, overlaid for comparison."""
 
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(14.4, 10.8))
     palette = sns.color_palette("tab10", len(core_by_assembly))
 
     for (assembly_name, cores), colour in zip(core_by_assembly.items(), palette):
@@ -681,7 +704,7 @@ def plot_core_decay_comparison(core_by_assembly, out):
     plt.xlabel("Number of isolates")
     plt.ylabel("Core genes")
     plt.title("Core genome decay - assembly comparison")
-    plt.legend(title="Assembly", fontsize=8)
+    plt.legend(title="Assembly", fontsize=FONT_SIZE)
     plt.tight_layout()
     plt.savefig(os.path.join(out, "core_decay_comparison.png"), dpi=300)
     plt.close()
@@ -695,7 +718,7 @@ def plot_frequency_spectrum(mat, out, assembly_name=None):
 
     freq = mat.sum(axis=1)
 
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(14.4, 10.8))
     plt.hist(freq, bins=np.arange(1, mat.shape[1] + 2), log=True)
     plt.xlabel("Number of isolates carrying gene")
     plt.ylabel("Genes (log scale)")
@@ -714,7 +737,7 @@ def plot_rank_abundance(mat, out, assembly_name=None):
     freq = mat.sum(axis=1)
     freq = np.sort(freq.values)[::-1]
 
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(14.4, 10.8))
     plt.plot(np.arange(1, len(freq) + 1), freq)
     plt.yscale("log")
     plt.xlabel("Gene rank")
@@ -738,7 +761,7 @@ def plot_core_shell_cloud(mat, out, assembly_name=None):
     shell = ((prevalence >= 0.15) & (prevalence < 0.95)).sum()
     cloud = (prevalence < 0.15).sum()
 
-    plt.figure(figsize=(6, 6))
+    plt.figure(figsize=(10.8, 10.8))
     plt.pie(
         [core, shell, cloud],
         labels=[f"Core ({core})", f"Shell ({shell})", f"Cloud ({cloud})"],
@@ -764,7 +787,7 @@ def plot_pca(mat, out, assembly_name=None):
     pc1 = pca.explained_variance_ratio_[0] * 100
     pc2 = pca.explained_variance_ratio_[1] * 100
 
-    plt.figure(figsize=(7, 6))
+    plt.figure(figsize=(12.6, 10.8))
     plt.scatter(scores[:, 0], scores[:, 1], alpha=0.7, s=30)
     plt.xlabel(f"PC1 ({pc1:.1f}%)")
     plt.ylabel(f"PC2 ({pc2:.1f}%)")
@@ -784,7 +807,7 @@ def plot_jaccard_heatmap(mat, out, assembly_name=None):
     dist = pdist(X, metric="jaccard")
     similarity = 1 - squareform(dist)
 
-    plt.figure(figsize=(10, 8))
+    plt.figure(figsize=(18, 14.4))
     sns.heatmap(similarity, cmap="viridis")
     plt.title("Jaccard similarity heatmap" + (f" - {assembly_name}" if assembly_name else ""))
     plt.tight_layout()
@@ -801,7 +824,7 @@ def plot_dendrogram(mat, out, assembly_name=None):
     X = mat.T.values
     Z = linkage(X, method="average", metric="jaccard")
 
-    plt.figure(figsize=(12, 5))
+    plt.figure(figsize=(21.6, 9))
     dendrogram(Z, no_labels=True)
     plt.title("Hierarchical clustering" + (f" - {assembly_name}" if assembly_name else ""))
     plt.tight_layout()
@@ -837,16 +860,16 @@ def plot_openness(accumulations, out, seeds=None, assembly_name=None):
 
     alphas = estimate_heaps(accumulations)
 
-    plt.figure(figsize=(6, 6))
+    plt.figure(figsize=(10.8, 10.8))
     sns.boxplot(y=alphas, color="steelblue", showfliers=False)
     sns.stripplot(y=alphas, color="black", size=5, jitter=0.05)
 
-    plt.ylabel("Heaps alpha", fontsize=9)
-    plt.yticks(fontsize=8)
-    plt.xticks(fontsize=8)
+    plt.ylabel("Heaps alpha", fontsize=FONT_SIZE)
+    plt.yticks(fontsize=FONT_SIZE)
+    plt.xticks(fontsize=FONT_SIZE)
     plt.title(
         "Pangenome openness (one point per seed)" + (f" - {assembly_name}" if assembly_name else ""),
-        fontsize=9
+        fontsize=FONT_SIZE
     )
     plt.tight_layout()
     plt.savefig(os.path.join(out, "heaps_alpha.png"), dpi=300)
@@ -875,7 +898,7 @@ def plot_openness_comparison(alphas_by_assembly, out):
     order = sorted(alphas_by_assembly.keys())
     palette = sns.color_palette("tab10", len(order))
 
-    plt.figure(figsize=(max(6, 1.5 * len(order)), 6))
+    plt.figure(figsize=(FIGSIZE_SCALE * max(6, 1.5 * len(order)), FIGSIZE_SCALE * 6))
 
     sns.boxplot(
         data=df,
@@ -898,11 +921,11 @@ def plot_openness_comparison(alphas_by_assembly, out):
         alpha=0.7
     )
 
-    plt.xticks(rotation=30, ha="right", fontsize=8)
-    plt.yticks(fontsize=8)
-    plt.xlabel("Assembly", fontsize=9)
-    plt.ylabel("Heaps alpha", fontsize=9)
-    plt.title("Pangenome openness - assembly comparison (one point per seed)", fontsize=10)
+    plt.xticks(rotation=30, ha="right", fontsize=FONT_SIZE)
+    plt.yticks(fontsize=FONT_SIZE)
+    plt.xlabel("Assembly", fontsize=FONT_SIZE)
+    plt.ylabel("Heaps alpha", fontsize=FONT_SIZE)
+    plt.title("Pangenome openness - assembly comparison (one point per seed)", fontsize=FONT_SIZE)
 
     plt.tight_layout()
     plt.savefig(os.path.join(out, "heaps_alpha_comparison.png"), dpi=300)
@@ -918,7 +941,7 @@ def plot_pangenome_size_comparison(summary_df, out):
 
     order = sorted(summary_df["assembly"].unique())
 
-    plt.figure(figsize=(max(6, 1.5 * len(order)), 6))
+    plt.figure(figsize=(FIGSIZE_SCALE * max(6, 1.5 * len(order)), FIGSIZE_SCALE * 6))
 
     sns.boxplot(
         data=summary_df,
@@ -969,7 +992,7 @@ def core_accessory_trajectory(mat):
 
 def plot_phase_space(mats, out, assembly_name=None):
 
-    plt.figure(figsize=(7, 6))
+    plt.figure(figsize=(12.6, 10.8))
 
     for mat in mats:
         core, accessory = core_accessory_trajectory(mat)
