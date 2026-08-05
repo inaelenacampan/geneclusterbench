@@ -307,31 +307,74 @@ def choose_best_combination(
       1. Rule out combos with min_cluster_size above the eligible threshold
          (biology: real gene families are often small, so large thresholds
          just discard genuine small families as noise).
-      2. Among the survivors, pick the highest relative_validity_ (HDBSCAN's
-         internal DBCV approximation). Ties are broken by higher mean
-         cluster persistence, then by lower noise fraction.
+      2. Among the survivors, prefer combos with a valid relative_validity_
+         (HDBSCAN's internal DBCV approximation) and pick the highest one.
+         Ties are broken by higher mean cluster persistence, then by lower
+         noise fraction.
+
+    relative_validity_ needs a (mostly) connected mutual-reachability graph.
+    On real data built from a restricted-kNN sparse distance file (e.g.
+    sketchlib --knn 1000 on >100k samples, optionally further thinned by
+    filtering out distance==1 pairs), that graph can be disconnected enough
+    that relative_validity_ comes back NaN for *every* combo in the sweep --
+    this isn't specific to any one min_cluster_size/min_samples pair, so
+    there's nothing a stricter/looser parameter choice can do about it, and
+    treating it as a hard requirement makes the whole run fail. In that case
+    we fall back to mean_cluster_persistence (which doesn't depend on the
+    same connectivity assumption) as the selection metric instead.
     """
-    eligible = [
-        r
-        for r in results
-        if r["min_cluster_size"] <= max_eligible_min_cluster_size
-        and r["relative_validity"] is not None
-    ]
-    if not eligible:
+    candidates = [r for r in results if r["min_cluster_size"] <= max_eligible_min_cluster_size]
+    if not candidates:
         raise RuntimeError(
-            "No eligible HDBSCAN parameter combination found in the sweep "
-            f"(min_cluster_size <= {max_eligible_min_cluster_size} with a "
-            "valid relative_validity_ score)."
+            "No HDBSCAN parameter combination in the sweep has "
+            f"min_cluster_size <= {max_eligible_min_cluster_size}."
         )
 
+    eligible = [r for r in candidates if r["relative_validity"] is not None]
+
+    if eligible:
+        best = max(
+            eligible,
+            key=lambda r: (
+                r["relative_validity"],
+                r["mean_cluster_persistence"] or float("-inf"),
+                -r["noise_fraction"],
+            ),
+        )
+        best["selection_metric"] = "relative_validity"
+        return best
+
+    # No combo produced a valid relative_validity_ score (likely a
+    # disconnected mutual-reachability graph from a restricted-kNN sparse
+    # distance file). Fall back to mean_cluster_persistence.
+    persistence_candidates = [
+        r for r in candidates if r["mean_cluster_persistence"] is not None
+    ]
+    if not persistence_candidates:
+        raise RuntimeError(
+            "No eligible HDBSCAN parameter combination found in the sweep "
+            f"(min_cluster_size <= {max_eligible_min_cluster_size}): "
+            "relative_validity_ and mean_cluster_persistence were both "
+            "unavailable for every combo. This usually means the "
+            "mutual-reachability graph built from your precomputed distances "
+            "is too disconnected/sparse (e.g. the --knn used when building "
+            "the distance file is too restrictive for this many samples)."
+        )
+
+    print(
+        "WARNING: relative_validity_ was NaN for every swept combination "
+        "(likely a disconnected mutual-reachability graph from a "
+        "restricted-kNN sparse distance file). Falling back to "
+        "mean_cluster_persistence for selection."
+    )
     best = max(
-        eligible,
+        persistence_candidates,
         key=lambda r: (
-            r["relative_validity"],
-            r["mean_cluster_persistence"] or float("-inf"),
+            r["mean_cluster_persistence"],
             -r["noise_fraction"],
         ),
     )
+    best["selection_metric"] = "mean_cluster_persistence"
     return best
 
 
@@ -740,7 +783,7 @@ def main():
         "chosen_combination": {
             "min_cluster_size": best_combo["min_cluster_size"],
             "min_samples": best_combo["min_samples"],
-            "selection_metric": "relative_validity",
+            "selection_metric": best_combo["selection_metric"],
             "relative_validity": best_combo["relative_validity"],
             "mean_cluster_persistence": best_combo["mean_cluster_persistence"],
             "noise_fraction": best_combo["noise_fraction"],
