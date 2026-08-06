@@ -45,3 +45,4 @@ assembler_benchmark_*/
 *.png
 *.pdf
 *.svg
+analysis-*/
