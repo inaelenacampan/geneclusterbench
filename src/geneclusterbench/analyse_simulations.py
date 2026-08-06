@@ -39,26 +39,26 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 # All text (titles, axis labels, tick labels, legends, etc.) is fixed at a
-# small, uniform font size of 5. Since the number of simulations/seeds has
-# grown, figures are made proportionally larger (see FIGSIZE_SCALE and the
-# per-plot figsize values below) so that a fontsize-5 label doesn't look
-# lost or crowded on a small canvas.
-FONT_SIZE = 5
+# uniform, comfortably readable font size. Since the number of
+# simulations/seeds has grown, figures are made proportionally larger (see
+# FIGSIZE_SCALE and the per-plot figsize values below) so that labels have
+# room to breathe on a larger canvas.
+FONT_SIZE = 16
 plt.rcParams.update({
     "font.size": FONT_SIZE,
-    "axes.titlesize": FONT_SIZE,
+    "axes.titlesize": FONT_SIZE + 2,
     "axes.labelsize": FONT_SIZE,
     "xtick.labelsize": FONT_SIZE,
     "ytick.labelsize": FONT_SIZE,
     "legend.fontsize": FONT_SIZE,
     "legend.title_fontsize": FONT_SIZE,
-    "figure.titlesize": FONT_SIZE,
+    "figure.titlesize": FONT_SIZE + 4,
 })
 
 # Multiplier applied to every hardcoded plt.figure(figsize=(...)) call
-# below, so figures stay large/legible even though the font is now tiny
-# and the number of simulations (and thus data density / legend entries)
-# has increased.
+# below, so figures stay large/legible now that the font size has been
+# increased and the number of simulations (and thus data density / legend
+# entries) has grown.
 FIGSIZE_SCALE = 1.8
 
 from itertools import combinations
@@ -83,6 +83,43 @@ SEED_STRS = {str(s) for s in SEEDS}
 # Anything starting with "PROKKA" is treated as an assembly directory so
 # the pipeline scales automatically to however many are present.
 ASSEMBLY_DIR_PATTERN = re.compile(r"^PROKKA(_\w+)?(__.*)?$")
+
+# Human-readable names for the rate parameters encoded in assembly
+# directory names (e.g. "..._gr1e-13_lr1e-14_mu1e-15" -> gene gain rate,
+# gene loss rate, point-mutation rate). Used to turn raw folder names into
+# readable figure labels/titles/legends via prettify_assembly_label().
+RATE_LABELS = {
+    "gr": "Gain",
+    "lr": "Loss",
+    "mu": "Mutation",
+}
+RATE_PATTERN = re.compile(r"(gr|lr|mu)_?(-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)")
+
+
+def prettify_assembly_label(name):
+    """
+    Convert a raw assembly directory name (e.g.
+    'PROKKA_06122025__gr1e-13_lr1e-14_mu1e-15') into a readable label for
+    figures, e.g. 'Gain: 1e-13, Loss: 1e-14, Mutation: 1e-15'.
+
+    Only the gr/lr/mu rate parameters are pulled out and relabelled; the
+    PROKKA/date prefix is dropped. If no recognised rate parameters are
+    present, the original name is returned unchanged so labelling still
+    degrades gracefully for arbitrarily-named assembly folders.
+    """
+    if not name:
+        return name
+
+    found = dict(RATE_PATTERN.findall(name))
+    if not found:
+        return name
+
+    parts = [
+        f"{RATE_LABELS[key]}: {found[key]}"
+        for key in ("gr", "lr", "mu")
+        if key in found
+    ]
+    return ", ".join(parts) if parts else name
 
 
 # ---------------------------------------------------------
@@ -439,7 +476,7 @@ def plot_nucleotide_diversity(diversity_df, out, assembly_name=None):
     plt.ylabel("Nucleotide diversity")
     title = "Nucleotide diversity across simulated populations"
     if assembly_name:
-        title += f" ({assembly_name})"
+        title += f" ({prettify_assembly_label(assembly_name)})"
     plt.title(title)
 
     plt.tight_layout()
@@ -483,11 +520,12 @@ def plot_diversity_comparison(diversity_all_df, out):
         alpha=0.6
     )
 
+    plt.gca().set_xticklabels([prettify_assembly_label(a) for a in order])
     plt.xticks(rotation=30, ha="right", fontsize=FONT_SIZE)
     plt.yticks(fontsize=FONT_SIZE)
     plt.xlabel("Assembly", fontsize=FONT_SIZE)
     plt.ylabel("Nucleotide diversity", fontsize=FONT_SIZE)
-    plt.title("Nucleotide diversity across assemblies (one point per seed)", fontsize=FONT_SIZE)
+    plt.title("Nucleotide diversity across assemblies (one point per seed)", fontsize=FONT_SIZE + 2)
 
     plt.tight_layout()
     plt.savefig(
@@ -637,8 +675,8 @@ def plot_rarefaction_cloud(accumulations, out, seeds=None, assembly_name=None):
     plt.yticks(fontsize=FONT_SIZE)
     title = "Pangenome rarefaction (per seed)"
     if assembly_name:
-        title += f" - {assembly_name}"
-    plt.title(title, fontsize=FONT_SIZE)
+        title += f" - {prettify_assembly_label(assembly_name)}"
+    plt.title(title, fontsize=FONT_SIZE + 2)
 
     plt.tight_layout()
     plt.savefig(os.path.join(out, "rarefaction_cloud.png"), dpi=300)
@@ -659,7 +697,7 @@ def plot_rarefaction_comparison(accum_by_assembly, out):
         sd = arr.std(axis=0)
         x = np.arange(1, len(mean) + 1)
 
-        plt.plot(x, mean, color=colour, linewidth=2.5, label=assembly_name)
+        plt.plot(x, mean, color=colour, linewidth=2.5, label=prettify_assembly_label(assembly_name))
         plt.fill_between(x, mean - sd, mean + sd, color=colour, alpha=0.15)
 
     plt.xlabel("Number of isolates")
@@ -702,7 +740,7 @@ def plot_core_decay(core_curves, out, seeds=None, assembly_name=None):
     plt.ylabel("Core genes")
     title = "Core genome decay (per seed)"
     if assembly_name:
-        title += f" - {assembly_name}"
+        title += f" - {prettify_assembly_label(assembly_name)}"
     plt.title(title)
 
     plt.tight_layout()
@@ -724,7 +762,7 @@ def plot_core_decay_comparison(core_by_assembly, out):
         sd = arr.std(axis=0)
         x = np.arange(1, len(mean) + 1)
 
-        plt.plot(x, mean, color=colour, linewidth=2.5, label=assembly_name)
+        plt.plot(x, mean, color=colour, linewidth=2.5, label=prettify_assembly_label(assembly_name))
         plt.fill_between(x, mean - sd, mean + sd, color=colour, alpha=0.15)
 
     plt.xlabel("Number of isolates")
@@ -748,7 +786,7 @@ def plot_frequency_spectrum(mat, out, assembly_name=None):
     plt.hist(freq, bins=np.arange(1, mat.shape[1] + 2), log=True)
     plt.xlabel("Number of isolates carrying gene")
     plt.ylabel("Genes (log scale)")
-    plt.title("Gene frequency spectrum" + (f" - {assembly_name}" if assembly_name else ""))
+    plt.title("Gene frequency spectrum" + (f" - {prettify_assembly_label(assembly_name)}" if assembly_name else ""))
     plt.tight_layout()
     plt.savefig(os.path.join(out, "frequency_spectrum.png"), dpi=300)
     plt.close()
@@ -768,7 +806,7 @@ def plot_rank_abundance(mat, out, assembly_name=None):
     plt.yscale("log")
     plt.xlabel("Gene rank")
     plt.ylabel("Gene prevalence")
-    plt.title("Rank-abundance curve" + (f" - {assembly_name}" if assembly_name else ""))
+    plt.title("Rank-abundance curve" + (f" - {prettify_assembly_label(assembly_name)}" if assembly_name else ""))
     plt.tight_layout()
     plt.savefig(os.path.join(out, "rank_abundance.png"), dpi=300)
     plt.close()
@@ -793,7 +831,7 @@ def plot_core_shell_cloud(mat, out, assembly_name=None):
         labels=[f"Core ({core})", f"Shell ({shell})", f"Cloud ({cloud})"],
         autopct="%1.1f%%"
     )
-    plt.title("Pangenome composition" + (f" - {assembly_name}" if assembly_name else ""))
+    plt.title("Pangenome composition" + (f" - {prettify_assembly_label(assembly_name)}" if assembly_name else ""))
     plt.savefig(os.path.join(out, "core_shell_cloud.png"), dpi=300)
     plt.close()
 
@@ -817,7 +855,7 @@ def plot_pca(mat, out, assembly_name=None):
     plt.scatter(scores[:, 0], scores[:, 1], alpha=0.7, s=30)
     plt.xlabel(f"PC1 ({pc1:.1f}%)")
     plt.ylabel(f"PC2 ({pc2:.1f}%)")
-    plt.title("PCA of isolates" + (f" - {assembly_name}" if assembly_name else ""))
+    plt.title("PCA of isolates" + (f" - {prettify_assembly_label(assembly_name)}" if assembly_name else ""))
     plt.tight_layout()
     plt.savefig(os.path.join(out, "pca_isolates.png"), dpi=300)
     plt.close()
@@ -835,7 +873,7 @@ def plot_jaccard_heatmap(mat, out, assembly_name=None):
 
     plt.figure(figsize=(18, 14.4))
     sns.heatmap(similarity, cmap="viridis")
-    plt.title("Jaccard similarity heatmap" + (f" - {assembly_name}" if assembly_name else ""))
+    plt.title("Jaccard similarity heatmap" + (f" - {prettify_assembly_label(assembly_name)}" if assembly_name else ""))
     plt.tight_layout()
     plt.savefig(os.path.join(out, "jaccard_heatmap.png"), dpi=300)
     plt.close()
@@ -852,7 +890,7 @@ def plot_dendrogram(mat, out, assembly_name=None):
 
     plt.figure(figsize=(21.6, 9))
     dendrogram(Z, no_labels=True)
-    plt.title("Hierarchical clustering" + (f" - {assembly_name}" if assembly_name else ""))
+    plt.title("Hierarchical clustering" + (f" - {prettify_assembly_label(assembly_name)}" if assembly_name else ""))
     plt.tight_layout()
     plt.savefig(os.path.join(out, "genome_dendrogram.png"), dpi=300)
     plt.close()
@@ -894,7 +932,7 @@ def plot_openness(accumulations, out, seeds=None, assembly_name=None):
     plt.yticks(fontsize=FONT_SIZE)
     plt.xticks(fontsize=FONT_SIZE)
     plt.title(
-        "Pangenome openness (one point per seed)" + (f" - {assembly_name}" if assembly_name else ""),
+        "Pangenome openness (one point per seed)" + (f" - {prettify_assembly_label(assembly_name)}" if assembly_name else ""),
         fontsize=FONT_SIZE
     )
     plt.tight_layout()
@@ -947,11 +985,12 @@ def plot_openness_comparison(alphas_by_assembly, out):
         alpha=0.7
     )
 
+    plt.gca().set_xticklabels([prettify_assembly_label(a) for a in order])
     plt.xticks(rotation=30, ha="right", fontsize=FONT_SIZE)
     plt.yticks(fontsize=FONT_SIZE)
     plt.xlabel("Assembly", fontsize=FONT_SIZE)
     plt.ylabel("Heaps alpha", fontsize=FONT_SIZE)
-    plt.title("Pangenome openness - assembly comparison (one point per seed)", fontsize=FONT_SIZE)
+    plt.title("Pangenome openness - assembly comparison (one point per seed)", fontsize=FONT_SIZE + 2)
 
     plt.tight_layout()
     plt.savefig(os.path.join(out, "heaps_alpha_comparison.png"), dpi=300)
@@ -988,10 +1027,12 @@ def plot_pangenome_size_comparison(summary_df, out):
         alpha=0.7
     )
 
-    plt.xticks(rotation=30, ha="right")
-    plt.xlabel("Assembly")
-    plt.ylabel("Pangenome size (genes)")
-    plt.title("Pangenome size - assembly comparison (one point per seed)")
+    plt.gca().set_xticklabels([prettify_assembly_label(a) for a in order])
+    plt.xticks(rotation=30, ha="right", fontsize=FONT_SIZE)
+    plt.yticks(fontsize=FONT_SIZE)
+    plt.xlabel("Assembly", fontsize=FONT_SIZE)
+    plt.ylabel("Pangenome size (genes)", fontsize=FONT_SIZE)
+    plt.title("Pangenome size - assembly comparison (one point per seed)", fontsize=FONT_SIZE + 2)
 
     plt.tight_layout()
     plt.savefig(os.path.join(out, "pangenome_size_comparison.png"), dpi=300)
@@ -1026,7 +1067,7 @@ def plot_phase_space(mats, out, assembly_name=None):
 
     plt.xlabel("Core genes")
     plt.ylabel("Accessory genes")
-    plt.title("Pangenome phase space" + (f" - {assembly_name}" if assembly_name else ""))
+    plt.title("Pangenome phase space" + (f" - {prettify_assembly_label(assembly_name)}" if assembly_name else ""))
     plt.tight_layout()
     plt.savefig(os.path.join(out, "phase_space.png"), dpi=300)
     plt.close()
