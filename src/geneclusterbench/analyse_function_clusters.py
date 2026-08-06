@@ -240,9 +240,16 @@ def get_real_data_sample_dirs(root_dir):
 
 def build_gene_to_categories(root_dir, cog_to_letters, multi_category="all"):
     """Scan every ERRxxxx/*.tsv annotation file under root_dir and build
-    {gene_id (locus_tag): [category_label, ...]}.
+    {gene_id (locus_tag): [category_label, ...]}, plus a second map
+    {gene_id: product_description_text} that keeps the annotation tool's
+    (bakta/Prokka) free-text gene *product/description* (from the tsv's
+    "product" column, e.g. "Hydroxymethylglutaryl-CoA synthase") for that
+    gene -- this is kept purely for reference/traceability alongside the
+    looked-up COG functional category, and is filled in regardless of
+    whether the gene had a COG hit at all.
 
-    Genes with an empty COG field get [NO_COG_LABEL].
+    Genes with an empty COG field get [NO_COG_LABEL] (their product text is
+    still recorded, if the tsv has a "product" column).
     Locus tags are assumed unique across the whole real-data run (Prokka
     gives every sample its own random locus-tag prefix, e.g.
     "JLDFOEBO_00001"), matching how the clustering tools themselves treat
@@ -251,6 +258,7 @@ def build_gene_to_categories(root_dir, cog_to_letters, multi_category="all"):
     since it would indicate a real annotation problem worth investigating.
     """
     gene_to_categories = {}
+    gene_to_raw_cog = {}
     duplicate_genes = []
 
     sample_dirs = get_real_data_sample_dirs(root_dir)
@@ -266,6 +274,7 @@ def build_gene_to_categories(root_dir, cog_to_letters, multi_category="all"):
                     f"{tsv_path}: expected 'locus_tag' and 'COG' columns, "
                     f"got header {header}"
                 ) from exc
+            product_idx = header.index("product") if "product" in header else None
 
             for line in fh:
                 line = line.rstrip("\n")
@@ -276,6 +285,11 @@ def build_gene_to_categories(root_dir, cog_to_letters, multi_category="all"):
                     continue  # short/malformed row, e.g. no COG field at all
                 gene_id = fields[locus_idx].strip()
                 cog_field = fields[cog_idx].strip()
+                product_text = (
+                    fields[product_idx].strip()
+                    if product_idx is not None and len(fields) > product_idx
+                    else ""
+                )
 
                 if not cog_field:
                     categories = [NO_COG_LABEL]
@@ -307,6 +321,7 @@ def build_gene_to_categories(root_dir, cog_to_letters, multi_category="all"):
                     ):
                         continue
                 gene_to_categories[gene_id] = categories
+                gene_to_raw_cog[gene_id] = product_text
 
     if duplicate_genes:
         warnings.warn(
@@ -316,7 +331,7 @@ def build_gene_to_categories(root_dir, cog_to_letters, multi_category="all"):
             "for Prokka-generated locus tags and worth checking."
         )
 
-    return gene_to_categories
+    return gene_to_categories, gene_to_raw_cog
 
 
 # ==========================================================================
@@ -510,27 +525,40 @@ def discover_method_folders(clustering_run_dir):
 # 5. Summary computation and output
 # ==========================================================================
 
-def summarise_cluster(gene_ids, gene_to_categories, multi_category):
-    """Return list of (category_label, count, percentage) for one cluster's
-    gene list, sorted by descending percentage.
+def summarise_cluster(gene_ids, gene_to_categories, multi_category, gene_to_product_desc=None):
+    """Return list of (category_label, count, percentage, original_descriptions)
+    for one cluster's gene list, sorted by descending percentage.
 
     Percentage is count(genes with this category) / total genes in cluster
     * 100. Genes unknown to gene_to_categories entirely (shouldn't happen
     if the annotation tsvs cover every gene the clusterer emitted, but
     guarded against) also fall into NO_COG_LABEL.
+
+    original_descriptions is the ';'-joined set of distinct gene
+    product/description strings (from the bakta/Prokka annotation tsv's
+    "product" column) for the genes that fall into that category/row --
+    e.g. "Hydroxymethylglutaryl-CoA synthase". Included regardless of
+    whether the gene had a COG hit. If gene_to_product_desc isn't
+    supplied, this is left empty.
     """
     n_genes = len(gene_ids)
     if n_genes == 0:
         return []
 
     category_counts = defaultdict(int)
+    category_descriptions = defaultdict(list)
     for gene_id in gene_ids:
         categories = gene_to_categories.get(gene_id, [NO_COG_LABEL])
+        desc = ""
+        if gene_to_product_desc is not None:
+            desc = gene_to_product_desc.get(gene_id, "")
         for cat in categories:
             category_counts[cat] += 1
+            if desc and desc not in category_descriptions[cat]:
+                category_descriptions[cat].append(desc)
 
     rows = [
-        (cat, count, 100.0 * count / n_genes)
+        (cat, count, 100.0 * count / n_genes, ";".join(category_descriptions.get(cat, [])))
         for cat, count in category_counts.items()
     ]
     rows.sort(key=lambda r: r[2], reverse=True)
@@ -552,24 +580,38 @@ def write_summary_tsv(out_path, records, multi_category):
         + f"# '{NO_COG_LABEL}': gene had no COG field in the Prokka annotation tsv.\n"
         + f"# '{UNMAPPED_COG_LABEL}': gene had a COG accession that was not found "
           "in the supplied --cog-def-file.\n"
+        + "# 'original_COG_description': the gene product/description string(s) "
+          "from the 'product' column of the bakta/Prokka annotation tsv for the "
+          "gene(s) behind this row (';'-separated if more than one distinct "
+          "value is present), e.g. 'Hydroxymethylglutaryl-CoA synthase'. "
+          "Included regardless of whether the gene had a COG hit; empty only "
+          "if the annotation tsv had no 'product' column or the value itself "
+          "was empty.\n"
     )
     with open(out_path, "w") as fh:
         fh.write(header_comment)
-        fh.write("method\tcluster_id\tgene_ids\tnumber_of_genes\tCOG_function\tpercentage\n")
+        fh.write(
+            "method\tcluster_id\tgene_ids\tnumber_of_genes\tCOG_function\t"
+            "percentage\toriginal_COG_description\n"
+        )
         for rec in records:
             fh.write(
-                "{method}\t{cluster_id}\t{gene_ids}\t{n}\t{cog}\t{pct:.1f}%\n".format(
+                "{method}\t{cluster_id}\t{gene_ids}\t{n}\t{cog}\t{pct:.1f}%\t{raw_cog}\n".format(
                     method=rec["method"],
                     cluster_id=rec["cluster_id"],
                     gene_ids=",".join(rec["gene_ids"]),
                     n=rec["number_of_genes"],
                     cog=rec["COG_function"],
                     pct=rec["percentage"],
+                    raw_cog=rec.get("original_COG_description", ""),
                 )
             )
 
 
-def process_method_folder(method_label, clusterer, folderpath, gene_to_categories, multi_category):
+def process_method_folder(
+    method_label, clusterer, folderpath, gene_to_categories, multi_category,
+    gene_to_product_desc=None,
+):
     """Yields output records (dicts) for one clusterer result folder."""
     # --- sketch: temporarily disabled -----------------------------------
     # Skipping "sketch" for now (per request). To re-enable, uncomment the
@@ -605,7 +647,9 @@ def process_method_folder(method_label, clusterer, folderpath, gene_to_categorie
         return
 
     for cluster_id, gene_ids in clusters.items():
-        for cat, count, pct in summarise_cluster(gene_ids, gene_to_categories, multi_category):
+        for cat, count, pct, desc in summarise_cluster(
+            gene_ids, gene_to_categories, multi_category, gene_to_product_desc
+        ):
             yield {
                 "method": method_label,
                 "cluster_id": cluster_id,
@@ -613,6 +657,7 @@ def process_method_folder(method_label, clusterer, folderpath, gene_to_categorie
                 "number_of_genes": len(gene_ids),
                 "COG_function": cat,
                 "percentage": pct,
+                "original_COG_description": desc,
             }
 
 
@@ -673,7 +718,7 @@ def main():
     print(f"  {len(cog_to_letters)} COG accessions loaded.")
 
     print(f"> Building gene -> COG category map from {args.real_datapath} ...")
-    gene_to_categories = build_gene_to_categories(
+    gene_to_categories, gene_to_product_desc = build_gene_to_categories(
         args.real_datapath, cog_to_letters, args.multi_category
     )
     print(f"  {len(gene_to_categories)} genes annotated.")
@@ -689,7 +734,8 @@ def main():
         print(f"  - {method_label} ({clusterer}) ...")
         records = list(
             process_method_folder(
-                method_label, clusterer, folderpath, gene_to_categories, args.multi_category
+                method_label, clusterer, folderpath, gene_to_categories, args.multi_category,
+                gene_to_product_desc,
             )
         )
         if not records:
