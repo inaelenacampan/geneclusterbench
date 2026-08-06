@@ -52,17 +52,19 @@ SWEEP_MIN_SAMPLES = (1, 2, 3, 5)
 # eligible to be picked.
 SWEEP_MAX_ELIGIBLE_MIN_CLUSTER_SIZE = 8
 
-# === NEW (real-data clustering strategy) ===
-# For --sparse (real-data) runs, t-SNE-based and direct distance-based
-# ("hdbscan_dist") clustering are replaced with single-linkage connected
-# components computed directly on the sparse nearest-neighbour distance
-# graph. UMAP (embedding) + HDBSCAN-on-UMAP is left unchanged.
+# === Single-linkage connected-components clustering ===
+# Runs unconditionally, for both simulated (dense) and real (--sparse) data,
+# using the same threshold sweep in both cases so results are directly
+# comparable across the two branches. build_single_linkage_graph() /
+# connected_components_at_thresholds() already accept either a dense numpy
+# array or a scipy.sparse CSR matrix, so no branching is needed here between
+# the two data types.
 #
 # A single-linkage clustering is exactly "connected components of the graph
 # where an edge (a, b) exists iff dist(a, b) <= threshold" -- so trying
 # several thresholds is equivalent to cutting the single-linkage dendrogram
 # at several heights. Edit this tuple directly to widen/narrow the sweep.
-CONNECTED_COMPONENTS_THRESHOLDS = (0.01, 0.05, 0.1, 0.15, 0.2, 0.3)
+CONNECTED_COMPONENTS_THRESHOLDS = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7)
 
 
 def parse_args():
@@ -109,10 +111,11 @@ def parse_args():
             "ever built in memory. This also switches the clustering "
             "strategy used for the final result: t-SNE and direct "
             "distance-based ('hdbscan_dist') clustering, which both perform "
-            "poorly on real data, are skipped entirely, and single-linkage "
-            "connected-components clustering is run directly on the sparse "
-            "distance graph instead (see CONNECTED_COMPONENTS_THRESHOLDS). "
-            "UMAP + HDBSCAN-on-UMAP is unaffected and still runs."
+            "poorly on real data, are skipped entirely. UMAP + "
+            "HDBSCAN-on-UMAP is unaffected and still runs. Single-linkage "
+            "connected-components clustering (see "
+            "CONNECTED_COMPONENTS_THRESHOLDS) is run regardless of this "
+            "flag, on the dense or sparse distance matrix as appropriate."
         ),
     )
     parser.add_argument(
@@ -532,11 +535,13 @@ def build_single_linkage_graph(matrix, samples):
     distance matrix, one node per sample and one weighted edge per stored
     (measured) pairwise distance.
 
-    No additional distance filtering is applied here: the distance file
-    feeding into this script has already been restricted to each sample's
-    closest neighbours upstream (sketchlib's --knn plus the dist==1 awk
-    filter -- see SKETCH_SCAFFOLD_*_REALDATA in the submit script), so every
-    stored entry in `matrix` is used as-is as a candidate single-linkage
+    No additional distance filtering is applied here: every stored entry in
+    `matrix` is used as-is as a candidate single-linkage edge. For real
+    data, the distance file feeding into this script has already been
+    restricted to each sample's closest neighbours upstream (sketchlib's
+    --knn plus the dist==1 awk filter -- see SKETCH_SCAFFOLD_*_REALDATA in
+    the submit script). For simulated data, `matrix` is the full dense
+    all-vs-all distance matrix, so every pairwise distance is a candidate
     edge. Cutting this graph at different weight thresholds (see
     connected_components_at_thresholds) is what turns it into a clustering.
 
@@ -823,17 +828,21 @@ def main():
     """Run the full load, sweep, embedding, clustering, plotting, and
     reporting workflow.
 
-    Clustering strategy depends on --sparse (i.e. real-data vs simulated
+    Single-linkage connected-components clustering (via networkx, swept over
+    CONNECTED_COMPONENTS_THRESHOLDS) is always computed, on whichever matrix
+    type parse_distance_file() returned (dense for simulated data, sparse
+    for real data via --sparse) -- both branches use the same threshold
+    sweep, so results are directly comparable.
+
+    The remaining strategy depends on --sparse (i.e. real-data vs simulated
     data, see that flag's help text):
       - Simulated data (--sparse not set): unchanged -- hdbscan_dist
         (direct on the precomputed distance matrix), hdbscan_tsne (on a
         t-SNE embedding) and hdbscan_umap (on a UMAP embedding) are all
-        computed.
-      - Real data (--sparse set): hdbscan_dist and hdbscan_tsne are
-        replaced by single-linkage connected-components clustering run
-        directly on the sparse nearest-neighbour distance graph (via
-        networkx), swept over CONNECTED_COMPONENTS_THRESHOLDS. UMAP +
-        hdbscan_umap is still computed.
+        also computed, in addition to the connected-components sweep above.
+      - Real data (--sparse set): hdbscan_dist and hdbscan_tsne are skipped
+        (both perform poorly on real data); the connected-components sweep
+        above stands in for them. UMAP + hdbscan_umap is still computed.
 
     The parameter sweep now always runs (not just with --sweep): it's cheap
     relative to the rest of the pipeline, and the full pipeline needs a
@@ -942,28 +951,35 @@ def main():
 
     label_sets = {}
 
+    # Single-linkage connected-components clustering, swept over
+    # CONNECTED_COMPONENTS_THRESHOLDS. Runs for both simulated (dense
+    # matrix) and real (--sparse, sparse matrix) data -- the same threshold
+    # sweep is used in both cases, since build_single_linkage_graph() and
+    # connected_components_at_thresholds() work identically on either
+    # matrix type.
+    print(
+        "Clustering via single-linkage connected components on the "
+        f"{'sparse' if real_data_mode else 'dense'} distance graph "
+        f"(thresholds={CONNECTED_COMPONENTS_THRESHOLDS})"
+    )
+    t0 = time.time()
+    graph = build_single_linkage_graph(matrix, samples)
+    cc_results = connected_components_at_thresholds(
+        graph, len(samples), CONNECTED_COMPONENTS_THRESHOLDS
+    )
+    cc_time = time.time() - t0
+    timings.append(("connected_components_fit", cc_time))
+    save_pickle(
+        model_dir / "connected_components.pk",
+        thresholds=CONNECTED_COMPONENTS_THRESHOLDS,
+        labels_by_threshold=cc_results,
+    )
+    timings.append(("method_connected_components_total", cc_time))
+
+    for threshold, labels in cc_results.items():
+        label_sets[f"connected_components_t{threshold}"] = labels
+
     if real_data_mode:
-        print(
-            "Clustering via single-linkage connected components on the "
-            f"sparse distance graph (thresholds={CONNECTED_COMPONENTS_THRESHOLDS})"
-        )
-        t0 = time.time()
-        graph = build_single_linkage_graph(matrix, samples)
-        cc_results = connected_components_at_thresholds(
-            graph, len(samples), CONNECTED_COMPONENTS_THRESHOLDS
-        )
-        cc_time = time.time() - t0
-        timings.append(("connected_components_fit", cc_time))
-        save_pickle(
-            model_dir / "connected_components.pk",
-            thresholds=CONNECTED_COMPONENTS_THRESHOLDS,
-            labels_by_threshold=cc_results,
-        )
-        timings.append(("method_connected_components_total", cc_time))
-
-        for threshold, labels in cc_results.items():
-            label_sets[f"connected_components_t{threshold}"] = labels
-
         hdbs_dist_model, hdbs_dist_labels = None, None
         hdbs_dist_time = 0.0
     else:
@@ -1022,6 +1038,16 @@ def main():
             plot_dir / "cluster_TSNE_HDBSCAN",
             args.formats,
         )
+        # Connected-components threshold sweep on the t-SNE embedding too,
+        # so it gets the same plot coverage as the other methods (t-SNE is
+        # only available in simulated-data runs; real-data runs skip it).
+        for threshold in CONNECTED_COMPONENTS_THRESHOLDS:
+            plot_clusters(
+                tsne_coords,
+                label_sets[f"connected_components_t{threshold}"],
+                plot_dir / f"cluster_TSNE_ConnectedComponents_t{threshold}",
+                args.formats,
+            )
     if not real_data_mode:
         plot_clusters(
             umap_coords,
@@ -1029,16 +1055,15 @@ def main():
             plot_dir / "cluster_UMAP_HDBSCANdist",
             args.formats,
         )
-    else:
-        # Real-data mode: plot each connected-components threshold result on
-        # the UMAP embedding instead (there's no hdbscan_dist to plot).
-        for threshold in CONNECTED_COMPONENTS_THRESHOLDS:
-            plot_clusters(
-                umap_coords,
-                label_sets[f"connected_components_t{threshold}"],
-                plot_dir / f"cluster_UMAP_ConnectedComponents_t{threshold}",
-                args.formats,
-            )
+    # Connected-components threshold sweep on the UMAP embedding, plotted
+    # for both simulated and real data.
+    for threshold in CONNECTED_COMPONENTS_THRESHOLDS:
+        plot_clusters(
+            umap_coords,
+            label_sets[f"connected_components_t{threshold}"],
+            plot_dir / f"cluster_UMAP_ConnectedComponents_t{threshold}",
+            args.formats,
+        )
     plot_clusters(
         umap_coords,
         hdbs_umap_labels,
