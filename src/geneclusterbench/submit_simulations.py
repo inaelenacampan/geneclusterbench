@@ -24,14 +24,23 @@ DEFAULT_GFF = (
 
 GENERATION_SCAFFOLD = (
     '. "{env}" && python3 "{execexec}" -g "{inputgff}" -o "{outputpath}" -s "{seed}" '
-    '--gain_rate "{gain_rate}" --loss_rate "{loss_rate}" --mutation_rate "{mutation_rate}"'
+    '--gain_rate "{gain_rate}" --loss_rate "{loss_rate}" --mutation_rate "{mutation_rate}" '
+    '--n_sim_genes "{n_sim_genes}" --n_core "{n_core}" --pop_size "{pop_size}" '
+    '--nisolates "{nisolates}"'
 )
 
-# Defaults match simulate_full_pangenome.py's own argparse defaults, so that
-# not specifying a sweep reproduces the previous single-parameter-set behaviour.
-DEFAULT_GAIN_RATES = "1e-12"
-DEFAULT_LOSS_RATES = "1e-12"
-DEFAULT_MUTATION_RATES = "1e-14"
+# Defaults match simulate_full_pangenome.py's own argparse defaults for the
+# locus-budget/population parameters, so that not overriding them reproduces
+# the simulator's own default behaviour.
+DEFAULT_N_SIM_GENES = 1000
+DEFAULT_N_CORE = 500
+DEFAULT_POP_SIZE = 10e6
+DEFAULT_NISOLATES = 100
+
+# Default matches simulate_full_pangenome.py's own argparse defaults, so that
+# not specifying --rate-combos reproduces the previous single-parameter-set
+# behaviour.
+DEFAULT_RATE_COMBOS = "1e-12:1e-12:1e-14"
 SLURM_SCAFFOLD = (
     "sbatch -c 1 -t {timemax} --mem {memmax}G -J {jobname} "
     "-e {logpath}/log.%A.%a.%x.err -o {logpath}/log.%A.%a.%x.out "
@@ -56,8 +65,26 @@ def get_assembly_name_from_gff(gff_path):
     return Path(gff_path).stem
 
 
-def parse_rate_list(rates_arg):
-    return [tok.strip() for tok in str(rates_arg).split(",") if tok.strip()]
+def parse_rate_combos(combos_arg):
+    """Parse explicit gain:loss:mutation tuples, e.g.
+    '1e-12:1e-12:1e-14,5e-12:1e-12:1e-14' -> [("1e-12","1e-12","1e-14"), ...]
+    Rather than sweeping the cartesian product of separate rate lists, the
+    caller specifies exactly the tuples they want run.
+    """
+    combos = []
+    for tok in str(combos_arg).split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        parts = tok.split(":")
+        if len(parts) != 3:
+            raise ValueError(
+                f"Invalid --rate-combos entry {tok!r}; expected "
+                "'gain_rate:loss_rate:mutation_rate'"
+            )
+        gain_rate, loss_rate, mutation_rate = (p.strip() for p in parts)
+        combos.append((gain_rate, loss_rate, mutation_rate))
+    return combos
 
 
 def get_param_combo_name(gain_rate, loss_rate, mutation_rate):
@@ -204,19 +231,46 @@ def main():
     parser.add_argument("--python-env", default=DEFAULT_PY3ENV)
     parser.add_argument("--gff", default=DEFAULT_GFF)
     parser.add_argument(
-        "--gain-rates",
-        default=DEFAULT_GAIN_RATES,
-        help="Comma-separated list of gain rates to sweep over",
+        "--rate-combos",
+        default=DEFAULT_RATE_COMBOS,
+        help=(
+            "Comma-separated list of explicit gain_rate:loss_rate:mutation_rate "
+            "tuples to run, e.g. '1e-12:1e-12:1e-14,5e-12:1e-12:1e-14'. Each "
+            "tuple is run as-is (no cartesian product across tuples)."
+        ),
     )
     parser.add_argument(
-        "--loss-rates",
-        default=DEFAULT_LOSS_RATES,
-        help="Comma-separated list of loss rates to sweep over",
+        "--n-sim-genes",
+        dest="n_sim_genes",
+        type=int,
+        default=DEFAULT_N_SIM_GENES,
+        help=(
+            "Maximum number of loci the simulator may use (n_core plus "
+            "accessory gains). Raise this if jobs fail with a "
+            "'need N source loci but --n_sim_genes=...' error. "
+            f"Default = {DEFAULT_N_SIM_GENES}"
+        ),
     )
     parser.add_argument(
-        "--mutation-rates",
-        default=DEFAULT_MUTATION_RATES,
-        help="Comma-separated list of mutation rates to sweep over",
+        "--n-core",
+        dest="n_core",
+        type=int,
+        default=DEFAULT_N_CORE,
+        help=f"Number of core genes to pass to the simulator. Default = {DEFAULT_N_CORE}",
+    )
+    parser.add_argument(
+        "--pop-size",
+        dest="pop_size",
+        type=float,
+        default=DEFAULT_POP_SIZE,
+        help=f"Effective population size to pass to the simulator. Default = {DEFAULT_POP_SIZE}",
+    )
+    parser.add_argument(
+        "--nisolates",
+        dest="nisolates",
+        type=int,
+        default=DEFAULT_NISOLATES,
+        help=f"Number of genomes to simulate. Default = {DEFAULT_NISOLATES}",
     )
     parser.add_argument("--time", dest="timemax", default="1-00:00:00")
     parser.add_argument("--mem", dest="memmax", default=6, type=int)
@@ -255,15 +309,7 @@ def main():
     mainoutputfolder = os.path.join(args.outdir_sims, "simulations")
     logdir = os.path.join(args.outdir_sims, "logs", "simulations")
 
-    gain_rates = parse_rate_list(args.gain_rates)
-    loss_rates = parse_rate_list(args.loss_rates)
-    mutation_rates = parse_rate_list(args.mutation_rates)
-    param_combos = [
-        (gr, lr, mr)
-        for gr in gain_rates
-        for lr in loss_rates
-        for mr in mutation_rates
-    ]
+    param_combos = parse_rate_combos(args.rate_combos)
 
     if args.collect_metadata:
         for gain_rate, loss_rate, mutation_rate in param_combos:
@@ -309,6 +355,10 @@ def main():
                     gain_rate=gain_rate,
                     loss_rate=loss_rate,
                     mutation_rate=mutation_rate,
+                    n_sim_genes=args.n_sim_genes,
+                    n_core=args.n_core,
+                    pop_size=args.pop_size,
+                    nisolates=args.nisolates,
                 ),
                 other="",
             )
