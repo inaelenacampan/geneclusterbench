@@ -19,7 +19,7 @@ for assembly_dir in "${simulations_dir}"/PROKKA_06122025__*; do
          --time=23:00:00 \
          --output=logs/embed_${assembly_name}_${seed}.out \
          --error=logs/embed_${assembly_name}_${seed}.err \
-         python embedprots.py \
+         python ../embedprots.py \
            --input-fasta "${assembly_dir}/${seed}"/*_for_clustering_aa.fasta \
            --out-dir /hps/nobackup/jlees/campan/embd/${assembly_name}/${seed} \
            --batch-size 32 \

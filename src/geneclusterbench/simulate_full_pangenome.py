@@ -965,10 +965,10 @@ def main():
         '--n_sim_genes',
         dest='n_sim_genes',
         type=int,
-        default=1000,
+        default=1800,
         help=('maximum number of loci the simulation may use, i.e. n_core '
               'plus accessory gains. The rest will be left as is. Exceeding '
-              'it is an error. Default = 1000'))
+              'it is an error. Default = 1800'))
 
     parser.add_argument('--n_core',
                         dest='n_core',

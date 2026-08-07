@@ -18,6 +18,15 @@ from numpy.random import default_rng
 import re
 import subprocess
 import copy
+from io import StringIO
+from Bio import Phylo
+from Bio.Phylo.TreeConstruction import DistanceMatrix, DistanceTreeConstructor
+
+# Figure formats written by save_figure for every plot in the pipeline,
+# and the per-format output subdirectories under each run's --out-folder
+# (requirement 6: group figures by format -- png/, pdf/, svg/ -- instead
+# of mixing all three extensions together in one flat folder).
+FIGURE_FORMATS = ["png", "pdf", "svg"]
 
 DEFAULT_DATAPATH = (
     "/nfs/research/jlees/campan/data/clustering_benchmarking/"
@@ -93,6 +102,20 @@ SIM_ONLY_SKETCH_METHOD_NAMES = ["hdbscan_dist", "hdbscan_tsne"]
 # for both simulated and real data. These threshold values/label names must
 # match cluster_distance_file.CONNECTED_COMPONENTS_THRESHOLDS and its
 # f"connected_components_t{threshold}" label naming exactly.
+#
+# === (unification pass): as of the visualisation-unification pipeline
+# change, connected-components clustering is now ALSO run for simulated
+# data (upstream, by cluster_distance_file.py -- outside this script), so
+# it can be compared against the ground truth the same way every other
+# method is. Nothing below needs to special-case which pipeline produced
+# it: get_dfs_from_sketch (simulation path) already groups purely by
+# whatever "method" values are present in clusters.tsv, and every
+# downstream lookup keys off CONNECTED_COMPONENTS_METHOD_NAMES /
+# SKETCH_METHOD_NAMES / COMBO_ORDER / FANCYDICT, all of which already list
+# these methods regardless of pipeline. Simulated clusters.tsv files that
+# don't (yet) contain connected-components rows are unaffected: the method
+# simply won't appear in that assembly/seed's plots, exactly like any
+# other clusterer whose output folder is missing/incomplete.
 
 CONNECTED_COMPONENTS_THRESHOLDS = (0.2, 0.3)
 CONNECTED_COMPONENTS_METHOD_NAMES = [
@@ -101,10 +124,12 @@ CONNECTED_COMPONENTS_METHOD_NAMES = [
 
 # SKETCH_METHOD_NAMES is the union of every sub-method name that can appear
 # under the "sketch" clusterer's clusters.tsv "method" column, across BOTH
-# pipelines. Simulated-data runs only ever emit SIM_ONLY_SKETCH_METHOD_NAMES
-# + "hdbscan_umap"; real-data runs only ever emit
-# CONNECTED_COMPONENTS_METHOD_NAMES + "hdbscan_umap" (see cluster_distance_
-# file.py's --sparse branch). Keeping one combined list means every place
+# pipelines. Historically, simulated-data runs only ever emitted
+# SIM_ONLY_SKETCH_METHOD_NAMES + "hdbscan_umap" while real-data runs only
+# ever emitted CONNECTED_COMPONENTS_METHOD_NAMES + "hdbscan_umap" (see
+# cluster_distance_file.py's --sparse branch); simulated data can now also
+# emit CONNECTED_COMPONENTS_METHOD_NAMES (see note above). Keeping one
+# combined list means every place
 # below that families/italicises/excludes-from-c-sweep "sketch" sub-methods
 # (by checking membership in SKETCH_METHOD_NAMES) works unchanged for
 # whichever pipeline actually produced the data, with no per-mode branching
@@ -184,11 +209,10 @@ COMBO_ORDER = [
 ]
 
 SKETCH_FOOTNOTE = (
-    "* Sketch sub-methods (HDBSCAN on distance/t-SNE/UMAP for simulated "
-    "data; HDBSCAN on UMAP plus a single-linkage connected-components "
-    "threshold sweep for real data) run once per seed on a fixed sketch "
-    "distance matrix; there is no c (minimum sequence identity) sweep, so "
-    "no averaging over c is performed."
+    "* Sketch sub-methods (HDBSCAN on distance/t-SNE/UMAP, HDBSCAN on UMAP, "
+    "and a single-linkage connected-components threshold sweep) run once "
+    "per seed on a fixed sketch distance matrix; there is no c (minimum "
+    "sequence identity) sweep, so no averaging over c is performed."
 )
 
 EMBED_FOOTNOTE = (
@@ -465,16 +489,30 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
         truthlab_matched = truthlab
         truthdf_matched = truthdf
 
-    # Empirical p-value for "is the observed Adjusted Rand Index better
-    # than chance agreement", via random relabelling permutations -- see
-    # permutation_test_agreement for the algorithm.
+    # Empirical p-values for "is the observed agreement score better than
+    # chance agreement", via random relabelling permutations -- see
+    # permutation_test_agreement for the algorithm. Computed identically
+    # for ARI, AMI, and V-measure (same nperm, same underlying test) so
+    # the three p-values are directly comparable to one another.
     _, ari_p = permutation_test_agreement(
         truthlab_matched,
         probelab_matched,
         metrics.adjusted_rand_score,
         nperm=10000
     )
-    
+    _, ami_p = permutation_test_agreement(
+        truthlab_matched,
+        probelab_matched,
+        adjusted_mutual_info_score,
+        nperm=10000
+    )
+    _, vmeasure_p = permutation_test_agreement(
+        truthlab_matched,
+        probelab_matched,
+        metrics.v_measure_score,
+        nperm=10000
+    )
+
     outlist = [
         True,
         infotuple[0],
@@ -490,12 +528,16 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
         # score, corrected for chance, between predicted and true labels.
         float(adjusted_mutual_info_score(truthlab_matched, probelab_matched)),
         ari_p,
+        ami_p,
     ]
     # Homogeneity (each predicted cluster contains only members of a
     # single true class), completeness (all members of a true class are
     # assigned to the same predicted cluster), and V-measure (their
     # harmonic mean) -- standard sklearn cluster-agreement metrics.
     outlist += [float(el) for el in metrics.homogeneity_completeness_v_measure(truthlab_matched, probelab_matched)]
+    # V-measure permutation p-value, appended last so all pre-existing
+    # column positions/order are unchanged (see build_results_dataframe).
+    outlist.append(vmeasure_p)
     return outlist
 
 
@@ -2330,7 +2372,7 @@ def _process_one_realdata_folder(args):
 
             row = (
                 [False, theass, theseed, method_name,
-                 np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+                 np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
                 + [n_clusters, n_singletons, n_pairs]
                 + paramlist
                 + [method_runtime]
@@ -2366,13 +2408,16 @@ def _process_one_realdata_folder(args):
         f"runtime={runtime if not np.isnan(runtime) else 'n/a'}s"
     )
 
-    # Truth-dependent columns (ARI, purity, AMI, v-measure, ...) do not
-    # exist for real data -> NaN, but the row shape is kept identical to
-    # calculate_values_from_cluster_matrix's output so
-    # build_results_dataframe needs no changes.
+    # Truth-dependent columns (ARI, purity, AMI, v-measure, and their
+    # permutation p-values, ...) do not exist for real data -> NaN, but
+    # the row shape is kept identical to calculate_values_from_cluster_
+    # matrix's output (9 truth-dependent columns: adj_rand_index, purity,
+    # adj_mutual_info, adj_rand_index_p, adj_mutual_info_p, homogeneity,
+    # completeness, v_measure, v_measure_p) so build_results_dataframe
+    # needs no per-mode branching.
     row = (
         [False, theass, theseed, tmpclusterer,
-         np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+         np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
         + [n_clusters, n_singletons, n_pairs]
         + paramlist
         + [runtime]
@@ -2439,11 +2484,11 @@ def get_info_from_folder_realdata(theargs, nthreads=1):
         calculate_values_from_cluster_matrix are never called), since real
         biological data has no ground-truth cluster assignments. The
         truth-dependent metric columns (adj_rand_index, purity,
-        adj_mutual_info, adj_rand_index_p, homogeneity, completeness,
-        v_measure) are filled with NaN so the returned row still matches
-        the column layout build_results_dataframe expects -- this lets us
-        reuse that function, and any plot that only reads runtime/
-        n_clusters/params, completely unchanged.
+        adj_mutual_info, adj_rand_index_p, adj_mutual_info_p, homogeneity,
+        completeness, v_measure, v_measure_p) are filled with NaN so the
+        returned row still matches the column layout build_results_dataframe
+        expects -- this lets us reuse that function, and any plot that only
+        reads runtime/n_clusters/params, completely unchanged.
       - Only CD-HIT, MMseqs2 and DIAMOND folders are processed (requirement
         5); every other clusterer's output folder is ignored even if
         present on disk.
@@ -2567,6 +2612,140 @@ def add_sketch_bracket(ax, x, positions, bar_width=0.5, y_top=-0.16, y_bottom=-0
             fontproperties=fontprops, fontsize=fontsize, clip_on=False,
         )
         row += 1
+
+
+def save_figure(fig, outfolder, filename_stub, exts=None, **savefig_kwargs):
+    """Single shared figure-writer for the whole pipeline (requirement 6):
+    every plotting function in this script should call this instead of
+    looping over extensions and building its own os.path.join calls, so
+    the output layout stays identical everywhere.
+
+    Instead of writing "<outfolder>/<stub>.png", "<outfolder>/<stub>.pdf",
+    "<outfolder>/<stub>.svg" all mixed together in one folder (the
+    original behaviour), figures are grouped by format into
+    "<outfolder>/png/<stub>.png", "<outfolder>/pdf/<stub>.pdf",
+    "<outfolder>/svg/<stub>.svg". The original naming convention for the
+    stub itself (e.g. "plot_heatmap_pairwise_ari_simulations_<assembly>")
+    is preserved unchanged -- only the directory the file lands in moves.
+
+    Input:
+        fig             -- the matplotlib Figure to save.
+        outfolder       -- the run's top-level output folder (as passed
+                            around everywhere else in the pipeline).
+        filename_stub   -- file name without extension, e.g. the result
+                            of "_".join([...]) at each call site.
+        exts            -- iterable of extensions to write; defaults to
+                            FIGURE_FORMATS (png, pdf, svg).
+        **savefig_kwargs -- forwarded to fig.savefig (e.g. bbox_inches).
+    Output: none (writes files to disk).
+    """
+    if exts is None:
+        exts = FIGURE_FORMATS
+    for ext in exts:
+        ext_dir = os.path.join(outfolder, ext)
+        os.makedirs(ext_dir, exist_ok=True)
+        fig.savefig(
+            os.path.join(ext_dir, f"{filename_stub}.{ext}"),
+            **savefig_kwargs,
+        )
+
+
+def plot_nj_tree_from_matrix(
+    mat, x, labels, namedict, outfolder, assembly, datatype, font_props,
+    filename_prefix, title_suffix=None,
+):
+    """Neighbour-joining tree companion for a symmetric method-vs-method
+    similarity matrix (requirement 3): every symmetric heatmap this
+    pipeline draws (pairwise ARI/AMI/purity/V-measure/F1) gets a matching
+    tree, so relationships between methods can be read off as a
+    dendrogram in addition to the heatmap's raw numbers.
+
+    Method: `mat` holds a similarity score in ~[0, 1] (1 = identical
+    clusterings) for every method pair, with only the lower triangle
+    filled and the diagonal at 1.0 (see _plot_triangular_pairwise_heatmap).
+    This is converted to a distance matrix via distance = 1 - similarity
+    (clipped to >= 0 to absorb floating-point noise), mirrored into a
+    full symmetric matrix, and then neighbour-joining (Bio.Phylo's
+    DistanceTreeConstructor.nj) is run on it to build an unrooted tree,
+    which is drawn with Bio.Phylo's own plotting onto a matplotlib axis.
+
+    Input:
+        mat            -- same (n x n) matrix passed to
+                           _plot_triangular_pairwise_heatmap (lower
+                           triangle filled with a similarity score, upper
+                           triangle NaN, diagonal 1.0).
+        x              -- ordered list of combo keys (rows/columns of mat).
+        labels         -- display labels for each row/column (same order
+                           as x; used as the tree's tip labels).
+        namedict, outfolder, assembly, datatype, font_props -- standard
+                           plotting bookkeeping (see other plot functions).
+        filename_prefix -- prefix used to build the output file name
+                           (by convention, the heatmap's own
+                           filename_prefix + "_njtree").
+        title_suffix   -- optional short description of the metric shown
+                           (e.g. the heatmap's cbar_label), used in the
+                           figure title.
+    Output: none (saves PNG/PDF/SVG figures to `outfolder` via
+        save_figure). Silently skipped (with a warning) if fewer than 3
+        methods are present, since a tree isn't meaningful below that.
+    """
+    ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
+
+    n = len(x)
+    if n < 3:
+        warnings.warn(
+            f"Fewer than 3 methods available for {assembly}/{datatype} "
+            f"({filename_prefix}); skipping NJ tree",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+
+    # Mirror the lower triangle into a full symmetric similarity matrix,
+    # then convert to a non-negative distance matrix.
+    sim = np.array(mat, dtype=float)
+    full_sim = np.where(np.isnan(sim), sim.T, sim)
+    np.fill_diagonal(full_sim, 1.0)
+    if np.isnan(full_sim).any():
+        warnings.warn(
+            f"Incomplete pairwise data for {assembly}/{datatype} "
+            f"({filename_prefix}); skipping NJ tree",
+            RuntimeWarning, stacklevel=2,
+        )
+        return
+    dist = np.clip(1.0 - full_sim, 0.0, None)
+
+    # Bio.Phylo's DistanceMatrix wants the lower triangle as a list of
+    # lists, row i holding i+1 entries (through the diagonal).
+    lower_triangle = [list(dist[i, : i + 1]) for i in range(n)]
+    dm = DistanceMatrix(names=list(labels), matrix=lower_triangle)
+
+    constructor = DistanceTreeConstructor()
+    tree = constructor.nj(dm)
+    tree.root_at_midpoint()
+    # Bio.Phylo auto-names internal nodes ("Inner1", "Inner2", ...) which
+    # Phylo.draw would otherwise print at every internal node, cluttering
+    # the figure -- blank them out so only the method tip labels show.
+    for clade in tree.get_nonterminals():
+        clade.name = None
+
+    fig = plt.figure(1, dpi=150, figsize=(max(6.0, n * 0.35 + 2.0), max(4.0, n * 0.3 + 1.5)))
+    ax = fig.subplots()
+    Phylo.draw(tree, axes=ax, do_show=False, branch_labels=None)
+
+    for text_obj in ax.texts:
+        text_obj.set_fontproperties(ibmplexsans)
+        text_obj.set_fontsize(BASE_FONT_SIZE)
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_fontproperties(ibmplexsans)
+
+    title = f"NJ tree — {namedict[assembly]} ({datatype})"
+    if title_suffix:
+        title = f"NJ tree, {title_suffix} — {namedict[assembly]} ({datatype})"
+    ax.set_title(title, fontproperties=ibmplexsansbold, fontsize=AXIS_TITLE_FONT_SIZE)
+
+    fig.tight_layout()
+    save_figure(fig, outfolder, "_".join([filename_prefix, datatype, assembly]), bbox_inches="tight")
+    plt.close(fig)
 
 
 def plotter(theargs):
@@ -2710,11 +2889,7 @@ def plotter(theargs):
     plt.text(0, 1.01, namedict[assembly], fontproperties=ibmplexsansitalics, horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
     plt.legend(loc="best", frameon=False, prop=ibmplexsans, handlelength=0.5, handletextpad=0.75, labelspacing=0.3)
 
-    for ext in ["png", "pdf", "svg"]:
-        fig.savefig(
-            os.path.join(outfolder, "_".join(["plot_c", datatype, assembly, outnamescaff]) + "." + ext),
-            bbox_inches="tight",
-        )
+    save_figure(fig, outfolder, "_".join(["plot_c", datatype, assembly, outnamescaff]), bbox_inches="tight")
     fig.clf()
     del fig, ax
 
@@ -2875,11 +3050,7 @@ def plotter_pointplots(theargs):
             horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
 
-    for ext in ["png", "pdf", "svg"]:
-        fig.savefig(
-            os.path.join(outfolder, "_".join(["plot_point", datatype, assembly, outnamescaff]) + "." + ext),
-            bbox_inches="tight",
-        )
+    save_figure(fig, outfolder, "_".join(["plot_point", datatype, assembly, outnamescaff]), bbox_inches="tight")
     fig.clf()
     del fig, ax
 
@@ -3005,11 +3176,7 @@ def number_of_clusters_violin(theargs):
         )
 
     outnamescaff = name.replace(" ", "").replace("#", "NumberOf")
-    for ext in ["png", "pdf", "svg"]:
-        fig.savefig(
-            os.path.join(outfolder, "_".join(["plot_violin", datatype, assembly, outnamescaff]) + "." + ext),
-            bbox_inches="tight",
-        )
+    save_figure(fig, outfolder, "_".join(["plot_violin", datatype, assembly, outnamescaff]), bbox_inches="tight")
     fig.clf()
     del fig, ax
 
@@ -3179,11 +3346,7 @@ def number_of_clusters_stacked_bar(theargs):
             horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
 
-    for ext in ["png", "pdf", "svg"]:
-        fig.savefig(
-            os.path.join(outfolder, "_".join(["plot_stackedbar", datatype, assembly, "n_clusters"]) + "." + ext),
-            bbox_inches="tight",
-        )
+    save_figure(fig, outfolder, "_".join(["plot_stackedbar", datatype, assembly, "n_clusters"]), bbox_inches="tight")
     fig.clf()
     del fig, ax
 
@@ -3355,11 +3518,7 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
         labelspacing=0.3,
         ncol=len(method_handles),       # all in one row; reduce to 3 if too wide
     )
-    for ext in ["png", "pdf", "svg"]:
-        fig.savefig(
-            os.path.join(outfolder, "_".join(["plot_stackedbar_c", datatype, assembly, "n_clusters"]) + "." + ext),
-            bbox_inches="tight",
-        )
+    save_figure(fig, outfolder, "_".join(["plot_stackedbar_c", datatype, assembly, "n_clusters"]), bbox_inches="tight")
     fig.clf()
     del fig, ax
 
@@ -3505,11 +3664,7 @@ def methods_comparison_heatmap(theargs):
             horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
 
-    for ext in ["png", "pdf", "svg"]:
-        fig.savefig(
-            os.path.join(outfolder, "_".join(["plot_heatmap_methodcomparison", datatype, assembly]) + "." + ext),
-            bbox_inches="tight",
-        )
+    save_figure(fig, outfolder, "_".join(["plot_heatmap_methodcomparison", datatype, assembly]), bbox_inches="tight")
     fig.clf()
     del fig, ax
 
@@ -3938,14 +4093,13 @@ def plot_pairwise_exact_match_heatmap(theargs):
     plt.text(0, 1.03, namedict[assembly], fontproperties=ibmplexsansitalics,
              horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
 
-    for ext in ["png", "pdf", "svg"]:
-        fig.savefig(
-            os.path.join(
-                outfolder,
-                "_".join(["plot_heatmap_pairwise_exact_match", datatype, assembly]) + "." + ext,
-            ),
-            bbox_inches="tight",
-        )
+    # Note: this heatmap is NOT symmetric (row = query tool, column =
+    # reference tool matched against, and "query matches reference" need
+    # not equal "reference matches query"), so per item 3 of the pipeline
+    # unification (trees only for symmetric/similarity matrices) no NJ
+    # tree is generated here.
+    save_figure(fig, outfolder, "_".join(["plot_heatmap_pairwise_exact_match", datatype, assembly]), bbox_inches="tight")
+
     fig.clf()
     del fig, ax
 
@@ -4094,13 +4248,7 @@ def plot_core_genome_curve_realdata(theargs):
         label.set_fontproperties(ibmplexsans)
     fig.tight_layout()
 
-    for ext in ["png", "pdf", "svg"]:
-        fig.savefig(
-            os.path.join(
-                outfolder,
-                "_".join(["plot_core_genome_estimation", datatype, assembly]) + "." + ext,
-            ),
-        )
+    save_figure(fig, outfolder, "_".join(["plot_core_genome_estimation", datatype, assembly]))
     plt.close(fig)
 
 
@@ -4266,13 +4414,7 @@ def plot_cluster_occupancy_uplot(theargs):
         label.set_fontproperties(ibmplexsans)
     fig.tight_layout()
 
-    for ext in ["png", "pdf", "svg"]:
-        fig.savefig(
-            os.path.join(
-                outfolder,
-                "_".join(["plot_cluster_occupancy_uplot", datatype, assembly]) + "." + ext,
-            ),
-        )
+    save_figure(fig, outfolder, "_".join(["plot_cluster_occupancy_uplot", datatype, assembly]))
     plt.close(fig)
 
 
@@ -4380,15 +4522,10 @@ def plot_cluster_occupancy_uplot_single(theargs):
             label.set_fontproperties(ibmplexsans)
         fig.tight_layout()
 
-        for ext in ["png", "pdf", "svg"]:
-            fig.savefig(
-                os.path.join(
-                    outfolder,
-                    "_".join(
-                        ["plot_cluster_occupancy_uplot_single", datatype, assembly, combo_slug(combo)]
-                    ) + "." + ext,
-                ),
-            )
+        save_figure(
+            fig, outfolder,
+            "_".join(["plot_cluster_occupancy_uplot_single", datatype, assembly, combo_slug(combo)]),
+        )
         plt.close(fig)
 
 
@@ -4644,10 +4781,7 @@ def plot_gene_deletion_boxplot(theargs):
     )
     fig.tight_layout()
 
-    outpath = os.path.join(
-        outfolder, f"plot_boxplot_gene_deletion_pct_{assembly}_{datatype}.png"
-    )
-    fig.savefig(outpath)
+    save_figure(fig, outfolder, f"plot_boxplot_gene_deletion_pct_{assembly}_{datatype}")
     plt.close(fig)
 
     return deletion_df
@@ -4803,13 +4937,20 @@ def _plot_triangular_pairwise_heatmap(
             horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
 
-    for ext in ["png", "pdf", "svg"]:
-        fig.savefig(
-            os.path.join(outfolder, "_".join([filename_prefix, datatype, assembly]) + "." + ext),
-            bbox_inches="tight",
-        )
-    fig.clf()
+    save_figure(fig, outfolder, "_".join([filename_prefix, datatype, assembly]), bbox_inches="tight")
+    plt.close(fig)
     del fig, ax
+
+    # Every caller of this shared function passes a matrix that is
+    # symmetric between methods i and j (upper triangle NaN'd out by the
+    # caller purely for display; see docstring), so an NJ tree is always
+    # meaningful here. The heatmap figure above must be closed first,
+    # since both this and plot_nj_tree_from_matrix reuse figure number 1.
+    plot_nj_tree_from_matrix(
+        mat, x, labels, namedict, outfolder, assembly, datatype, font_props,
+        filename_prefix=filename_prefix + "_njtree",
+        title_suffix=cbar_label,
+    )
 
 
 def plot_pairwise_ari_heatmap(theargs):
@@ -5143,10 +5284,15 @@ def build_results_dataframe(listoflists):
             clustering parameters in PARAMORDER, and runtime).
     Output: a DataFrame with columns
         [adj_rand_index, purity, adj_mutual_info, adj_rand_index_p,
-         homogeneity, completeness, v_measure, n_clusters, n_singletons,
-         n_pairs] + PARAMORDER + [runtime], indexed by a MultiIndex of
-        (simulations, assembly, seed, clusterer) so rows can be sliced by
-        any combination of those four keys elsewhere in the script.
+         adj_mutual_info_p, homogeneity, completeness, v_measure,
+         v_measure_p, n_clusters, n_singletons, n_pairs] + PARAMORDER +
+        [runtime], indexed by a MultiIndex of (simulations, assembly,
+        seed, clusterer) so rows can be sliced by any combination of
+        those four keys elsewhere in the script. adj_mutual_info_p and
+        v_measure_p are the AMI/V-measure analogues of adj_rand_index_p
+        (item 2): same permutation-test methodology, applied to AMI/
+        V-measure instead of ARI (see
+        calculate_values_from_cluster_matrix / permutation_test_agreement).
     """
     outdf = pd.DataFrame(
         listoflists,
@@ -5159,9 +5305,11 @@ def build_results_dataframe(listoflists):
             "purity",
             "adj_mutual_info",
             "adj_rand_index_p",
+            "adj_mutual_info_p",
             "homogeneity",
             "completeness",
             "v_measure",
+            "v_measure_p",
             "n_clusters",
             "n_singletons",
             "n_pairs",
