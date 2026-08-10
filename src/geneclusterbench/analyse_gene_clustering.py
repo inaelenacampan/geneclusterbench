@@ -117,7 +117,7 @@ SIM_ONLY_SKETCH_METHOD_NAMES = ["hdbscan_dist", "hdbscan_tsne"]
 # simply won't appear in that assembly/seed's plots, exactly like any
 # other clusterer whose output folder is missing/incomplete.
 
-CONNECTED_COMPONENTS_THRESHOLDS = (0.2, 0.3)
+CONNECTED_COMPONENTS_THRESHOLDS = (0.6, 0.7)
 CONNECTED_COMPONENTS_METHOD_NAMES = [
     f"connected_components_t{threshold}" for threshold in CONNECTED_COMPONENTS_THRESHOLDS
 ]
@@ -172,11 +172,11 @@ FANCYDICT = {
     # connected-components sweep,
     # one entry per threshold, per seqtype ===
     **{
-        f"connected_components_t{threshold}/aa": f"Sketch - Connected components t={threshold}* (AA)"
+        f"connected_components_t{threshold}/aa": f"Connected components t={threshold}* (AA)"
         for threshold in CONNECTED_COMPONENTS_THRESHOLDS
     },
     **{
-        f"connected_components_t{threshold}/nt": f"Sketch - Connected components t={threshold}* (NT)"
+        f"connected_components_t{threshold}/nt": f"Connected components t={threshold}* (NT)"
         for threshold in CONNECTED_COMPONENTS_THRESHOLDS
     },
 
@@ -288,6 +288,7 @@ CONFIGDICT_COLOURS = {
 
 
 def nicesp(uglysp):
+    print(f"[TRACE] >>> Entering nicesp() - defined at line 290 of {__file__}")
     """Turn a dotted species/assembly identifier (e.g. "genus.species") into
     a human-readable, title-cased string for use in plot titles/labels.
 
@@ -300,6 +301,7 @@ def nicesp(uglysp):
 
 
 def get_font_properties(args):
+    print(f"[TRACE] >>> Entering get_font_properties() - defined at line 302 of {__file__}")
     """Build the three matplotlib FontProperties objects (regular, italic,
     bold) used throughout the plotting functions in this script, from the
     font file paths supplied on the command line.
@@ -318,6 +320,7 @@ def get_font_properties(args):
 
 
 def get_param_dict_from_splits(thesplits):
+    print(f"[TRACE] >>> Entering get_param_dict_from_splits() - defined at line 320 of {__file__}")
     """Parse a list of "key-value" tokens (as produced by splitting a
     result-folder name like "mmseqs2_st-aa_c-0.9" on "_") into a
     dictionary of clustering parameters.
@@ -344,6 +347,7 @@ def get_param_dict_from_splits(thesplits):
 
 
 def get_labels_list_from_df(indf):
+    print(f"[TRACE] >>> Entering get_labels_list_from_df() - defined at line 346 of {__file__}")
     """Convert a dense cluster-membership matrix into parallel gene/label
     lists, i.e. flatten "which cluster is each gene in" out of the matrix
     representation used elsewhere in this script.
@@ -374,6 +378,7 @@ def get_labels_list_from_df(indf):
 
 
 def get_purity(inlab, truthdf, gene_ids=None):
+    print(f"[TRACE] >>> Entering get_purity() - defined at line 376 of {__file__}")
     """Compute clustering purity of a predicted clustering against a
     ground-truth clustering: for each TRUE class, count how many of its
     genes fall into each PREDICTED cluster, keep only the best-matching
@@ -438,6 +443,7 @@ def get_purity(inlab, truthdf, gene_ids=None):
 # for mathematical expression see documentation
 
 def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
+    print(f"[TRACE] >>> Entering calculate_values_from_cluster_matrix() - defined at line 440 of {__file__}")
     """Compare one clusterer's predicted clustering against the simulation's
     known ground-truth clustering, and compute a full row of
     clustering-agreement statistics (simulation pipeline only -- real data
@@ -453,13 +459,14 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
                      truthdf.index.
         truthdf   -- ground-truth membership DataFrame (see get_purity).
     Output: a flat list (one row) combining the bookkeeping fields with:
-        adjusted Rand index, purity, adjusted mutual information, the
-        permutation-test p-value for the Rand index, and
+        adjusted Rand index, purity, adjusted mutual information, and
         homogeneity/completeness/V-measure -- the same set of metrics
         recorded in `outdf` and later plotted as boxplots/pointplots/
         heatmaps for the simulation pipeline. All of these range roughly
         0 (no agreement, worse than random for AMI/ARI) to 1 (perfect
         agreement with the ground truth), so higher is always better.
+        (Permutation-test p-values for ARI/AMI/V-measure are not
+        computed or included any more.)
     """
     genes_present, probelab = get_labels_list_from_df(indf)
 
@@ -489,29 +496,11 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
         truthlab_matched = truthlab
         truthdf_matched = truthdf
 
-    # Empirical p-values for "is the observed agreement score better than
-    # chance agreement", via random relabelling permutations -- see
-    # permutation_test_agreement for the algorithm. Computed identically
-    # for ARI, AMI, and V-measure (same nperm, same underlying test) so
-    # the three p-values are directly comparable to one another.
-    _, ari_p = permutation_test_agreement(
-        truthlab_matched,
-        probelab_matched,
-        metrics.adjusted_rand_score,
-        nperm=10000
-    )
-    _, ami_p = permutation_test_agreement(
-        truthlab_matched,
-        probelab_matched,
-        adjusted_mutual_info_score,
-        nperm=10000
-    )
-    _, vmeasure_p = permutation_test_agreement(
-        truthlab_matched,
-        probelab_matched,
-        metrics.v_measure_score,
-        nperm=10000
-    )
+    # NOTE: permutation-test p-values for ARI/AMI/V-measure are no longer
+    # computed or reported. permutation_test_agreement (below) is kept
+    # in the module for reference/future re-enabling, but is not called
+    # here any more. The ARI/AMI/V-measure point estimates themselves are
+    # still calculated exactly as before.
 
     outlist = [
         True,
@@ -527,21 +516,17 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
         # Adjusted mutual information: information-theoretic agreement
         # score, corrected for chance, between predicted and true labels.
         float(adjusted_mutual_info_score(truthlab_matched, probelab_matched)),
-        ari_p,
-        ami_p,
     ]
     # Homogeneity (each predicted cluster contains only members of a
     # single true class), completeness (all members of a true class are
     # assigned to the same predicted cluster), and V-measure (their
     # harmonic mean) -- standard sklearn cluster-agreement metrics.
     outlist += [float(el) for el in metrics.homogeneity_completeness_v_measure(truthlab_matched, probelab_matched)]
-    # V-measure permutation p-value, appended last so all pre-existing
-    # column positions/order are unchanged (see build_results_dataframe).
-    outlist.append(vmeasure_p)
     return outlist
 
 
 def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjusted_rand_score, nperm=10000, seed=None):
+    print(f"[TRACE] >>> Entering permutation_test_agreement() - defined at line 544 of {__file__}")
     """Empirical permutation test for whether the agreement between two
     label sets (e.g. predicted vs. true clustering) is stronger than
     would be expected by chance.
@@ -587,6 +572,7 @@ def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjuste
 
 
 def parse_cdhit_identity(line):
+    print(f"[TRACE] >>> Entering parse_cdhit_identity() - defined at line 589 of {__file__}")
     """Extract the sequence-identity percentage from one member line of a
     CD-HIT .clstr file (e.g. "...at 95.00%" or "...at 1:98:99/95%") and
     convert it to a fraction in [0, 1].
@@ -601,6 +587,7 @@ def parse_cdhit_identity(line):
 
 
 def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
+    print(f"[TRACE] >>> Entering get_df_from_clusterer() - defined at line 603 of {__file__}")
     """Parse one clustering tool's raw output files (simulation pipeline)
     into a common dense (cluster_id x gene_id) membership matrix, so every
     downstream function can treat all clusterers uniformly regardless of
@@ -1185,6 +1172,7 @@ def get_df_from_clusterer(clusterer, folderpath, true_max_gene=None):
 
 # === (real-data support) ===================================
 def get_df_from_clusterer_realdata(clusterer, folderpath):
+    print(f"[TRACE] >>> Entering get_df_from_clusterer_realdata() - defined at line 1187 of {__file__}")
     """Real-data equivalent of get_df_from_clusterer, restricted to CD-HIT,
     DIAMOND, MMseqs2, and Panaroo (requirement 5).
 
@@ -1601,6 +1589,7 @@ def get_df_from_clusterer_realdata(clusterer, folderpath):
 
 
 def get_dfs_from_sketch(folderpath, true_max_gene=None):
+    print(f"[TRACE] >>> Entering get_dfs_from_sketch() - defined at line 1603 of {__file__}")
     """Parse the sketch/HDBSCAN clustering outputs (one run can contain
     several sub-methods, e.g. hdbscan_dist/hdbscan_tsne/hdbscan_umap, all
     stored together in one clusters.tsv) into the common
@@ -1679,6 +1668,7 @@ def get_dfs_from_sketch(folderpath, true_max_gene=None):
 
 # === (real-data support) ===================================
 def get_dfs_from_sketch_realdata(folderpath):
+    print(f"[TRACE] >>> Entering get_dfs_from_sketch_realdata() - defined at line 1681 of {__file__}")
     """Real-data equivalent of get_dfs_from_sketch, following the same
     "restrict to what real data actually needs" rationale as
     get_df_from_clusterer_realdata's docstring.
@@ -1738,6 +1728,7 @@ def get_dfs_from_sketch_realdata(folderpath):
 
 
 def get_dfs_from_embeddings(folderpath, true_max_gene=None):
+    print(f"[TRACE] >>> Entering get_dfs_from_embeddings() - defined at line 1740 of {__file__}")
     """Embeddings/HDBSCAN equivalent of get_dfs_from_sketch: parses the
     embeddings clustering output (multiple sub-methods in one
     clusters.tsv, e.g. embed_hdbscan_raw/embed_hdbscan_tsne/
@@ -1810,6 +1801,7 @@ def get_dfs_from_embeddings(folderpath, true_max_gene=None):
 
 
 def count_singleton_clusters(thedf):
+    print(f"[TRACE] >>> Entering count_singleton_clusters() - defined at line 1812 of {__file__}")
     """Count clusters that contain exactly one gene ("orphan" genes with
     no detected homologues).
 
@@ -1826,6 +1818,7 @@ def count_singleton_clusters(thedf):
     return int((member_counts == 1).sum())
 
 def count_pairs_clusters(thedf):
+    print(f"[TRACE] >>> Entering count_pairs_clusters() - defined at line 1828 of {__file__}")
     """Count clusters that contain exactly two genes.
 
     Input:  thedf -- a (cluster_id x gene_id) membership matrix.
@@ -1840,6 +1833,7 @@ def count_pairs_clusters(thedf):
     return int((member_counts == 2).sum())
 
 def get_time_diff_from_file(inpath):
+    print(f"[TRACE] >>> Entering get_time_diff_from_file() - defined at line 1842 of {__file__}")
     """Parse a "timebenchmark.txt"-style file containing one line with a
     "<start_time>=>[<end_time>]" timestamp pair, and return the elapsed
     wall-clock runtime in seconds.
@@ -1862,6 +1856,7 @@ def get_time_diff_from_file(inpath):
 
 
 def parse_time_per_method_file(inpath):
+    print(f"[TRACE] >>> Entering parse_time_per_method_file() - defined at line 1864 of {__file__}")
     """Parses a time_per_method.txt file such as:
         load_distance_matrix: 2690.072s sweep_total: 15.786s tsne_embedding: 29.435s
         umap_embedding: 8.882s hdbscan_dist_fit: 0.787s hdbscan_tsne_fit: 0.106s
@@ -1881,6 +1876,7 @@ def parse_time_per_method_file(inpath):
 
 
 def get_species_name(inpath):
+    print(f"[TRACE] >>> Entering get_species_name() - defined at line 1883 of {__file__}")
     """Read the first line of a species-name file (one plain-text line
     naming the simulated/real organism for this assembly).
 
@@ -1895,6 +1891,7 @@ def get_species_name(inpath):
 
 
 def check_status_of_folder(clusterer, path):
+    print(f"[TRACE] >>> Entering check_status_of_folder() - defined at line 1897 of {__file__}")
     """Sanity-check that a clustering tool actually produced its expected
     main output file in a given result folder, before we attempt to parse
     it (avoids crashing deep inside a parser on a partially-run/failed job).
@@ -1936,6 +1933,7 @@ def check_status_of_folder(clusterer, path):
 
 
 def get_truth_matrix_path(datapath, assembly, seed):
+    print(f"[TRACE] >>> Entering get_truth_matrix_path() - defined at line 1938 of {__file__}")
     """Locate the single ground-truth cluster-membership file for one
     simulated assembly/seed (simulation pipeline only), by looking for
     the one file in that seed's data directory whose name contains
@@ -1964,6 +1962,7 @@ def get_truth_matrix_path(datapath, assembly, seed):
 
 
 def get_info_from_folder(theargs):
+    print(f"[TRACE] >>> Entering get_info_from_folder() - defined at line 1966 of {__file__}")
     """Top-level orchestration function for one (assembly, seed) unit of
     work in the SIMULATION pipeline: loads the ground truth, then runs
     every requested clusterer's output through get_df_from_clusterer /
@@ -2225,6 +2224,7 @@ def get_info_from_folder(theargs):
 
 
 def is_refound_gene_id(gene_id):
+    print(f"[TRACE] >>> Entering is_refound_gene_id() - defined at line 2227 of {__file__}")
     """True if `gene_id` looks like a Panaroo-added "refound" gene id
     (Panaroo encodes this directly in the gene id string it writes into
     gene_presence_absence.csv, e.g. "NLEIDEKG_01145_refound_1")."""
@@ -2232,6 +2232,7 @@ def is_refound_gene_id(gene_id):
 
 
 def filter_refound_genes(genes, labels):
+    print(f"[TRACE] >>> Entering filter_refound_genes() - defined at line 2234 of {__file__}")
     """Real-data-only filter: given parallel (genes, labels) lists as
     returned by get_labels_list_from_df, drop every entry whose gene id is
     a Panaroo "refound" gene (see is_refound_gene_id), and report how many
@@ -2263,6 +2264,7 @@ def filter_refound_genes(genes, labels):
 
 
 def _process_one_realdata_folder(args):
+    print(f"[TRACE] >>> Entering _process_one_realdata_folder() - defined at line 2265 of {__file__}")
     """Worker for a single clusterer output folder in real-data mode
     (e.g. "mmseqs2_st-aa_c-0.9/"). Pulled out of get_info_from_folder_realdata
     so it can be dispatched to a multiprocessing Pool -- see the
@@ -2372,7 +2374,7 @@ def _process_one_realdata_folder(args):
 
             row = (
                 [False, theass, theseed, method_name,
-                 np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+                 np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
                 + [n_clusters, n_singletons, n_pairs]
                 + paramlist
                 + [method_runtime]
@@ -2408,16 +2410,15 @@ def _process_one_realdata_folder(args):
         f"runtime={runtime if not np.isnan(runtime) else 'n/a'}s"
     )
 
-    # Truth-dependent columns (ARI, purity, AMI, v-measure, and their
-    # permutation p-values, ...) do not exist for real data -> NaN, but
-    # the row shape is kept identical to calculate_values_from_cluster_
-    # matrix's output (9 truth-dependent columns: adj_rand_index, purity,
-    # adj_mutual_info, adj_rand_index_p, adj_mutual_info_p, homogeneity,
-    # completeness, v_measure, v_measure_p) so build_results_dataframe
+    # Truth-dependent columns (ARI, purity, AMI, homogeneity, completeness,
+    # v-measure, ...) do not exist for real data -> NaN, but the row shape
+    # is kept identical to calculate_values_from_cluster_matrix's output
+    # (6 truth-dependent columns: adj_rand_index, purity, adj_mutual_info,
+    # homogeneity, completeness, v_measure) so build_results_dataframe
     # needs no per-mode branching.
     row = (
         [False, theass, theseed, tmpclusterer,
-         np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+         np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
         + [n_clusters, n_singletons, n_pairs]
         + paramlist
         + [runtime]
@@ -2442,6 +2443,7 @@ def _process_one_realdata_folder(args):
 
 
 def get_info_from_folder_realdata(theargs, nthreads=1):
+    print(f"[TRACE] >>> Entering get_info_from_folder_realdata() - defined at line 2444 of {__file__}")
     """Real-data equivalent of get_info_from_folder.
 
     === flat layout, no assembly/seed subdirectories ===========
@@ -2484,11 +2486,11 @@ def get_info_from_folder_realdata(theargs, nthreads=1):
         calculate_values_from_cluster_matrix are never called), since real
         biological data has no ground-truth cluster assignments. The
         truth-dependent metric columns (adj_rand_index, purity,
-        adj_mutual_info, adj_rand_index_p, adj_mutual_info_p, homogeneity,
-        completeness, v_measure, v_measure_p) are filled with NaN so the
-        returned row still matches the column layout build_results_dataframe
-        expects -- this lets us reuse that function, and any plot that only
-        reads runtime/n_clusters/params, completely unchanged.
+        adj_mutual_info, homogeneity, completeness, v_measure) are filled
+        with NaN so the returned row still matches the column layout
+        build_results_dataframe expects -- this lets us reuse that
+        function, and any plot that only reads runtime/n_clusters/params,
+        completely unchanged.
       - Only CD-HIT, MMseqs2 and DIAMOND folders are processed (requirement
         5); every other clusterer's output folder is ignored even if
         present on disk.
@@ -2549,6 +2551,7 @@ def get_info_from_folder_realdata(theargs, nthreads=1):
 # plot idea : how does this metric vary with the clustering threshold, averaged over random seeds, for this assembly
 
 def build_ordered_combo_list(subdf, name=None):
+    print(f"[TRACE] >>> Entering build_ordered_combo_list() - defined at line 2551 of {__file__}")
     """Return the clusterer/seqtype combos present in subdf, in the nice,
     consistent COMBO_ORDER order (rather than whatever order set() happens
     to give), skipping combos with no data and combos missing from
@@ -2571,6 +2574,7 @@ def build_ordered_combo_list(subdf, name=None):
 
 
 def get_family_footnote(x):
+    print(f"[TRACE] >>> Entering get_family_footnote() - defined at line 2573 of {__file__}")
     """Return the combined footnote text for whichever method families
     (sketch, embeddings, ...) are present among the combos in x, or None if
     none are present."""
@@ -2584,8 +2588,9 @@ def get_family_footnote(x):
     return "\n".join(lines)
 
 
-def add_sketch_bracket(ax, x, positions, bar_width=0.5, y_top=-0.16, y_bottom=-0.18,
+def add_sketch_bracket(ax, x, positions, bar_width=0.5, y_top=-0.28, y_bottom=-0.30,
                         fontprops=None, fontsize=None, row_gap=0.06):
+    print(f"[TRACE] >>> Entering add_sketch_bracket() - defined at line 2587 of {__file__}")
     """Draw a small bracket + label under each method family's columns (sketch,
     embeddings, ...), so readers can see at a glance that they're one family of
     methods. If more than one family is present, brackets are stacked below
@@ -2615,6 +2620,7 @@ def add_sketch_bracket(ax, x, positions, bar_width=0.5, y_top=-0.16, y_bottom=-0
 
 
 def save_figure(fig, outfolder, filename_stub, exts=None, **savefig_kwargs):
+    print(f"[TRACE] >>> Entering save_figure() - defined at line 2617 of {__file__}")
     """Single shared figure-writer for the whole pipeline (requirement 6):
     every plotting function in this script should call this instead of
     looping over extensions and building its own os.path.join calls, so
@@ -2654,6 +2660,7 @@ def plot_nj_tree_from_matrix(
     mat, x, labels, namedict, outfolder, assembly, datatype, font_props,
     filename_prefix, title_suffix=None,
 ):
+    print(f"[TRACE] >>> Entering plot_nj_tree_from_matrix() - defined at line 2653 of {__file__}")
     """Neighbour-joining tree companion for a symmetric method-vs-method
     similarity matrix (requirement 3): every symmetric heatmap this
     pipeline draws (pairwise ARI/AMI/purity/V-measure/F1) gets a matching
@@ -2728,14 +2735,49 @@ def plot_nj_tree_from_matrix(
     for clade in tree.get_nonterminals():
         clade.name = None
 
-    fig = plt.figure(1, dpi=150, figsize=(max(6.0, n * 0.35 + 2.0), max(4.0, n * 0.3 + 1.5)))
+    # --- readability tuning (requirement 3) -----------------------------
+    # The default Phylo.draw layout packs tips at a fixed ~1-unit vertical
+    # spacing regardless of figure size, and labels sit flush against the
+    # tips, so with many/long method names (e.g. "Connected components
+    # t=0.7* (NT) *") the tip labels visually collide with each other and
+    # with neighbouring branch lines (the "strikethrough" look). We fix
+    # this by: (1) giving each tip much more vertical room by scaling
+    # figure height more aggressively with n, (2) reserving extra
+    # horizontal room to the right for the (possibly long) tip labels
+    # instead of letting them run past the axes, (3) nudging labels away
+    # from their tip with a small leading space, and (4) dropping the
+    # meaningless numeric "taxa" y-axis that Phylo.draw adds by default.
+    # None of this touches the underlying tree topology/branch lengths.
+    fig_h = max(5.0, n * 0.55 + 2.0)
+    fig_w = max(9.0, n * 0.22 + 6.0)
+    fig = plt.figure(1, dpi=150, figsize=(fig_w, fig_h))
     ax = fig.subplots()
-    Phylo.draw(tree, axes=ax, do_show=False, branch_labels=None)
+
+    label_func = lambda clade: f" {clade.name}" if clade.name else ""
+    Phylo.draw(
+        tree, axes=ax, do_show=False, branch_labels=None,
+        label_func=label_func,
+    )
 
     for text_obj in ax.texts:
         text_obj.set_fontproperties(ibmplexsans)
         text_obj.set_fontsize(BASE_FONT_SIZE)
-    for label in ax.get_xticklabels() + ax.get_yticklabels():
+
+    # Leave headroom to the right of the deepest branch tip so long tip
+    # labels have somewhere to sit instead of overlapping other branches.
+    xmin, xmax = ax.get_xlim()
+    ax.set_xlim(xmin, xmin + (xmax - xmin) * 1.55)
+
+    # The y-axis ("taxa", with numeric ticks) carries no information for a
+    # tree -- tip identity is already given by the text labels -- so hide
+    # it entirely and give that space back to the plot.
+    ax.set_ylabel("")
+    ax.yaxis.set_visible(False)
+    for spine in ("left", "right", "top"):
+        ax.spines[spine].set_visible(False)
+
+    ax.set_xlabel("Branch length", fontproperties=ibmplexsans, fontsize=AXIS_TITLE_FONT_SIZE)
+    for label in ax.get_xticklabels():
         label.set_fontproperties(ibmplexsans)
 
     title = f"NJ tree — {namedict[assembly]} ({datatype})"
@@ -2749,6 +2791,7 @@ def plot_nj_tree_from_matrix(
 
 
 def plotter(theargs):
+    print(f"[TRACE] >>> Entering plotter() - defined at line 2751 of {__file__}")
     """Line plot ("c-plot"): shows how a given clustering-quality or
     performance metric varies with the minimum sequence-identity threshold
     `c` used by each clustering method, for one simulated assembly.
@@ -2897,6 +2940,7 @@ def plotter(theargs):
 # now we compare clustering methods between them for this fixed c
 
 def plotter_pointplots(theargs):
+    print(f"[TRACE] >>> Entering plotter_pointplots() - defined at line 2899 of {__file__}")
     """Bar/point plot comparing all clustering methods to each other at a
     FIXED sequence-identity threshold (`c` == DEFAULT_PARAMS["c"], the
     "default" operating point), for one simulated assembly and one metric.
@@ -3045,7 +3089,7 @@ def plotter_pointplots(theargs):
     family_footnote = get_family_footnote(x)
     if family_footnote is not None:
         plt.text(
-            0.5, -0.30, family_footnote,
+            0.5, -0.44, family_footnote,
             fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
             horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
@@ -3055,6 +3099,7 @@ def plotter_pointplots(theargs):
     del fig, ax
 
 def number_of_clusters_violin(theargs):
+    print(f"[TRACE] >>> Entering number_of_clusters_violin() - defined at line 3057 of {__file__}")
     """Violin plot of the number of clusters ("n_clusters", i.e. inferred
     gene families) each method produces at the default sequence-identity
     threshold, showing the full distribution across random-seed replicates
@@ -3170,7 +3215,7 @@ def number_of_clusters_violin(theargs):
     family_footnote = get_family_footnote(x)
     if family_footnote is not None:
         plt.text(
-            0.5, -0.30, family_footnote,
+            0.5, -0.44, family_footnote,
             fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
             horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
@@ -3182,6 +3227,7 @@ def number_of_clusters_violin(theargs):
 
 
 def number_of_clusters_stacked_bar(theargs):
+    print(f"[TRACE] >>> Entering number_of_clusters_stacked_bar() - defined at line 3184 of {__file__}")
     """Stacked bar chart breaking down each method's total cluster count
     into singleton clusters, pair (2-member) clusters, and everything
     else, at the default sequence-identity threshold.
@@ -3313,7 +3359,7 @@ def number_of_clusters_stacked_bar(theargs):
     # bracket(s) under each method family (sketch, embeddings, ...), so
     # readers see at a glance that they're one family of methods.
     add_sketch_bracket(
-        ax, x, positions, bar_width=bar_width, y_top=-0.22, y_bottom=-0.24,
+        ax, x, positions, bar_width=bar_width, y_top=-0.30, y_bottom=-0.32,
         fontprops=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
     )
 
@@ -3330,7 +3376,7 @@ def number_of_clusters_stacked_bar(theargs):
         handles=method_handles,
         labels=[h.get_label() for h in method_handles],
         loc="upper center",
-        bbox_to_anchor=(0.5, -0.38),   # below the x-axis labels and the bracket
+        bbox_to_anchor=(0.5, -0.46),   # below the x-axis labels and the bracket
         frameon=False,
         prop=ibmplexsans,
         handlelength=0.8,
@@ -3341,7 +3387,7 @@ def number_of_clusters_stacked_bar(theargs):
     family_footnote = get_family_footnote(x)
     if family_footnote is not None:
         plt.text(
-            0.5, -0.50, family_footnote,
+            0.5, -0.58, family_footnote,
             fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
             horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
@@ -3352,6 +3398,7 @@ def number_of_clusters_stacked_bar(theargs):
 
 
 def number_of_clusters_stacked_bar_vs_c(theargs):
+    print(f"[TRACE] >>> Entering number_of_clusters_stacked_bar_vs_c() - defined at line 3354 of {__file__}")
     """Same singleton/pair/3+ cluster-size breakdown as
     number_of_clusters_stacked_bar, but shown across the full sweep of
     sequence-identity thresholds `c` (one small multiple/subplot per `c`
@@ -3524,6 +3571,7 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
 
 
 def methods_comparison_heatmap(theargs):
+    print(f"[TRACE] >>> Entering methods_comparison_heatmap() - defined at line 3526 of {__file__}")
     """Heatmap comparing all clustering methods side by side across the main
     agreement-with-truth metrics (mean over seeds, at the default c). This is
     the 'contingency-style' comparison view: rows = methods (in the requested
@@ -3670,6 +3718,7 @@ def methods_comparison_heatmap(theargs):
 
 
 def build_pairwise_ari_matrix(combo_list, labels_by_seed):
+    print(f"[TRACE] >>> Entering build_pairwise_ari_matrix() - defined at line 3672 of {__file__}")
     """Compute the pairwise Adjusted Rand Index (ARI) between every pair
     of clustering methods (not against ground truth -- method vs.
     method), averaged over random-seed replicates, for the pairwise ARI
@@ -3725,6 +3774,7 @@ def build_pairwise_ari_matrix(combo_list, labels_by_seed):
 
 
 def _pairwise_purity_score(labels_i, labels_j):
+    print(f"[TRACE] >>> Entering _pairwise_purity_score() - defined at line 3727 of {__file__}")
     """Symmetric purity between two clusterings. Purity itself is not a
     symmetric measure (it depends on which clustering is treated as the
     'truth'), so for a method-vs-method comparison we average the score
@@ -3750,6 +3800,7 @@ PAIRWISE_METRIC_FUNCTIONS = {
 
 
 def build_pairwise_metric_matrix(combo_list, labels_by_seed, metric_name):
+    print(f"[TRACE] >>> Entering build_pairwise_metric_matrix() - defined at line 3752 of {__file__}")
     """Generic version of build_pairwise_ari_matrix, parameterised by which
     agreement metric to use (see PAIRWISE_METRIC_FUNCTIONS). Matrix is
     symmetric, so only the lower triangle (mat[j, i] with j > i) is
@@ -3790,6 +3841,7 @@ def build_pairwise_metric_matrix(combo_list, labels_by_seed, metric_name):
 
 
 def build_pairwise_f1_matrix(combo_list, labels_by_seed, total_genes_by_seed=None):
+    print(f"[TRACE] >>> Entering build_pairwise_f1_matrix() - defined at line 3792 of {__file__}")
     """Pairwise agreement between methods on *which genes they kept*, now
     penalised for genes deleted with respect to the ORIGINAL gene set
     (requirement 1).
@@ -3888,6 +3940,7 @@ def build_pairwise_f1_matrix_with_additions(
     combo_list, labels_by_seed, total_genes_by_seed=None,
     n_added_by_seed=None, mode="deleted_only",
 ):
+    print(f"[TRACE] >>> Entering build_pairwise_f1_matrix_with_additions() - defined at line 3887 of {__file__}")
     """See the module-level comment directly above for the three `mode`
     options and their formulas. `n_added_by_seed` should have the same
     shape as `total_genes_by_seed` but per-combo: {seed: {combo: n_added}}
@@ -3953,6 +4006,7 @@ def build_pairwise_f1_matrix_with_additions(
 
 
 def build_pairwise_exact_match_matrix(combo_list, labels_by_seed):
+    print(f"[TRACE] >>> Entering build_pairwise_exact_match_matrix() - defined at line 3955 of {__file__}")
     """Row-normalised agreement matrix: mat[i, j] is the fraction of tool
     i's clusters that have an EXACT match (identical gene membership set)
     among tool j's clusters, averaged over seeds (real data only ever has
@@ -4012,6 +4066,7 @@ def build_pairwise_exact_match_matrix(combo_list, labels_by_seed):
 
 
 def plot_pairwise_exact_match_heatmap(theargs):
+    print(f"[TRACE] >>> Entering plot_pairwise_exact_match_heatmap() - defined at line 4014 of {__file__}")
     """Full (non-triangular) heatmap of pairwise exact-cluster-match
     agreement between pan-genome clustering tools: row = "query" tool,
     column = "reference" tool, cell = fraction of the row tool's clusters
@@ -4105,6 +4160,7 @@ def plot_pairwise_exact_match_heatmap(theargs):
 
 
 def extract_strain_from_geneid(gene_id):
+    print(f"[TRACE] >>> Entering extract_strain_from_geneid() - defined at line 4107 of {__file__}")
     """Heuristic extraction of the strain/isolate identifier a gene id
     belongs to. Real-data gene ids here are locus tags of the form
     "<STRAIN_PREFIX>_<NUMBER>" (the standard Prokka/Panaroo locus-tag
@@ -4129,6 +4185,7 @@ def extract_strain_from_geneid(gene_id):
 
 
 def compute_cluster_strain_counts(gene_label_dict):
+    print(f"[TRACE] >>> Entering compute_cluster_strain_counts() - defined at line 4131 of {__file__}")
     """Given one tool's {gene_id: cluster_label} dict, return a list with
     the number of distinct strains represented in each cluster (one entry
     per cluster, unsorted)."""
@@ -4139,6 +4196,7 @@ def compute_cluster_strain_counts(gene_label_dict):
 
 
 def estimate_total_strains(labels_by_seed):
+    print(f"[TRACE] >>> Entering estimate_total_strains() - defined at line 4141 of {__file__}")
     """Approximate the total number of strains/isolates in the real
     dataset as the union of strains inferred (via
     extract_strain_from_geneid) from every gene seen across every tool
@@ -4155,6 +4213,7 @@ def estimate_total_strains(labels_by_seed):
 
 
 def plot_core_genome_curve_realdata(theargs):
+    print(f"[TRACE] >>> Entering plot_core_genome_curve_realdata() - defined at line 4157 of {__file__}")
     """Core-genome estimation plot (real data only): for each tool, sort
     its clusters in descending order by the number of distinct strains
     they contain, and plot that count against the cluster's rank. The
@@ -4253,6 +4312,7 @@ def plot_core_genome_curve_realdata(theargs):
 
 
 def compute_cluster_occupancy_percentages(gene_label_dict, total_strains):
+    print(f"[TRACE] >>> Entering compute_cluster_occupancy_percentages() - defined at line 4255 of {__file__}")
     """Given one tool's {gene_id: cluster_label} dict and the total number
     of strains/isolates in the dataset (see estimate_total_strains), return
     a list with one entry per cluster: the percentage of all strains that
@@ -4270,6 +4330,7 @@ def compute_cluster_occupancy_percentages(gene_label_dict, total_strains):
 
 
 def compute_adaptive_occupancy_bins(pooled_percentages, n_bins=50):
+    print(f"[TRACE] >>> Entering compute_adaptive_occupancy_bins() - defined at line 4272 of {__file__}")
     """Classic equal-width bin edges (0-100 %) for the cluster-occupancy
     histogram (the standard "frequency distribution of gene clusters
     across isolates" plot used e.g. for pangenome core/accessory
@@ -4287,6 +4348,7 @@ def compute_adaptive_occupancy_bins(pooled_percentages, n_bins=50):
 
 
 def compute_occupancy_by_combo(labels_by_seed, x, total_strains):
+    print(f"[TRACE] >>> Entering compute_occupancy_by_combo() - defined at line 4289 of {__file__}")
     """Shared helper for the U-plot functions: merges per-seed label dicts
     (real data only ever has one, "run") into {combo: [percentages]},
     exactly the same merge plot_core_genome_curve_realdata does for strain
@@ -4307,6 +4369,7 @@ def compute_occupancy_by_combo(labels_by_seed, x, total_strains):
 
 
 def plot_cluster_occupancy_uplot(theargs):
+    print(f"[TRACE] >>> Entering plot_cluster_occupancy_uplot() - defined at line 4309 of {__file__}")
     """Cluster-occupancy "U plot" (real data only): for each tool, the
     distribution of clusters across "percentage of isolates/strains
     represented in the cluster" (x-axis), with the y-axis giving the
@@ -4419,6 +4482,7 @@ def plot_cluster_occupancy_uplot(theargs):
 
 
 def plot_cluster_occupancy_uplot_single(theargs):
+    print(f"[TRACE] >>> Entering plot_cluster_occupancy_uplot_single() - defined at line 4421 of {__file__}")
     """Same cluster-occupancy distribution as plot_cluster_occupancy_uplot,
     but rendered as one bar-chart figure per method instead of everything
     overlaid on one set of axes -- much easier to read when you just want
@@ -4530,6 +4594,7 @@ def plot_cluster_occupancy_uplot_single(theargs):
 
 
 def get_realdata_reference_gene_set(real_data_run_dir):
+    print(f"[TRACE] >>> Entering get_realdata_reference_gene_set() - defined at line 4532 of {__file__}")
     """Find a 'total genes' reference for real data, so gene-deletion
     percentages can be computed the same way as for simulations (see
     compute_gene_deletion_dataframe), even though there is no ground truth.
@@ -4563,6 +4628,7 @@ def get_realdata_reference_gene_set(real_data_run_dir):
 
 
 def compute_gene_deletion_dataframe(labels_by_seed, total_genes_by_seed, assembly):
+    print(f"[TRACE] >>> Entering compute_gene_deletion_dataframe() - defined at line 4565 of {__file__}")
     """Build a tidy dataframe of deleted-gene percentages.
 
     For every (seed, combo) pair present in `labels_by_seed`:
@@ -4626,6 +4692,7 @@ def compute_gene_deletion_dataframe(labels_by_seed, total_genes_by_seed, assembl
 
 
 def compute_gene_addition_dataframe(addition_by_seed, total_genes_by_seed, assembly):
+    print(f"[TRACE] >>> Entering compute_gene_addition_dataframe() - defined at line 4628 of {__file__}")
     """Real-data-only companion to compute_gene_deletion_dataframe.
 
     For every (seed, combo) pair present in `addition_by_seed`:
@@ -4685,6 +4752,7 @@ def compute_gene_addition_dataframe(addition_by_seed, total_genes_by_seed, assem
 
 
 def plot_gene_deletion_boxplot(theargs):
+    print(f"[TRACE] >>> Entering plot_gene_deletion_boxplot() - defined at line 4687 of {__file__}")
     """Boxplot of the % of genes deleted by each clusterer/seqtype combo,
     with the distribution taken across random seeds.
 
@@ -4788,6 +4856,7 @@ def plot_gene_deletion_boxplot(theargs):
 
 
 def plot_gene_deletion_and_addition_boxplot_realdata(theargs):
+    print(f"[TRACE] >>> Entering plot_gene_deletion_and_addition_boxplot_realdata() - defined at line 4790 of {__file__}")
     """Real-data-only helper computing, for each clusterer/seqtype combo:
       A) % of genes DELETED relative to the original (Panaroo-annotated,
          refound-excluded) gene set -- reuses compute_gene_deletion_dataframe
@@ -4841,6 +4910,7 @@ def _plot_triangular_pairwise_heatmap(
     mat, x, labels, namedict, outfolder, assembly, datatype, font_props,
     cbar_label, filename_prefix,
 ):
+    print(f"[TRACE] >>> Entering _plot_triangular_pairwise_heatmap() - defined at line 4840 of {__file__}")
     """Shared plotting code for the lower-triangle method-vs-method heatmaps
     (pairwise ARI, pairwise AMI/purity/V-measure, and pairwise gene-
     retention F1). `mat` is expected to already have its upper triangle
@@ -4954,6 +5024,7 @@ def _plot_triangular_pairwise_heatmap(
 
 
 def plot_pairwise_ari_heatmap(theargs):
+    print(f"[TRACE] >>> Entering plot_pairwise_ari_heatmap() - defined at line 4956 of {__file__}")
     """Draw the lower-triangle heatmap of pairwise inter-method Adjusted
     Rand Index (built by build_pairwise_ari_matrix).
 
@@ -5047,6 +5118,7 @@ PAIRWISE_METRIC_PLOT_INFO = {
 
 
 def plot_pairwise_metric_heatmap(theargs, metric_name):
+    print(f"[TRACE] >>> Entering plot_pairwise_metric_heatmap() - defined at line 5049 of {__file__}")
     """Equivalent of plot_pairwise_ari_heatmap, but for one of the other
     method-vs-method agreement metrics (AMI, purity, V-measure); see
     PAIRWISE_METRIC_PLOT_INFO for the per-metric labelling/filename info,
@@ -5099,6 +5171,7 @@ def plot_pairwise_metric_heatmap(theargs, metric_name):
 
 
 def plot_pairwise_ami_heatmap(theargs):
+    print(f"[TRACE] >>> Entering plot_pairwise_ami_heatmap() - defined at line 5101 of {__file__}")
     """Lower-triangle pairwise heatmap of inter-method Adjusted Mutual
     Information (see plot_pairwise_ari_heatmap for the shared figure
     layout/interpretation -- same rows/columns/masking/colourbar
@@ -5109,6 +5182,7 @@ def plot_pairwise_ami_heatmap(theargs):
 
 
 def plot_pairwise_purity_heatmap(theargs):
+    print(f"[TRACE] >>> Entering plot_pairwise_purity_heatmap() - defined at line 5111 of {__file__}")
     """Lower-triangle pairwise heatmap of inter-method purity (see
     plot_pairwise_ari_heatmap for the shared figure layout -- here each
     cell is the symmetrised purity score (_pairwise_purity_score) between
@@ -5118,6 +5192,7 @@ def plot_pairwise_purity_heatmap(theargs):
 
 
 def plot_pairwise_vmeasure_heatmap(theargs):
+    print(f"[TRACE] >>> Entering plot_pairwise_vmeasure_heatmap() - defined at line 5120 of {__file__}")
     """Lower-triangle pairwise heatmap of inter-method V-measure (see
     plot_pairwise_ari_heatmap for the shared figure layout -- here each
     cell is the V-measure, the harmonic mean of homogeneity and
@@ -5126,6 +5201,7 @@ def plot_pairwise_vmeasure_heatmap(theargs):
 
 
 def plot_pairwise_f1_heatmap(theargs):
+    print(f"[TRACE] >>> Entering plot_pairwise_f1_heatmap() - defined at line 5128 of {__file__}")
     """Lower-triangle heatmap of the pairwise gene-retention F1 score
     between methods: how much agreement there is between two methods' sets
     of *kept* (non-deleted/non-filtered) genes, now penalised (see
@@ -5191,6 +5267,7 @@ def plot_pairwise_f1_heatmap(theargs):
 
 
 def plot_pairwise_f1_heatmap_added_as_fp(theargs):
+    print(f"[TRACE] >>> Entering plot_pairwise_f1_heatmap_added_as_fp() - defined at line 5193 of {__file__}")
     """Lower-triangle heatmap of the pairwise gene-retention F1 score
     between methods, using the "added_as_fp" formula (requirement 4):
     Panaroo-added/refound genes count as false positives, deleted genes
@@ -5254,6 +5331,7 @@ def plot_pairwise_f1_heatmap_added_as_fp(theargs):
 
 
 def load_seeds(seedsfile):
+    print(f"[TRACE] >>> Entering load_seeds() - defined at line 5256 of {__file__}")
     """Read the list of random-seed integers to analyse (one per line)
     from a plain-text file, sorted ascending.
 
@@ -5273,6 +5351,7 @@ def load_seeds(seedsfile):
 
 
 def build_results_dataframe(listoflists):
+    print(f"[TRACE] >>> Entering build_results_dataframe() - defined at line 5275 of {__file__}")
     """Assemble the flat list of per-(assembly, seed, clusterer) result
     rows collected by get_info_from_folder / get_info_from_folder_realdata
     into the single indexed DataFrame (`outdf`) used by every downstream
@@ -5283,16 +5362,13 @@ def build_results_dataframe(listoflists):
             truth-agreement metrics [NaN for real data], cluster counts,
             clustering parameters in PARAMORDER, and runtime).
     Output: a DataFrame with columns
-        [adj_rand_index, purity, adj_mutual_info, adj_rand_index_p,
-         adj_mutual_info_p, homogeneity, completeness, v_measure,
-         v_measure_p, n_clusters, n_singletons, n_pairs] + PARAMORDER +
-        [runtime], indexed by a MultiIndex of (simulations, assembly,
-        seed, clusterer) so rows can be sliced by any combination of
-        those four keys elsewhere in the script. adj_mutual_info_p and
-        v_measure_p are the AMI/V-measure analogues of adj_rand_index_p
-        (item 2): same permutation-test methodology, applied to AMI/
-        V-measure instead of ARI (see
-        calculate_values_from_cluster_matrix / permutation_test_agreement).
+        [adj_rand_index, purity, adj_mutual_info, homogeneity,
+         completeness, v_measure, n_clusters, n_singletons, n_pairs]
+        + PARAMORDER + [runtime], indexed by a MultiIndex of
+        (simulations, assembly, seed, clusterer) so rows can be sliced by
+        any combination of those four keys elsewhere in the script.
+        (ARI/AMI/V-measure permutation-test p-values are no longer
+        computed or included as columns here.)
     """
     outdf = pd.DataFrame(
         listoflists,
@@ -5304,12 +5380,9 @@ def build_results_dataframe(listoflists):
             "adj_rand_index",
             "purity",
             "adj_mutual_info",
-            "adj_rand_index_p",
-            "adj_mutual_info_p",
             "homogeneity",
             "completeness",
             "v_measure",
-            "v_measure_p",
             "n_clusters",
             "n_singletons",
             "n_pairs",
@@ -5323,6 +5396,7 @@ def build_results_dataframe(listoflists):
 
 
 def discover_analysis_tasks(runfolder, datapath, seeds):
+    print(f"[TRACE] >>> Entering discover_analysis_tasks() - defined at line 5325 of {__file__}")
     """Walk the SIMULATION results directory tree and build the list of
     (assembly, seed) work units to analyse, verifying that both the
     clustering-tool result folder AND the matching ground-truth folder
@@ -5361,6 +5435,7 @@ def discover_analysis_tasks(runfolder, datapath, seeds):
 
 
 def report_missing_tasks(missingtasks, gettinginfotasks):
+    print(f"[TRACE] >>> Entering report_missing_tasks() - defined at line 5363 of {__file__}")
     """Print a human-readable warning listing every simulation
     (assembly, seed) combination discover_analysis_tasks could not find a
     complete result+ground-truth folder pair for, so a partial run
@@ -5393,6 +5468,7 @@ def report_missing_tasks(missingtasks, gettinginfotasks):
 
 
 def discover_analysis_tasks_realdata(runfolder, seeds):
+    print(f"[TRACE] >>> Entering discover_analysis_tasks_realdata() - defined at line 5395 of {__file__}")
     """Real-data equivalent of discover_analysis_tasks.
 
     === CHANGE: flat layout, no assembly/seed subdirectories ===========
@@ -5426,6 +5502,7 @@ def discover_analysis_tasks_realdata(runfolder, seeds):
 
 
 def report_missing_tasksrealdata(missingtasks, gettinginfotasks):
+    print(f"[TRACE] >>> Entering report_missing_tasksrealdata() - defined at line 5428 of {__file__}")
     """Real-data equivalent of report_missing_tasks: warns if the expected
     "real_data" result directory itself is missing (there's only ever one
     such pseudo-task in real-data mode, see discover_analysis_tasks_realdata).
@@ -5449,6 +5526,7 @@ def report_missing_tasksrealdata(missingtasks, gettinginfotasks):
 
 
 def main():
+    print(f"[TRACE] >>> Entering main() - defined at line 5451 of {__file__}")
     """Command-line entry point for the whole clustering-benchmark
     analysis pipeline.
 
@@ -5717,7 +5795,7 @@ def main():
         outdf.to_csv(
             os.path.join(
                 args.outfolder,
-                "clustering_metrics_with_pvalues.txt"
+                "clustering_metrics.txt"
             ),
             sep="\t"
         )

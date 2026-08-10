@@ -116,17 +116,21 @@ UNMAPPED_COG_LABEL = "COG accession not found in mapping file"
 
 # Real-data clusterers supported by submit_gene_clustering_27_.py /
 # analyse_gene_clustering_26_.py.
-# NOTE: "sketch" is temporarily excluded from the default set below (its
-# parsing/summarisation is disabled in process_method_folder() for now --
-# see the comment there for how to re-enable it). It's kept in this list
-# only so --methods sketch would still resolve if someone re-enables it.
+# NOTE: "sketch" is now enabled by default (see process_method_folder() /
+# parse_sketch()). One "sketch" result folder can contain several
+# sketching sub-methods in a single clusters.tsv (e.g. hdbscan_dist,
+# hdbscan_tsne, hdbscan_umap, connected_components_t<threshold>); each
+# sub-method is summarised and reported separately, with the "method"
+# column of the output tsv set to "<folder_label>:<submethod>" so results
+# from different sketching methods are never mixed together and can be
+# directly compared (see --sketch-methods below to restrict to a subset).
 REAL_DATA_CLUSTERERS = [
     "cdhit", "mmseqs2", "diamond", "panaroo",
     "ppanggolin", "panta", "panx", "sketch",
 ]
 
-# Default value used for --methods (excludes sketch while it's disabled).
-DEFAULT_METHODS = [m for m in REAL_DATA_CLUSTERERS if m != "sketch"]
+# Default value used for --methods (now includes sketch).
+DEFAULT_METHODS = list(REAL_DATA_CLUSTERERS)
 
 # Matches folder names such as "diamond", "diamond_st-aa", "diamond_st-aa_c-0.9"
 FOLDER_NAME_RE = re.compile(
@@ -608,31 +612,83 @@ def write_summary_tsv(out_path, records, multi_category):
             )
 
 
+def write_per_sketch_submethod_tsvs(out_dir, all_records, multi_category):
+    """Split every sketch record (tagged with "sketch_submethod" by
+    process_method_folder's sketch branch) out by sub-method (e.g.
+    hdbscan_dist, hdbscan_tsne, hdbscan_umap, connected_components_t0.6,
+    ...) and write ONE tsv per sub-method, so sketching methods can be
+    compared side by side without having to grep a combined file apart.
+
+    Reuses write_summary_tsv unchanged for the actual writing, so the
+    per-submethod files have exactly the same column layout/header
+    comment as every other output tsv from this script -- only which
+    rows go into which file differs.
+
+    Non-sketch records (no "sketch_submethod" key) are left untouched;
+    they're already covered by the combined file / --per-method-files.
+
+    Returns the list of (submethod, out_path, n_rows) written, purely
+    for the progress-printing in main().
+    """
+    records_by_submethod = defaultdict(list)
+    for rec in all_records:
+        submethod = rec.get("sketch_submethod")
+        if submethod is not None:
+            records_by_submethod[submethod].append(rec)
+
+    written = []
+    for submethod, records in records_by_submethod.items():
+        safe_name = re.sub(r"[^A-Za-z0-9_.:-]", "_", submethod)
+        out_path = os.path.join(out_dir, f"cog_functional_summary_sketch_{safe_name}.tsv")
+        write_summary_tsv(out_path, records, multi_category)
+        written.append((submethod, out_path, len(records)))
+    return written
+
+
 def process_method_folder(
     method_label, clusterer, folderpath, gene_to_categories, multi_category,
-    gene_to_product_desc=None,
+    gene_to_product_desc=None, wanted_sketch_methods=None,
 ):
-    """Yields output records (dicts) for one clusterer result folder."""
-    # --- sketch: temporarily disabled -----------------------------------
-    # Skipping "sketch" for now (per request). To re-enable, uncomment the
-    # block below and remove the early `return` beneath it.
-    #
-    # if clusterer == "sketch":
-    #     submethod_dict = parse_sketch(folderpath)
-    #     for submethod, clusters in submethod_dict.items():
-    #         full_label = f"{method_label}:{submethod}"
-    #         for cluster_id, gene_ids in clusters.items():
-    #             for cat, count, pct in summarise_cluster(gene_ids, gene_to_categories, multi_category):
-    #                 yield {
-    #                     "method": full_label,
-    #                     "cluster_id": cluster_id,
-    #                     "gene_ids": gene_ids,
-    #                     "number_of_genes": len(gene_ids),
-    #                     "COG_function": cat,
-    #                     "percentage": pct,
-    #                 }
-    #     return
+    """Yields output records (dicts) for one clusterer result folder.
+
+    For "sketch", one result folder can contain several sketching
+    sub-methods sharing a single distance_clustering/clusters.tsv (e.g.
+    hdbscan_dist, hdbscan_tsne, hdbscan_umap, connected_components_t*;
+    see parse_sketch()). Each sub-method is summarised independently and
+    its records carry a "sketch_submethod" field (in addition to "method",
+    which is set to "<method_label>:<submethod>" for readability/backward
+    compatibility with the combined-file format), so callers can split
+    sketch records back out into one output tsv per sub-method -- see
+    write_per_sketch_submethod_tsvs() / main() below.
+
+    wanted_sketch_methods -- optional set of sub-method names to restrict
+        to (see --sketch-methods); sub-methods present in clusters.tsv but
+        not in this set are skipped entirely. None means "all".
+    """
     if clusterer == "sketch":
+        try:
+            submethod_dict = parse_sketch(folderpath)
+        except Exception as exc:  # noqa: BLE001 - report and skip, don't abort the whole run
+            warnings.warn(f"Skipping {folderpath} (sketch): {exc}")
+            return
+        for submethod, clusters in submethod_dict.items():
+            if wanted_sketch_methods is not None and submethod not in wanted_sketch_methods:
+                continue
+            full_label = f"{method_label}:{submethod}"
+            for cluster_id, gene_ids in clusters.items():
+                for cat, count, pct, desc in summarise_cluster(
+                    gene_ids, gene_to_categories, multi_category, gene_to_product_desc
+                ):
+                    yield {
+                        "method": full_label,
+                        "sketch_submethod": submethod,
+                        "cluster_id": cluster_id,
+                        "gene_ids": gene_ids,
+                        "number_of_genes": len(gene_ids),
+                        "COG_function": cat,
+                        "percentage": pct,
+                        "original_COG_description": desc,
+                    }
         return
 
     parser = CLUSTER_PARSERS.get(clusterer)
@@ -669,7 +725,7 @@ def main():
     )
     parser.add_argument(
         "--real-datapath",
-        default="/nfs/research/jlees/campan/data/clustering_benchmarking/2026_07_24_real_data",
+        default="/nfs/research/jlees/campan/data/clustering_benchmarking/2026_07_24_real_data/PROKKA",
         help="Root directory containing ERRxxxx/ Prokka annotation folders.",
     )
     parser.add_argument(
@@ -691,8 +747,17 @@ def main():
     parser.add_argument(
         "--methods", default=",".join(DEFAULT_METHODS),
         help="Comma-separated subset of clusterers to summarise. "
-             "'sketch' is excluded by default (currently disabled -- see "
-             "the comment on process_method_folder()).",
+             "'sketch' is included by default; it can pull in several "
+             "sketching sub-methods per --sketch-methods below.",
+    )
+    parser.add_argument(
+        "--sketch-methods", default=None,
+        help="Comma-separated subset of sketch sub-methods to include "
+             "(e.g. 'hdbscan_dist,hdbscan_umap' or a connected-components "
+             "threshold label like 'connected_components_t0.6'), matching "
+             "the 'method' column of the sketch clusters.tsv. Defaults to "
+             "every sub-method found. Ignored if 'sketch' is not in "
+             "--methods.",
     )
     parser.add_argument(
         "--multi-category", choices=["all", "primary"], default="all",
@@ -710,6 +775,10 @@ def main():
     args = parser.parse_args()
 
     wanted_methods = set(args.methods.strip().split(","))
+    wanted_sketch_methods = (
+        set(m.strip() for m in args.sketch_methods.split(","))
+        if args.sketch_methods else None
+    )
     out_dir = args.out_dir or os.path.join(args.real_datapath, "functional_summaries")
     os.makedirs(out_dir, exist_ok=True)
 
@@ -735,7 +804,7 @@ def main():
         records = list(
             process_method_folder(
                 method_label, clusterer, folderpath, gene_to_categories, args.multi_category,
-                gene_to_product_desc,
+                gene_to_product_desc, wanted_sketch_methods,
             )
         )
         if not records:
@@ -754,6 +823,20 @@ def main():
     combined_path = os.path.join(out_dir, args.combined_file_name)
     write_summary_tsv(combined_path, all_records, args.multi_category)
     print(f"> Wrote combined summary: {combined_path} ({len(all_records)} rows)")
+
+    # One tsv per sketching sub-method (hdbscan_dist / hdbscan_tsne /
+    # hdbscan_umap / connected_components_t*, ...), pooled across every
+    # sketch result folder (e.g. across seqtypes) that produced that
+    # sub-method -- this is what makes it possible to directly compare how
+    # clusters' functional composition differs between sketching methods.
+    # Written unconditionally whenever any sketch records were produced
+    # (independent of --per-method-files, which instead writes one file
+    # per exact folder+submethod combo, e.g. "sketch_st-aa:hdbscan_umap").
+    sketch_files = write_per_sketch_submethod_tsvs(out_dir, all_records, args.multi_category)
+    if sketch_files:
+        print("> Wrote per-sketching-method summaries:")
+        for submethod, path, n_rows in sketch_files:
+            print(f"  - {submethod}: {path} ({n_rows} rows)")
 
     if args.per_method_files:
         for method_label, records in per_method_records.items():

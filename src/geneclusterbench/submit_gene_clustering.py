@@ -16,7 +16,7 @@ DEFAULT_DATAPATH = (
 # real (non-simulated) sequencing data, annotated with Prokka
 DEFAULT_REAL_DATAPATH = (
     "/nfs/research/jlees/campan/data/clustering_benchmarking/"
-    "2026_07_24_real_data"
+    "2026_07_24_real_data/PROKKA"
 )
 PROKKA_FFN_NAME = "PROKKA_06122025.ffn"
 PROKKA_FAA_NAME = "PROKKA_06122025.faa"
@@ -1244,8 +1244,8 @@ def main():
     parser.add_argument("--outdir", "-o", default="./")
     parser.add_argument("--temp-outdir", "-to", default="/hps/nobackup/jlees/campan/tmp/")
     parser.add_argument("--threads", "-j", default=8, type=int)
-    parser.add_argument("--time", "-t", default="1-12:00:00")
-    parser.add_argument("--mem", "-m", default="64")
+    parser.add_argument("--time", "-t", default="05:00:00")
+    parser.add_argument("--mem", "-m", default="128")
     parser.add_argument("--max-simultaneous-cores", "-M", default=2000, type=int)
     parser.add_argument("--preset-timestamp", "-P", default=-1, type=int)
     parser.add_argument("--pretend", "-p", action="store_true")
