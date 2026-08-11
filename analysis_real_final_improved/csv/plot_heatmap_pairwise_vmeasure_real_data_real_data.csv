@@ -1,0 +1,226 @@
+method_i,method_j,metric,value
+CD-HIT (AA),CD-HIT (AA),V-measure between methods (adim.),1.0
+CD-HIT (AA),CD-HIT (NT),V-measure between methods (adim.),0.9949954893744024
+CD-HIT (AA),MMseqs2 (AA),V-measure between methods (adim.),0.9912266021588467
+CD-HIT (AA),MMseqs2 (NT),V-measure between methods (adim.),0.9905077821763228
+CD-HIT (AA),Diamond (AA),V-measure between methods (adim.),0.99478260100063
+CD-HIT (AA),Panaroo,V-measure between methods (adim.),0.9928371438172647
+CD-HIT (AA),Ppanggolin,V-measure between methods (adim.),0.9949880029856598
+CD-HIT (AA),Panta,V-measure between methods (adim.),0.990725604139088
+CD-HIT (AA),PanX,V-measure between methods (adim.),0.9943442302222663
+CD-HIT (AA),Sketch - UMAP* (AA) *,V-measure between methods (adim.),0.9443915654699316
+CD-HIT (AA),Sketch - UMAP* (NT) *,V-measure between methods (adim.),0.9146011755249618
+CD-HIT (AA),Connected components t=0.6* (AA) *,V-measure between methods (adim.),0.9899546642750985
+CD-HIT (AA),Connected components t=0.7* (AA) *,V-measure between methods (adim.),0.9911867123142855
+CD-HIT (AA),Connected components t=0.6* (NT) *,V-measure between methods (adim.),0.9777382353332474
+CD-HIT (AA),Connected components t=0.7* (NT) *,V-measure between methods (adim.),0.9810506228145273
+CD-HIT (NT),CD-HIT (AA),V-measure between methods (adim.),0.9949954893744024
+CD-HIT (NT),CD-HIT (NT),V-measure between methods (adim.),1.0
+CD-HIT (NT),MMseqs2 (AA),V-measure between methods (adim.),0.9896254332592721
+CD-HIT (NT),MMseqs2 (NT),V-measure between methods (adim.),0.9904025450022476
+CD-HIT (NT),Diamond (AA),V-measure between methods (adim.),0.9948228072922208
+CD-HIT (NT),Panaroo,V-measure between methods (adim.),0.9935994370824212
+CD-HIT (NT),Ppanggolin,V-measure between methods (adim.),0.9942231093058669
+CD-HIT (NT),Panta,V-measure between methods (adim.),0.9900592615112882
+CD-HIT (NT),PanX,V-measure between methods (adim.),0.9947736385045384
+CD-HIT (NT),Sketch - UMAP* (AA) *,V-measure between methods (adim.),0.9433710900141661
+CD-HIT (NT),Sketch - UMAP* (NT) *,V-measure between methods (adim.),0.9137934661842415
+CD-HIT (NT),Connected components t=0.6* (AA) *,V-measure between methods (adim.),0.9885879006213437
+CD-HIT (NT),Connected components t=0.7* (AA) *,V-measure between methods (adim.),0.989878984642826
+CD-HIT (NT),Connected components t=0.6* (NT) *,V-measure between methods (adim.),0.976544532200815
+CD-HIT (NT),Connected components t=0.7* (NT) *,V-measure between methods (adim.),0.9801056788536747
+MMseqs2 (AA),CD-HIT (AA),V-measure between methods (adim.),0.9912266021588467
+MMseqs2 (AA),CD-HIT (NT),V-measure between methods (adim.),0.9896254332592721
+MMseqs2 (AA),MMseqs2 (AA),V-measure between methods (adim.),1.0
+MMseqs2 (AA),MMseqs2 (NT),V-measure between methods (adim.),0.9980704070035872
+MMseqs2 (AA),Diamond (AA),V-measure between methods (adim.),0.9901159413462477
+MMseqs2 (AA),Panaroo,V-measure between methods (adim.),0.9889521863308016
+MMseqs2 (AA),Ppanggolin,V-measure between methods (adim.),0.9936687743231231
+MMseqs2 (AA),Panta,V-measure between methods (adim.),0.9943756113125811
+MMseqs2 (AA),PanX,V-measure between methods (adim.),0.989609743761461
+MMseqs2 (AA),Sketch - UMAP* (AA) *,V-measure between methods (adim.),0.9484861600942276
+MMseqs2 (AA),Sketch - UMAP* (NT) *,V-measure between methods (adim.),0.9191316400066929
+MMseqs2 (AA),Connected components t=0.6* (AA) *,V-measure between methods (adim.),0.9948643359311555
+MMseqs2 (AA),Connected components t=0.7* (AA) *,V-measure between methods (adim.),0.9952073915271058
+MMseqs2 (AA),Connected components t=0.6* (NT) *,V-measure between methods (adim.),0.9829787566538195
+MMseqs2 (AA),Connected components t=0.7* (NT) *,V-measure between methods (adim.),0.9854646602648095
+MMseqs2 (NT),CD-HIT (AA),V-measure between methods (adim.),0.9905077821763228
+MMseqs2 (NT),CD-HIT (NT),V-measure between methods (adim.),0.9904025450022476
+MMseqs2 (NT),MMseqs2 (AA),V-measure between methods (adim.),0.9980704070035872
+MMseqs2 (NT),MMseqs2 (NT),V-measure between methods (adim.),1.0
+MMseqs2 (NT),Diamond (AA),V-measure between methods (adim.),0.9896635579033723
+MMseqs2 (NT),Panaroo,V-measure between methods (adim.),0.9890514760114839
+MMseqs2 (NT),Ppanggolin,V-measure between methods (adim.),0.9930148338300431
+MMseqs2 (NT),Panta,V-measure between methods (adim.),0.9942223609372113
+MMseqs2 (NT),PanX,V-measure between methods (adim.),0.9894244253813522
+MMseqs2 (NT),Sketch - UMAP* (AA) *,V-measure between methods (adim.),0.9482614374437389
+MMseqs2 (NT),Sketch - UMAP* (NT) *,V-measure between methods (adim.),0.9191194008925452
+MMseqs2 (NT),Connected components t=0.6* (AA) *,V-measure between methods (adim.),0.994353152806149
+MMseqs2 (NT),Connected components t=0.7* (AA) *,V-measure between methods (adim.),0.9946891200563661
+MMseqs2 (NT),Connected components t=0.6* (NT) *,V-measure between methods (adim.),0.9828619190584049
+MMseqs2 (NT),Connected components t=0.7* (NT) *,V-measure between methods (adim.),0.9854442959968962
+Diamond (AA),CD-HIT (AA),V-measure between methods (adim.),0.99478260100063
+Diamond (AA),CD-HIT (NT),V-measure between methods (adim.),0.9948228072922208
+Diamond (AA),MMseqs2 (AA),V-measure between methods (adim.),0.9901159413462477
+Diamond (AA),MMseqs2 (NT),V-measure between methods (adim.),0.9896635579033723
+Diamond (AA),Diamond (AA),V-measure between methods (adim.),1.0
+Diamond (AA),Panaroo,V-measure between methods (adim.),0.9931588358165883
+Diamond (AA),Ppanggolin,V-measure between methods (adim.),0.9948110422470092
+Diamond (AA),Panta,V-measure between methods (adim.),0.9904961770018448
+Diamond (AA),PanX,V-measure between methods (adim.),0.995343230440395
+Diamond (AA),Sketch - UMAP* (AA) *,V-measure between methods (adim.),0.9434557951561882
+Diamond (AA),Sketch - UMAP* (NT) *,V-measure between methods (adim.),0.9135856764001647
+Diamond (AA),Connected components t=0.6* (AA) *,V-measure between methods (adim.),0.9889351675733817
+Diamond (AA),Connected components t=0.7* (AA) *,V-measure between methods (adim.),0.9903899980241845
+Diamond (AA),Connected components t=0.6* (NT) *,V-measure between methods (adim.),0.9763918870541309
+Diamond (AA),Connected components t=0.7* (NT) *,V-measure between methods (adim.),0.9799569018433141
+Panaroo,CD-HIT (AA),V-measure between methods (adim.),0.9928371438172647
+Panaroo,CD-HIT (NT),V-measure between methods (adim.),0.9935994370824212
+Panaroo,MMseqs2 (AA),V-measure between methods (adim.),0.9889521863308016
+Panaroo,MMseqs2 (NT),V-measure between methods (adim.),0.9890514760114839
+Panaroo,Diamond (AA),V-measure between methods (adim.),0.9931588358165883
+Panaroo,Panaroo,V-measure between methods (adim.),1.0
+Panaroo,Ppanggolin,V-measure between methods (adim.),0.9933760595047003
+Panaroo,Panta,V-measure between methods (adim.),0.9913369956714572
+Panaroo,PanX,V-measure between methods (adim.),0.9948281835090685
+Panaroo,Sketch - UMAP* (AA) *,V-measure between methods (adim.),0.9436583909585335
+Panaroo,Sketch - UMAP* (NT) *,V-measure between methods (adim.),0.9134382405955725
+Panaroo,Connected components t=0.6* (AA) *,V-measure between methods (adim.),0.9879356652631809
+Panaroo,Connected components t=0.7* (AA) *,V-measure between methods (adim.),0.9894056125946517
+Panaroo,Connected components t=0.6* (NT) *,V-measure between methods (adim.),0.9755135487713196
+Panaroo,Connected components t=0.7* (NT) *,V-measure between methods (adim.),0.9791643502552622
+Ppanggolin,CD-HIT (AA),V-measure between methods (adim.),0.9949880029856598
+Ppanggolin,CD-HIT (NT),V-measure between methods (adim.),0.9942231093058669
+Ppanggolin,MMseqs2 (AA),V-measure between methods (adim.),0.9936687743231231
+Ppanggolin,MMseqs2 (NT),V-measure between methods (adim.),0.9930148338300431
+Ppanggolin,Diamond (AA),V-measure between methods (adim.),0.9948110422470092
+Ppanggolin,Panaroo,V-measure between methods (adim.),0.9933760595047003
+Ppanggolin,Ppanggolin,V-measure between methods (adim.),1.0
+Ppanggolin,Panta,V-measure between methods (adim.),0.9924776165996815
+Ppanggolin,PanX,V-measure between methods (adim.),0.9952013132695307
+Ppanggolin,Sketch - UMAP* (AA) *,V-measure between methods (adim.),0.9457733028428681
+Ppanggolin,Sketch - UMAP* (NT) *,V-measure between methods (adim.),0.9156677866989574
+Ppanggolin,Connected components t=0.6* (AA) *,V-measure between methods (adim.),0.9915326137661912
+Ppanggolin,Connected components t=0.7* (AA) *,V-measure between methods (adim.),0.9927504524547772
+Ppanggolin,Connected components t=0.6* (NT) *,V-measure between methods (adim.),0.9783232498155137
+Ppanggolin,Connected components t=0.7* (NT) *,V-measure between methods (adim.),0.98181019799333
+Panta,CD-HIT (AA),V-measure between methods (adim.),0.990725604139088
+Panta,CD-HIT (NT),V-measure between methods (adim.),0.9900592615112882
+Panta,MMseqs2 (AA),V-measure between methods (adim.),0.9943756113125811
+Panta,MMseqs2 (NT),V-measure between methods (adim.),0.9942223609372113
+Panta,Diamond (AA),V-measure between methods (adim.),0.9904961770018448
+Panta,Panaroo,V-measure between methods (adim.),0.9913369956714572
+Panta,Ppanggolin,V-measure between methods (adim.),0.9924776165996815
+Panta,Panta,V-measure between methods (adim.),1.0
+Panta,PanX,V-measure between methods (adim.),0.9909053685273772
+Panta,Sketch - UMAP* (AA) *,V-measure between methods (adim.),0.9468259972748402
+Panta,Sketch - UMAP* (NT) *,V-measure between methods (adim.),0.917656519605988
+Panta,Connected components t=0.6* (AA) *,V-measure between methods (adim.),0.9931586913643654
+Panta,Connected components t=0.7* (AA) *,V-measure between methods (adim.),0.9940214706927071
+Panta,Connected components t=0.6* (NT) *,V-measure between methods (adim.),0.9814972887781
+Panta,Connected components t=0.7* (NT) *,V-measure between methods (adim.),0.9847295924202708
+PanX,CD-HIT (AA),V-measure between methods (adim.),0.9943442302222663
+PanX,CD-HIT (NT),V-measure between methods (adim.),0.9947736385045384
+PanX,MMseqs2 (AA),V-measure between methods (adim.),0.989609743761461
+PanX,MMseqs2 (NT),V-measure between methods (adim.),0.9894244253813522
+PanX,Diamond (AA),V-measure between methods (adim.),0.995343230440395
+PanX,Panaroo,V-measure between methods (adim.),0.9948281835090685
+PanX,Ppanggolin,V-measure between methods (adim.),0.9952013132695307
+PanX,Panta,V-measure between methods (adim.),0.9909053685273772
+PanX,PanX,V-measure between methods (adim.),1.0
+PanX,Sketch - UMAP* (AA) *,V-measure between methods (adim.),0.943211075809743
+PanX,Sketch - UMAP* (NT) *,V-measure between methods (adim.),0.9131393576902228
+PanX,Connected components t=0.6* (AA) *,V-measure between methods (adim.),0.9885214171595206
+PanX,Connected components t=0.7* (AA) *,V-measure between methods (adim.),0.9902840244102281
+PanX,Connected components t=0.6* (NT) *,V-measure between methods (adim.),0.9751966904265038
+PanX,Connected components t=0.7* (NT) *,V-measure between methods (adim.),0.9790821843676313
+Sketch - UMAP* (AA) *,CD-HIT (AA),V-measure between methods (adim.),0.9443915654699316
+Sketch - UMAP* (AA) *,CD-HIT (NT),V-measure between methods (adim.),0.9433710900141661
+Sketch - UMAP* (AA) *,MMseqs2 (AA),V-measure between methods (adim.),0.9484861600942276
+Sketch - UMAP* (AA) *,MMseqs2 (NT),V-measure between methods (adim.),0.9482614374437389
+Sketch - UMAP* (AA) *,Diamond (AA),V-measure between methods (adim.),0.9434557951561882
+Sketch - UMAP* (AA) *,Panaroo,V-measure between methods (adim.),0.9436583909585335
+Sketch - UMAP* (AA) *,Ppanggolin,V-measure between methods (adim.),0.9457733028428681
+Sketch - UMAP* (AA) *,Panta,V-measure between methods (adim.),0.9468259972748402
+Sketch - UMAP* (AA) *,PanX,V-measure between methods (adim.),0.943211075809743
+Sketch - UMAP* (AA) *,Sketch - UMAP* (AA) *,V-measure between methods (adim.),1.0
+Sketch - UMAP* (AA) *,Sketch - UMAP* (NT) *,V-measure between methods (adim.),0.9076504798566787
+Sketch - UMAP* (AA) *,Connected components t=0.6* (AA) *,V-measure between methods (adim.),0.9481498055496345
+Sketch - UMAP* (AA) *,Connected components t=0.7* (AA) *,V-measure between methods (adim.),0.948196316381277
+Sketch - UMAP* (AA) *,Connected components t=0.6* (NT) *,V-measure between methods (adim.),0.9430501402607395
+Sketch - UMAP* (AA) *,Connected components t=0.7* (NT) *,V-measure between methods (adim.),0.9439482316890384
+Sketch - UMAP* (NT) *,CD-HIT (AA),V-measure between methods (adim.),0.9146011755249618
+Sketch - UMAP* (NT) *,CD-HIT (NT),V-measure between methods (adim.),0.9137934661842415
+Sketch - UMAP* (NT) *,MMseqs2 (AA),V-measure between methods (adim.),0.9191316400066929
+Sketch - UMAP* (NT) *,MMseqs2 (NT),V-measure between methods (adim.),0.9191194008925452
+Sketch - UMAP* (NT) *,Diamond (AA),V-measure between methods (adim.),0.9135856764001647
+Sketch - UMAP* (NT) *,Panaroo,V-measure between methods (adim.),0.9134382405955725
+Sketch - UMAP* (NT) *,Ppanggolin,V-measure between methods (adim.),0.9156677866989574
+Sketch - UMAP* (NT) *,Panta,V-measure between methods (adim.),0.917656519605988
+Sketch - UMAP* (NT) *,PanX,V-measure between methods (adim.),0.9131393576902228
+Sketch - UMAP* (NT) *,Sketch - UMAP* (AA) *,V-measure between methods (adim.),0.9076504798566787
+Sketch - UMAP* (NT) *,Sketch - UMAP* (NT) *,V-measure between methods (adim.),1.0
+Sketch - UMAP* (NT) *,Connected components t=0.6* (AA) *,V-measure between methods (adim.),0.9213838544083882
+Sketch - UMAP* (NT) *,Connected components t=0.7* (AA) *,V-measure between methods (adim.),0.9203107751602869
+Sketch - UMAP* (NT) *,Connected components t=0.6* (NT) *,V-measure between methods (adim.),0.9266582100023336
+Sketch - UMAP* (NT) *,Connected components t=0.7* (NT) *,V-measure between methods (adim.),0.9268639210279371
+Connected components t=0.6* (AA) *,CD-HIT (AA),V-measure between methods (adim.),0.9899546642750985
+Connected components t=0.6* (AA) *,CD-HIT (NT),V-measure between methods (adim.),0.9885879006213437
+Connected components t=0.6* (AA) *,MMseqs2 (AA),V-measure between methods (adim.),0.9948643359311555
+Connected components t=0.6* (AA) *,MMseqs2 (NT),V-measure between methods (adim.),0.994353152806149
+Connected components t=0.6* (AA) *,Diamond (AA),V-measure between methods (adim.),0.9889351675733817
+Connected components t=0.6* (AA) *,Panaroo,V-measure between methods (adim.),0.9879356652631809
+Connected components t=0.6* (AA) *,Ppanggolin,V-measure between methods (adim.),0.9915326137661912
+Connected components t=0.6* (AA) *,Panta,V-measure between methods (adim.),0.9931586913643654
+Connected components t=0.6* (AA) *,PanX,V-measure between methods (adim.),0.9885214171595206
+Connected components t=0.6* (AA) *,Sketch - UMAP* (AA) *,V-measure between methods (adim.),0.9481498055496345
+Connected components t=0.6* (AA) *,Sketch - UMAP* (NT) *,V-measure between methods (adim.),0.9213838544083882
+Connected components t=0.6* (AA) *,Connected components t=0.6* (AA) *,V-measure between methods (adim.),1.0
+Connected components t=0.6* (AA) *,Connected components t=0.7* (AA) *,V-measure between methods (adim.),0.9979841497613272
+Connected components t=0.6* (AA) *,Connected components t=0.6* (NT) *,V-measure between methods (adim.),0.9856758382960639
+Connected components t=0.6* (AA) *,Connected components t=0.7* (NT) *,V-measure between methods (adim.),0.9886500372216018
+Connected components t=0.7* (AA) *,CD-HIT (AA),V-measure between methods (adim.),0.9911867123142855
+Connected components t=0.7* (AA) *,CD-HIT (NT),V-measure between methods (adim.),0.989878984642826
+Connected components t=0.7* (AA) *,MMseqs2 (AA),V-measure between methods (adim.),0.9952073915271058
+Connected components t=0.7* (AA) *,MMseqs2 (NT),V-measure between methods (adim.),0.9946891200563661
+Connected components t=0.7* (AA) *,Diamond (AA),V-measure between methods (adim.),0.9903899980241845
+Connected components t=0.7* (AA) *,Panaroo,V-measure between methods (adim.),0.9894056125946517
+Connected components t=0.7* (AA) *,Ppanggolin,V-measure between methods (adim.),0.9927504524547772
+Connected components t=0.7* (AA) *,Panta,V-measure between methods (adim.),0.9940214706927071
+Connected components t=0.7* (AA) *,PanX,V-measure between methods (adim.),0.9902840244102281
+Connected components t=0.7* (AA) *,Sketch - UMAP* (AA) *,V-measure between methods (adim.),0.948196316381277
+Connected components t=0.7* (AA) *,Sketch - UMAP* (NT) *,V-measure between methods (adim.),0.9203107751602869
+Connected components t=0.7* (AA) *,Connected components t=0.6* (AA) *,V-measure between methods (adim.),0.9979841497613272
+Connected components t=0.7* (AA) *,Connected components t=0.7* (AA) *,V-measure between methods (adim.),1.0
+Connected components t=0.7* (AA) *,Connected components t=0.6* (NT) *,V-measure between methods (adim.),0.9840610773774306
+Connected components t=0.7* (AA) *,Connected components t=0.7* (NT) *,V-measure between methods (adim.),0.9875691043852182
+Connected components t=0.6* (NT) *,CD-HIT (AA),V-measure between methods (adim.),0.9777382353332474
+Connected components t=0.6* (NT) *,CD-HIT (NT),V-measure between methods (adim.),0.976544532200815
+Connected components t=0.6* (NT) *,MMseqs2 (AA),V-measure between methods (adim.),0.9829787566538195
+Connected components t=0.6* (NT) *,MMseqs2 (NT),V-measure between methods (adim.),0.9828619190584049
+Connected components t=0.6* (NT) *,Diamond (AA),V-measure between methods (adim.),0.9763918870541309
+Connected components t=0.6* (NT) *,Panaroo,V-measure between methods (adim.),0.9755135487713196
+Connected components t=0.6* (NT) *,Ppanggolin,V-measure between methods (adim.),0.9783232498155137
+Connected components t=0.6* (NT) *,Panta,V-measure between methods (adim.),0.9814972887781
+Connected components t=0.6* (NT) *,PanX,V-measure between methods (adim.),0.9751966904265038
+Connected components t=0.6* (NT) *,Sketch - UMAP* (AA) *,V-measure between methods (adim.),0.9430501402607395
+Connected components t=0.6* (NT) *,Sketch - UMAP* (NT) *,V-measure between methods (adim.),0.9266582100023336
+Connected components t=0.6* (NT) *,Connected components t=0.6* (AA) *,V-measure between methods (adim.),0.9856758382960639
+Connected components t=0.6* (NT) *,Connected components t=0.7* (AA) *,V-measure between methods (adim.),0.9840610773774306
+Connected components t=0.6* (NT) *,Connected components t=0.6* (NT) *,V-measure between methods (adim.),1.0
+Connected components t=0.6* (NT) *,Connected components t=0.7* (NT) *,V-measure between methods (adim.),0.9960357340706596
+Connected components t=0.7* (NT) *,CD-HIT (AA),V-measure between methods (adim.),0.9810506228145273
+Connected components t=0.7* (NT) *,CD-HIT (NT),V-measure between methods (adim.),0.9801056788536747
+Connected components t=0.7* (NT) *,MMseqs2 (AA),V-measure between methods (adim.),0.9854646602648095
+Connected components t=0.7* (NT) *,MMseqs2 (NT),V-measure between methods (adim.),0.9854442959968962
+Connected components t=0.7* (NT) *,Diamond (AA),V-measure between methods (adim.),0.9799569018433141
+Connected components t=0.7* (NT) *,Panaroo,V-measure between methods (adim.),0.9791643502552622
+Connected components t=0.7* (NT) *,Ppanggolin,V-measure between methods (adim.),0.98181019799333
+Connected components t=0.7* (NT) *,Panta,V-measure between methods (adim.),0.9847295924202708
+Connected components t=0.7* (NT) *,PanX,V-measure between methods (adim.),0.9790821843676313
+Connected components t=0.7* (NT) *,Sketch - UMAP* (AA) *,V-measure between methods (adim.),0.9439482316890384
+Connected components t=0.7* (NT) *,Sketch - UMAP* (NT) *,V-measure between methods (adim.),0.9268639210279371
+Connected components t=0.7* (NT) *,Connected components t=0.6* (AA) *,V-measure between methods (adim.),0.9886500372216018
+Connected components t=0.7* (NT) *,Connected components t=0.7* (AA) *,V-measure between methods (adim.),0.9875691043852182
+Connected components t=0.7* (NT) *,Connected components t=0.6* (NT) *,V-measure between methods (adim.),0.9960357340706596
+Connected components t=0.7* (NT) *,Connected components t=0.7* (NT) *,V-measure between methods (adim.),1.0

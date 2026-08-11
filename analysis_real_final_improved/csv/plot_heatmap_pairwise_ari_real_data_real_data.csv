@@ -1,0 +1,226 @@
+method_i,method_j,metric,value
+CD-HIT (AA),CD-HIT (AA),Adjusted Rand index between methods (adim.),1.0
+CD-HIT (AA),CD-HIT (NT),Adjusted Rand index between methods (adim.),0.9722529200701193
+CD-HIT (AA),MMseqs2 (AA),Adjusted Rand index between methods (adim.),0.9552723532039412
+CD-HIT (AA),MMseqs2 (NT),Adjusted Rand index between methods (adim.),0.9529387565855133
+CD-HIT (AA),Diamond (AA),Adjusted Rand index between methods (adim.),0.9722056273680151
+CD-HIT (AA),Panaroo,Adjusted Rand index between methods (adim.),0.9628156404451562
+CD-HIT (AA),Ppanggolin,Adjusted Rand index between methods (adim.),0.9712939789082969
+CD-HIT (AA),Panta,Adjusted Rand index between methods (adim.),0.9562805277181836
+CD-HIT (AA),PanX,Adjusted Rand index between methods (adim.),0.9586324558550697
+CD-HIT (AA),Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),0.7065891316781454
+CD-HIT (AA),Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),0.5309711013022479
+CD-HIT (AA),Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),0.9518305701107636
+CD-HIT (AA),Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),0.9555280737619759
+CD-HIT (AA),Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),0.9014474039114442
+CD-HIT (AA),Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),0.9157810315921664
+CD-HIT (NT),CD-HIT (AA),Adjusted Rand index between methods (adim.),0.9722529200701193
+CD-HIT (NT),CD-HIT (NT),Adjusted Rand index between methods (adim.),1.0
+CD-HIT (NT),MMseqs2 (AA),Adjusted Rand index between methods (adim.),0.9442991661487135
+CD-HIT (NT),MMseqs2 (NT),Adjusted Rand index between methods (adim.),0.9473801319113088
+CD-HIT (NT),Diamond (AA),Adjusted Rand index between methods (adim.),0.9702308623712614
+CD-HIT (NT),Panaroo,Adjusted Rand index between methods (adim.),0.9633825656619315
+CD-HIT (NT),Ppanggolin,Adjusted Rand index between methods (adim.),0.964268569917964
+CD-HIT (NT),Panta,Adjusted Rand index between methods (adim.),0.9482788789604658
+CD-HIT (NT),PanX,Adjusted Rand index between methods (adim.),0.9594317504493416
+CD-HIT (NT),Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),0.6999339492420735
+CD-HIT (NT),Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),0.5277047870605017
+CD-HIT (NT),Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),0.9413420999656315
+CD-HIT (NT),Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),0.9452606778678312
+CD-HIT (NT),Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),0.8915469403680102
+CD-HIT (NT),Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),0.9069138888856815
+MMseqs2 (AA),CD-HIT (AA),Adjusted Rand index between methods (adim.),0.9552723532039412
+MMseqs2 (AA),CD-HIT (NT),Adjusted Rand index between methods (adim.),0.9442991661487135
+MMseqs2 (AA),MMseqs2 (AA),Adjusted Rand index between methods (adim.),1.0
+MMseqs2 (AA),MMseqs2 (NT),Adjusted Rand index between methods (adim.),0.9922986434966966
+MMseqs2 (AA),Diamond (AA),Adjusted Rand index between methods (adim.),0.9489360596152124
+MMseqs2 (AA),Panaroo,Adjusted Rand index between methods (adim.),0.94883347248247
+MMseqs2 (AA),Ppanggolin,Adjusted Rand index between methods (adim.),0.9666459229115183
+MMseqs2 (AA),Panta,Adjusted Rand index between methods (adim.),0.9793183494603701
+MMseqs2 (AA),PanX,Adjusted Rand index between methods (adim.),0.9354126870480858
+MMseqs2 (AA),Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),0.7267865241012532
+MMseqs2 (AA),Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),0.5444772442704067
+MMseqs2 (AA),Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),0.9778732078786048
+MMseqs2 (AA),Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),0.9770896486657282
+MMseqs2 (AA),Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),0.9298530479269179
+MMseqs2 (AA),Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),0.9399296492508992
+MMseqs2 (NT),CD-HIT (AA),Adjusted Rand index between methods (adim.),0.9529387565855133
+MMseqs2 (NT),CD-HIT (NT),Adjusted Rand index between methods (adim.),0.9473801319113088
+MMseqs2 (NT),MMseqs2 (AA),Adjusted Rand index between methods (adim.),0.9922986434966966
+MMseqs2 (NT),MMseqs2 (NT),Adjusted Rand index between methods (adim.),1.0
+MMseqs2 (NT),Diamond (AA),Adjusted Rand index between methods (adim.),0.9471542589928498
+MMseqs2 (NT),Panaroo,Adjusted Rand index between methods (adim.),0.9496458561877618
+MMseqs2 (NT),Ppanggolin,Adjusted Rand index between methods (adim.),0.9642340988723398
+MMseqs2 (NT),Panta,Adjusted Rand index between methods (adim.),0.979395683502568
+MMseqs2 (NT),PanX,Adjusted Rand index between methods (adim.),0.9346803912781128
+MMseqs2 (NT),Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),0.7264010753865106
+MMseqs2 (NT),Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),0.5448002612043858
+MMseqs2 (NT),Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),0.9759007541906307
+MMseqs2 (NT),Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),0.975174914285743
+MMseqs2 (NT),Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),0.9297352717085317
+MMseqs2 (NT),Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),0.9400342401134825
+Diamond (AA),CD-HIT (AA),Adjusted Rand index between methods (adim.),0.9722056273680151
+Diamond (AA),CD-HIT (NT),Adjusted Rand index between methods (adim.),0.9702308623712614
+Diamond (AA),MMseqs2 (AA),Adjusted Rand index between methods (adim.),0.9489360596152124
+Diamond (AA),MMseqs2 (NT),Adjusted Rand index between methods (adim.),0.9471542589928498
+Diamond (AA),Diamond (AA),Adjusted Rand index between methods (adim.),1.0
+Diamond (AA),Panaroo,Adjusted Rand index between methods (adim.),0.9638960180929182
+Diamond (AA),Ppanggolin,Adjusted Rand index between methods (adim.),0.9697301095972541
+Diamond (AA),Panta,Adjusted Rand index between methods (adim.),0.9515492529152388
+Diamond (AA),PanX,Adjusted Rand index between methods (adim.),0.9662485168068539
+Diamond (AA),Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),0.7010402872197616
+Diamond (AA),Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),0.5279042841986271
+Diamond (AA),Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),0.94517462719373
+Diamond (AA),Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),0.9508853991871707
+Diamond (AA),Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),0.8936402421575139
+Diamond (AA),Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),0.9092644055597882
+Panaroo,CD-HIT (AA),Adjusted Rand index between methods (adim.),0.9628156404451562
+Panaroo,CD-HIT (NT),Adjusted Rand index between methods (adim.),0.9633825656619315
+Panaroo,MMseqs2 (AA),Adjusted Rand index between methods (adim.),0.94883347248247
+Panaroo,MMseqs2 (NT),Adjusted Rand index between methods (adim.),0.9496458561877618
+Panaroo,Diamond (AA),Adjusted Rand index between methods (adim.),0.9638960180929182
+Panaroo,Panaroo,Adjusted Rand index between methods (adim.),1.0
+Panaroo,Ppanggolin,Adjusted Rand index between methods (adim.),0.963442487495553
+Panaroo,Panta,Adjusted Rand index between methods (adim.),0.9624296988424005
+Panaroo,PanX,Adjusted Rand index between methods (adim.),0.9630254941320224
+Panaroo,Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),0.705725428549223
+Panaroo,Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),0.5342484131973662
+Panaroo,Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),0.9445301731630847
+Panaroo,Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),0.949067433442785
+Panaroo,Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),0.8949985603655963
+Panaroo,Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),0.9103590071912653
+Ppanggolin,CD-HIT (AA),Adjusted Rand index between methods (adim.),0.9712939789082969
+Ppanggolin,CD-HIT (NT),Adjusted Rand index between methods (adim.),0.964268569917964
+Ppanggolin,MMseqs2 (AA),Adjusted Rand index between methods (adim.),0.9666459229115183
+Ppanggolin,MMseqs2 (NT),Adjusted Rand index between methods (adim.),0.9642340988723398
+Ppanggolin,Diamond (AA),Adjusted Rand index between methods (adim.),0.9697301095972541
+Ppanggolin,Panaroo,Adjusted Rand index between methods (adim.),0.963442487495553
+Ppanggolin,Ppanggolin,Adjusted Rand index between methods (adim.),1.0
+Ppanggolin,Panta,Adjusted Rand index between methods (adim.),0.9630105373454223
+Ppanggolin,PanX,Adjusted Rand index between methods (adim.),0.9649748699617252
+Ppanggolin,Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),0.7123327095332946
+Ppanggolin,Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),0.5361399615639568
+Ppanggolin,Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),0.9611406528613455
+Ppanggolin,Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),0.9648941517498003
+Ppanggolin,Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),0.9045466207417688
+Ppanggolin,Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),0.9194535690251128
+Panta,CD-HIT (AA),Adjusted Rand index between methods (adim.),0.9562805277181836
+Panta,CD-HIT (NT),Adjusted Rand index between methods (adim.),0.9482788789604658
+Panta,MMseqs2 (AA),Adjusted Rand index between methods (adim.),0.9793183494603701
+Panta,MMseqs2 (NT),Adjusted Rand index between methods (adim.),0.979395683502568
+Panta,Diamond (AA),Adjusted Rand index between methods (adim.),0.9515492529152388
+Panta,Panaroo,Adjusted Rand index between methods (adim.),0.9624296988424005
+Panta,Ppanggolin,Adjusted Rand index between methods (adim.),0.9630105373454223
+Panta,Panta,Adjusted Rand index between methods (adim.),1.0
+Panta,PanX,Adjusted Rand index between methods (adim.),0.9409507902120178
+Panta,Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),0.7216743738215861
+Panta,Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),0.5426317809325066
+Panta,Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),0.9728137351415072
+Panta,Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),0.9738321808920328
+Panta,Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),0.9264001534416406
+Panta,Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),0.9397125587288752
+PanX,CD-HIT (AA),Adjusted Rand index between methods (adim.),0.9586324558550697
+PanX,CD-HIT (NT),Adjusted Rand index between methods (adim.),0.9594317504493416
+PanX,MMseqs2 (AA),Adjusted Rand index between methods (adim.),0.9354126870480858
+PanX,MMseqs2 (NT),Adjusted Rand index between methods (adim.),0.9346803912781128
+PanX,Diamond (AA),Adjusted Rand index between methods (adim.),0.9662485168068539
+PanX,Panaroo,Adjusted Rand index between methods (adim.),0.9630254941320224
+PanX,Ppanggolin,Adjusted Rand index between methods (adim.),0.9649748699617252
+PanX,Panta,Adjusted Rand index between methods (adim.),0.9409507902120178
+PanX,PanX,Adjusted Rand index between methods (adim.),1.0
+PanX,Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),0.6932737873232763
+PanX,Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),0.5254275163745812
+PanX,Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),0.9350320624806897
+PanX,Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),0.9426435588682568
+PanX,Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),0.8779095219398628
+PanX,Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),0.8952378227665284
+Sketch - UMAP* (AA) *,CD-HIT (AA),Adjusted Rand index between methods (adim.),0.7065891316781454
+Sketch - UMAP* (AA) *,CD-HIT (NT),Adjusted Rand index between methods (adim.),0.6999339492420735
+Sketch - UMAP* (AA) *,MMseqs2 (AA),Adjusted Rand index between methods (adim.),0.7267865241012532
+Sketch - UMAP* (AA) *,MMseqs2 (NT),Adjusted Rand index between methods (adim.),0.7264010753865106
+Sketch - UMAP* (AA) *,Diamond (AA),Adjusted Rand index between methods (adim.),0.7010402872197616
+Sketch - UMAP* (AA) *,Panaroo,Adjusted Rand index between methods (adim.),0.705725428549223
+Sketch - UMAP* (AA) *,Ppanggolin,Adjusted Rand index between methods (adim.),0.7123327095332946
+Sketch - UMAP* (AA) *,Panta,Adjusted Rand index between methods (adim.),0.7216743738215861
+Sketch - UMAP* (AA) *,PanX,Adjusted Rand index between methods (adim.),0.6932737873232763
+Sketch - UMAP* (AA) *,Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),1.0
+Sketch - UMAP* (AA) *,Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),0.49887534572825865
+Sketch - UMAP* (AA) *,Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),0.7248847145703307
+Sketch - UMAP* (AA) *,Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),0.7238695839507002
+Sketch - UMAP* (AA) *,Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),0.7065083380243534
+Sketch - UMAP* (AA) *,Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),0.7094737532178281
+Sketch - UMAP* (NT) *,CD-HIT (AA),Adjusted Rand index between methods (adim.),0.5309711013022479
+Sketch - UMAP* (NT) *,CD-HIT (NT),Adjusted Rand index between methods (adim.),0.5277047870605017
+Sketch - UMAP* (NT) *,MMseqs2 (AA),Adjusted Rand index between methods (adim.),0.5444772442704067
+Sketch - UMAP* (NT) *,MMseqs2 (NT),Adjusted Rand index between methods (adim.),0.5448002612043858
+Sketch - UMAP* (NT) *,Diamond (AA),Adjusted Rand index between methods (adim.),0.5279042841986271
+Sketch - UMAP* (NT) *,Panaroo,Adjusted Rand index between methods (adim.),0.5342484131973662
+Sketch - UMAP* (NT) *,Ppanggolin,Adjusted Rand index between methods (adim.),0.5361399615639568
+Sketch - UMAP* (NT) *,Panta,Adjusted Rand index between methods (adim.),0.5426317809325066
+Sketch - UMAP* (NT) *,PanX,Adjusted Rand index between methods (adim.),0.5254275163745812
+Sketch - UMAP* (NT) *,Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),0.49887534572825865
+Sketch - UMAP* (NT) *,Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),1.0
+Sketch - UMAP* (NT) *,Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),0.5518681671253962
+Sketch - UMAP* (NT) *,Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),0.5497477068448485
+Sketch - UMAP* (NT) *,Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),0.5602204081833578
+Sketch - UMAP* (NT) *,Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),0.5629842650123591
+Connected components t=0.6* (AA) *,CD-HIT (AA),Adjusted Rand index between methods (adim.),0.9518305701107636
+Connected components t=0.6* (AA) *,CD-HIT (NT),Adjusted Rand index between methods (adim.),0.9413420999656315
+Connected components t=0.6* (AA) *,MMseqs2 (AA),Adjusted Rand index between methods (adim.),0.9778732078786048
+Connected components t=0.6* (AA) *,MMseqs2 (NT),Adjusted Rand index between methods (adim.),0.9759007541906307
+Connected components t=0.6* (AA) *,Diamond (AA),Adjusted Rand index between methods (adim.),0.94517462719373
+Connected components t=0.6* (AA) *,Panaroo,Adjusted Rand index between methods (adim.),0.9445301731630847
+Connected components t=0.6* (AA) *,Ppanggolin,Adjusted Rand index between methods (adim.),0.9611406528613455
+Connected components t=0.6* (AA) *,Panta,Adjusted Rand index between methods (adim.),0.9728137351415072
+Connected components t=0.6* (AA) *,PanX,Adjusted Rand index between methods (adim.),0.9350320624806897
+Connected components t=0.6* (AA) *,Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),0.7248847145703307
+Connected components t=0.6* (AA) *,Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),0.5518681671253962
+Connected components t=0.6* (AA) *,Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),1.0
+Connected components t=0.6* (AA) *,Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),0.9907663986094263
+Connected components t=0.6* (AA) *,Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),0.9374820280648621
+Connected components t=0.6* (AA) *,Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),0.9505978619443091
+Connected components t=0.7* (AA) *,CD-HIT (AA),Adjusted Rand index between methods (adim.),0.9555280737619759
+Connected components t=0.7* (AA) *,CD-HIT (NT),Adjusted Rand index between methods (adim.),0.9452606778678312
+Connected components t=0.7* (AA) *,MMseqs2 (AA),Adjusted Rand index between methods (adim.),0.9770896486657282
+Connected components t=0.7* (AA) *,MMseqs2 (NT),Adjusted Rand index between methods (adim.),0.975174914285743
+Connected components t=0.7* (AA) *,Diamond (AA),Adjusted Rand index between methods (adim.),0.9508853991871707
+Connected components t=0.7* (AA) *,Panaroo,Adjusted Rand index between methods (adim.),0.949067433442785
+Connected components t=0.7* (AA) *,Ppanggolin,Adjusted Rand index between methods (adim.),0.9648941517498003
+Connected components t=0.7* (AA) *,Panta,Adjusted Rand index between methods (adim.),0.9738321808920328
+Connected components t=0.7* (AA) *,PanX,Adjusted Rand index between methods (adim.),0.9426435588682568
+Connected components t=0.7* (AA) *,Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),0.7238695839507002
+Connected components t=0.7* (AA) *,Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),0.5497477068448485
+Connected components t=0.7* (AA) *,Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),0.9907663986094263
+Connected components t=0.7* (AA) *,Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),1.0
+Connected components t=0.7* (AA) *,Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),0.9304157492964207
+Connected components t=0.7* (AA) *,Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),0.9457646850117986
+Connected components t=0.6* (NT) *,CD-HIT (AA),Adjusted Rand index between methods (adim.),0.9014474039114442
+Connected components t=0.6* (NT) *,CD-HIT (NT),Adjusted Rand index between methods (adim.),0.8915469403680102
+Connected components t=0.6* (NT) *,MMseqs2 (AA),Adjusted Rand index between methods (adim.),0.9298530479269179
+Connected components t=0.6* (NT) *,MMseqs2 (NT),Adjusted Rand index between methods (adim.),0.9297352717085317
+Connected components t=0.6* (NT) *,Diamond (AA),Adjusted Rand index between methods (adim.),0.8936402421575139
+Connected components t=0.6* (NT) *,Panaroo,Adjusted Rand index between methods (adim.),0.8949985603655963
+Connected components t=0.6* (NT) *,Ppanggolin,Adjusted Rand index between methods (adim.),0.9045466207417688
+Connected components t=0.6* (NT) *,Panta,Adjusted Rand index between methods (adim.),0.9264001534416406
+Connected components t=0.6* (NT) *,PanX,Adjusted Rand index between methods (adim.),0.8779095219398628
+Connected components t=0.6* (NT) *,Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),0.7065083380243534
+Connected components t=0.6* (NT) *,Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),0.5602204081833578
+Connected components t=0.6* (NT) *,Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),0.9374820280648621
+Connected components t=0.6* (NT) *,Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),0.9304157492964207
+Connected components t=0.6* (NT) *,Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),1.0
+Connected components t=0.6* (NT) *,Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),0.9821870380347092
+Connected components t=0.7* (NT) *,CD-HIT (AA),Adjusted Rand index between methods (adim.),0.9157810315921664
+Connected components t=0.7* (NT) *,CD-HIT (NT),Adjusted Rand index between methods (adim.),0.9069138888856815
+Connected components t=0.7* (NT) *,MMseqs2 (AA),Adjusted Rand index between methods (adim.),0.9399296492508992
+Connected components t=0.7* (NT) *,MMseqs2 (NT),Adjusted Rand index between methods (adim.),0.9400342401134825
+Connected components t=0.7* (NT) *,Diamond (AA),Adjusted Rand index between methods (adim.),0.9092644055597882
+Connected components t=0.7* (NT) *,Panaroo,Adjusted Rand index between methods (adim.),0.9103590071912653
+Connected components t=0.7* (NT) *,Ppanggolin,Adjusted Rand index between methods (adim.),0.9194535690251128
+Connected components t=0.7* (NT) *,Panta,Adjusted Rand index between methods (adim.),0.9397125587288752
+Connected components t=0.7* (NT) *,PanX,Adjusted Rand index between methods (adim.),0.8952378227665284
+Connected components t=0.7* (NT) *,Sketch - UMAP* (AA) *,Adjusted Rand index between methods (adim.),0.7094737532178281
+Connected components t=0.7* (NT) *,Sketch - UMAP* (NT) *,Adjusted Rand index between methods (adim.),0.5629842650123591
+Connected components t=0.7* (NT) *,Connected components t=0.6* (AA) *,Adjusted Rand index between methods (adim.),0.9505978619443091
+Connected components t=0.7* (NT) *,Connected components t=0.7* (AA) *,Adjusted Rand index between methods (adim.),0.9457646850117986
+Connected components t=0.7* (NT) *,Connected components t=0.6* (NT) *,Adjusted Rand index between methods (adim.),0.9821870380347092
+Connected components t=0.7* (NT) *,Connected components t=0.7* (NT) *,Adjusted Rand index between methods (adim.),1.0

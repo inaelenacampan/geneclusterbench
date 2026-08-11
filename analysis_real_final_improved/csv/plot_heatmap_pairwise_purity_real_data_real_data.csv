@@ -1,0 +1,226 @@
+method_i,method_j,metric,value
+CD-HIT (AA),CD-HIT (AA),Purity between methods (adim.),1.0
+CD-HIT (AA),CD-HIT (NT),Purity between methods (adim.),0.9838554122011948
+CD-HIT (AA),MMseqs2 (AA),Purity between methods (adim.),0.9721197090923406
+CD-HIT (AA),MMseqs2 (NT),Purity between methods (adim.),0.9698119335124443
+CD-HIT (AA),Diamond (AA),Purity between methods (adim.),0.9828368417426904
+CD-HIT (AA),Panaroo,Purity between methods (adim.),0.976306523166292
+CD-HIT (AA),Ppanggolin,Purity between methods (adim.),0.9825268420379283
+CD-HIT (AA),Panta,Purity between methods (adim.),0.9709100295863863
+CD-HIT (AA),PanX,Purity between methods (adim.),0.9822122909427387
+CD-HIT (AA),Sketch - UMAP* (AA) *,Purity between methods (adim.),0.8161849369667267
+CD-HIT (AA),Sketch - UMAP* (NT) *,Purity between methods (adim.),0.7245874051548522
+CD-HIT (AA),Connected components t=0.6* (AA) *,Purity between methods (adim.),0.9694822512867448
+CD-HIT (AA),Connected components t=0.7* (AA) *,Purity between methods (adim.),0.9728135179553797
+CD-HIT (AA),Connected components t=0.6* (NT) *,Purity between methods (adim.),0.9388414868176316
+CD-HIT (AA),Connected components t=0.7* (NT) *,Purity between methods (adim.),0.947555922962613
+CD-HIT (NT),CD-HIT (AA),Purity between methods (adim.),0.9838554122011948
+CD-HIT (NT),CD-HIT (NT),Purity between methods (adim.),1.0
+CD-HIT (NT),MMseqs2 (AA),Purity between methods (adim.),0.9678879670908249
+CD-HIT (NT),MMseqs2 (NT),Purity between methods (adim.),0.9701416157381437
+CD-HIT (NT),Diamond (AA),Purity between methods (adim.),0.9832058890102644
+CD-HIT (NT),Panaroo,Purity between methods (adim.),0.9790120755167406
+CD-HIT (NT),Ppanggolin,Purity between methods (adim.),0.9801698601556887
+CD-HIT (NT),Panta,Purity between methods (adim.),0.9694058894779691
+CD-HIT (NT),PanX,Purity between methods (adim.),0.9828275271442213
+CD-HIT (NT),Sketch - UMAP* (AA) *,Purity between methods (adim.),0.8137000186983949
+CD-HIT (NT),Sketch - UMAP* (NT) *,Purity between methods (adim.),0.7225453436076092
+CD-HIT (NT),Connected components t=0.6* (AA) *,Purity between methods (adim.),0.96636749234842
+CD-HIT (NT),Connected components t=0.7* (AA) *,Purity between methods (adim.),0.9696397114542431
+CD-HIT (NT),Connected components t=0.6* (NT) *,Purity between methods (adim.),0.936514028716798
+CD-HIT (NT),Connected components t=0.7* (NT) *,Purity between methods (adim.),0.94569592473404
+MMseqs2 (AA),CD-HIT (AA),Purity between methods (adim.),0.9721197090923406
+MMseqs2 (AA),CD-HIT (NT),Purity between methods (adim.),0.9678879670908249
+MMseqs2 (AA),MMseqs2 (AA),Purity between methods (adim.),1.0
+MMseqs2 (AA),MMseqs2 (NT),Purity between methods (adim.),0.9937803233838189
+MMseqs2 (AA),Diamond (AA),Purity between methods (adim.),0.9696741558658832
+MMseqs2 (AA),Panaroo,Purity between methods (adim.),0.9666132850577913
+MMseqs2 (AA),Ppanggolin,Purity between methods (adim.),0.9810900180095067
+MMseqs2 (AA),Panta,Purity between methods (adim.),0.9817170032366316
+MMseqs2 (AA),PanX,Purity between methods (adim.),0.9694301436207389
+MMseqs2 (AA),Sketch - UMAP* (AA) *,Purity between methods (adim.),0.8291950833062698
+MMseqs2 (AA),Sketch - UMAP* (NT) *,Purity between methods (adim.),0.7369332664127621
+MMseqs2 (AA),Connected components t=0.6* (AA) *,Purity between methods (adim.),0.9843277927036895
+MMseqs2 (AA),Connected components t=0.7* (AA) *,Purity between methods (adim.),0.9850757284993061
+MMseqs2 (AA),Connected components t=0.6* (NT) *,Purity between methods (adim.),0.9533721078995798
+MMseqs2 (AA),Connected components t=0.7* (NT) *,Purity between methods (adim.),0.9602609902276285
+MMseqs2 (NT),CD-HIT (AA),Purity between methods (adim.),0.9698119335124443
+MMseqs2 (NT),CD-HIT (NT),Purity between methods (adim.),0.9701416157381437
+MMseqs2 (NT),MMseqs2 (AA),Purity between methods (adim.),0.9937803233838189
+MMseqs2 (NT),MMseqs2 (NT),Purity between methods (adim.),1.0
+MMseqs2 (NT),Diamond (AA),Purity between methods (adim.),0.9682570143583991
+MMseqs2 (NT),Panaroo,Purity between methods (adim.),0.9673145403545069
+MMseqs2 (NT),Ppanggolin,Purity between methods (adim.),0.9789741470087489
+MMseqs2 (NT),Panta,Purity between methods (adim.),0.9813992970751176
+MMseqs2 (NT),PanX,Purity between methods (adim.),0.9689035014322699
+MMseqs2 (NT),Sketch - UMAP* (AA) *,Purity between methods (adim.),0.8284422268804188
+MMseqs2 (NT),Sketch - UMAP* (NT) *,Purity between methods (adim.),0.7366232667079999
+MMseqs2 (NT),Connected components t=0.6* (AA) *,Purity between methods (adim.),0.982630175272849
+MMseqs2 (NT),Connected components t=0.7* (AA) *,Purity between methods (adim.),0.9834666824126834
+MMseqs2 (NT),Connected components t=0.6* (NT) *,Purity between methods (adim.),0.9528652829854448
+MMseqs2 (NT),Connected components t=0.7* (NT) *,Purity between methods (adim.),0.959995276194975
+Diamond (AA),CD-HIT (AA),Purity between methods (adim.),0.9828368417426904
+Diamond (AA),CD-HIT (NT),Purity between methods (adim.),0.9832058890102644
+Diamond (AA),MMseqs2 (AA),Purity between methods (adim.),0.9696741558658832
+Diamond (AA),MMseqs2 (NT),Purity between methods (adim.),0.9682570143583991
+Diamond (AA),Diamond (AA),Purity between methods (adim.),1.0
+Diamond (AA),Panaroo,Purity between methods (adim.),0.9777886088288539
+Diamond (AA),Ppanggolin,Purity between methods (adim.),0.9822414454843377
+Diamond (AA),Panta,Purity between methods (adim.),0.970756140664403
+Diamond (AA),PanX,Purity between methods (adim.),0.9853918316320002
+Diamond (AA),Sketch - UMAP* (AA) *,Purity between methods (adim.),0.8139854152519854
+Diamond (AA),Sketch - UMAP* (NT) *,Purity between methods (adim.),0.7227028037751075
+Diamond (AA),Connected components t=0.6* (AA) *,Purity between methods (adim.),0.9675828880162971
+Diamond (AA),Connected components t=0.7* (AA) *,Purity between methods (adim.),0.971420979599067
+Diamond (AA),Connected components t=0.6* (NT) *,Purity between methods (adim.),0.9363664098097684
+Diamond (AA),Connected components t=0.7* (NT) *,Purity between methods (adim.),0.94569592473404
+Panaroo,CD-HIT (AA),Purity between methods (adim.),0.976306523166292
+Panaroo,CD-HIT (NT),Purity between methods (adim.),0.9790120755167406
+Panaroo,MMseqs2 (AA),Purity between methods (adim.),0.9666132850577913
+Panaroo,MMseqs2 (NT),Purity between methods (adim.),0.9673145403545069
+Panaroo,Diamond (AA),Purity between methods (adim.),0.9777886088288539
+Panaroo,Panaroo,Purity between methods (adim.),1.0
+Panaroo,Ppanggolin,Purity between methods (adim.),0.9776592993415163
+Panaroo,Panta,Purity between methods (adim.),0.9739356688792187
+Panaroo,PanX,Purity between methods (adim.),0.9829176325450439
+Panaroo,Sketch - UMAP* (AA) *,Purity between methods (adim.),0.813167684564426
+Panaroo,Sketch - UMAP* (NT) *,Purity between methods (adim.),0.7205870650725128
+Panaroo,Connected components t=0.6* (AA) *,Purity between methods (adim.),0.9653301370680566
+Panaroo,Connected components t=0.7* (AA) *,Purity between methods (adim.),0.9690651918753854
+Panaroo,Connected components t=0.6* (NT) *,Purity between methods (adim.),0.9340372411323532
+Panaroo,Connected components t=0.7* (NT) *,Purity between methods (adim.),0.9438299480772674
+Ppanggolin,CD-HIT (AA),Purity between methods (adim.),0.9825268420379283
+Ppanggolin,CD-HIT (NT),Purity between methods (adim.),0.9801698601556887
+Ppanggolin,MMseqs2 (AA),Purity between methods (adim.),0.9810900180095067
+Ppanggolin,MMseqs2 (NT),Purity between methods (adim.),0.9789741470087489
+Ppanggolin,Diamond (AA),Purity between methods (adim.),0.9822414454843377
+Ppanggolin,Panaroo,Purity between methods (adim.),0.9776592993415163
+Ppanggolin,Ppanggolin,Purity between methods (adim.),1.0
+Ppanggolin,Panta,Purity between methods (adim.),0.9773286868807212
+Ppanggolin,PanX,Purity between methods (adim.),0.9844615944953586
+Ppanggolin,Sketch - UMAP* (AA) *,Purity between methods (adim.),0.8207266786730044
+Ppanggolin,Sketch - UMAP* (NT) *,Purity between methods (adim.),0.728130258923563
+Ppanggolin,Connected components t=0.6* (AA) *,Purity between methods (adim.),0.9762481178589354
+Ppanggolin,Connected components t=0.7* (AA) *,Purity between methods (adim.),0.979052877092498
+Ppanggolin,Connected components t=0.6* (NT) *,Purity between methods (adim.),0.9424876738212631
+Ppanggolin,Connected components t=0.7* (NT) *,Purity between methods (adim.),0.9518663950478777
+Panta,CD-HIT (AA),Purity between methods (adim.),0.9709100295863863
+Panta,CD-HIT (NT),Purity between methods (adim.),0.9694058894779691
+Panta,MMseqs2 (AA),Purity between methods (adim.),0.9817170032366316
+Panta,MMseqs2 (NT),Purity between methods (adim.),0.9813992970751176
+Panta,Diamond (AA),Purity between methods (adim.),0.970756140664403
+Panta,Panaroo,Purity between methods (adim.),0.9739356688792187
+Panta,Ppanggolin,Purity between methods (adim.),0.9773286868807212
+Panta,Panta,Purity between methods (adim.),1.0
+Panta,PanX,Purity between methods (adim.),0.9734547549058552
+Panta,Sketch - UMAP* (AA) *,Purity between methods (adim.),0.8228043525744126
+Panta,Sketch - UMAP* (NT) *,Purity between methods (adim.),0.732039673556919
+Panta,Connected components t=0.6* (AA) *,Purity between methods (adim.),0.979641984869244
+Panta,Connected components t=0.7* (AA) *,Purity between methods (adim.),0.9817765731419155
+Panta,Connected components t=0.6* (NT) *,Purity between methods (adim.),0.9488840571076825
+Panta,Connected components t=0.7* (NT) *,Purity between methods (adim.),0.9580379658863009
+PanX,CD-HIT (AA),Purity between methods (adim.),0.9822122909427387
+PanX,CD-HIT (NT),Purity between methods (adim.),0.9828275271442213
+PanX,MMseqs2 (AA),Purity between methods (adim.),0.9694301436207389
+PanX,MMseqs2 (NT),Purity between methods (adim.),0.9689035014322699
+PanX,Diamond (AA),Purity between methods (adim.),0.9853918316320002
+PanX,Panaroo,Purity between methods (adim.),0.9829176325450439
+PanX,Ppanggolin,Purity between methods (adim.),0.9844615944953586
+PanX,Panta,Purity between methods (adim.),0.9734547549058552
+PanX,PanX,Purity between methods (adim.),1.0
+PanX,Sketch - UMAP* (AA) *,Purity between methods (adim.),0.8140559323535492
+PanX,Sketch - UMAP* (NT) *,Purity between methods (adim.),0.7224251134495556
+PanX,Connected components t=0.6* (AA) *,Purity between methods (adim.),0.9682292025554451
+PanX,Connected components t=0.7* (AA) *,Purity between methods (adim.),0.9725604654138817
+PanX,Connected components t=0.6* (NT) *,Purity between methods (adim.),0.9352623859352083
+PanX,Connected components t=0.7* (NT) *,Purity between methods (adim.),0.9454753068798173
+Sketch - UMAP* (AA) *,CD-HIT (AA),Purity between methods (adim.),0.8161849369667267
+Sketch - UMAP* (AA) *,CD-HIT (NT),Purity between methods (adim.),0.8137000186983949
+Sketch - UMAP* (AA) *,MMseqs2 (AA),Purity between methods (adim.),0.8291950833062698
+Sketch - UMAP* (AA) *,MMseqs2 (NT),Purity between methods (adim.),0.8284422268804188
+Sketch - UMAP* (AA) *,Diamond (AA),Purity between methods (adim.),0.8139854152519854
+Sketch - UMAP* (AA) *,Panaroo,Purity between methods (adim.),0.813167684564426
+Sketch - UMAP* (AA) *,Ppanggolin,Purity between methods (adim.),0.8207266786730044
+Sketch - UMAP* (AA) *,Panta,Purity between methods (adim.),0.8228043525744126
+Sketch - UMAP* (AA) *,PanX,Purity between methods (adim.),0.8140559323535492
+Sketch - UMAP* (AA) *,Sketch - UMAP* (AA) *,Purity between methods (adim.),1.0
+Sketch - UMAP* (AA) *,Sketch - UMAP* (NT) *,Purity between methods (adim.),0.7095893242006436
+Sketch - UMAP* (AA) *,Connected components t=0.6* (AA) *,Purity between methods (adim.),0.8290573056597089
+Sketch - UMAP* (AA) *,Connected components t=0.7* (AA) *,Purity between methods (adim.),0.8282109572594059
+Sketch - UMAP* (AA) *,Connected components t=0.6* (NT) *,Purity between methods (adim.),0.8201214411541831
+Sketch - UMAP* (AA) *,Connected components t=0.7* (NT) *,Purity between methods (adim.),0.82151890014073
+Sketch - UMAP* (NT) *,CD-HIT (AA),Purity between methods (adim.),0.7245874051548522
+Sketch - UMAP* (NT) *,CD-HIT (NT),Purity between methods (adim.),0.7225453436076092
+Sketch - UMAP* (NT) *,MMseqs2 (AA),Purity between methods (adim.),0.7369332664127621
+Sketch - UMAP* (NT) *,MMseqs2 (NT),Purity between methods (adim.),0.7366232667079999
+Sketch - UMAP* (NT) *,Diamond (AA),Purity between methods (adim.),0.7227028037751075
+Sketch - UMAP* (NT) *,Panaroo,Purity between methods (adim.),0.7205870650725128
+Sketch - UMAP* (NT) *,Ppanggolin,Purity between methods (adim.),0.728130258923563
+Sketch - UMAP* (NT) *,Panta,Purity between methods (adim.),0.732039673556919
+Sketch - UMAP* (NT) *,PanX,Purity between methods (adim.),0.7224251134495556
+Sketch - UMAP* (NT) *,Sketch - UMAP* (AA) *,Purity between methods (adim.),0.7095893242006436
+Sketch - UMAP* (NT) *,Sketch - UMAP* (NT) *,Purity between methods (adim.),1.0
+Sketch - UMAP* (NT) *,Connected components t=0.6* (AA) *,Purity between methods (adim.),0.7426559593752768
+Sketch - UMAP* (NT) *,Connected components t=0.7* (AA) *,Purity between methods (adim.),0.7395116766555461
+Sketch - UMAP* (NT) *,Connected components t=0.6* (NT) *,Purity between methods (adim.),0.7577032466318286
+Sketch - UMAP* (NT) *,Connected components t=0.7* (NT) *,Purity between methods (adim.),0.7565468985267634
+Connected components t=0.6* (AA) *,CD-HIT (AA),Purity between methods (adim.),0.9694822512867448
+Connected components t=0.6* (AA) *,CD-HIT (NT),Purity between methods (adim.),0.96636749234842
+Connected components t=0.6* (AA) *,MMseqs2 (AA),Purity between methods (adim.),0.9843277927036895
+Connected components t=0.6* (AA) *,MMseqs2 (NT),Purity between methods (adim.),0.982630175272849
+Connected components t=0.6* (AA) *,Diamond (AA),Purity between methods (adim.),0.9675828880162971
+Connected components t=0.6* (AA) *,Panaroo,Purity between methods (adim.),0.9653301370680566
+Connected components t=0.6* (AA) *,Ppanggolin,Purity between methods (adim.),0.9762481178589354
+Connected components t=0.6* (AA) *,Panta,Purity between methods (adim.),0.979641984869244
+Connected components t=0.6* (AA) *,PanX,Purity between methods (adim.),0.9682292025554451
+Connected components t=0.6* (AA) *,Sketch - UMAP* (AA) *,Purity between methods (adim.),0.8290573056597089
+Connected components t=0.6* (AA) *,Sketch - UMAP* (NT) *,Purity between methods (adim.),0.7426559593752768
+Connected components t=0.6* (AA) *,Connected components t=0.6* (AA) *,Purity between methods (adim.),1.0
+Connected components t=0.6* (AA) *,Connected components t=0.7* (AA) *,Purity between methods (adim.),0.9938787359885054
+Connected components t=0.6* (AA) *,Connected components t=0.6* (NT) *,Purity between methods (adim.),0.9613533701396475
+Connected components t=0.6* (AA) *,Connected components t=0.7* (NT) *,Purity between methods (adim.),0.969777489100804
+Connected components t=0.7* (AA) *,CD-HIT (AA),Purity between methods (adim.),0.9728135179553797
+Connected components t=0.7* (AA) *,CD-HIT (NT),Purity between methods (adim.),0.9696397114542431
+Connected components t=0.7* (AA) *,MMseqs2 (AA),Purity between methods (adim.),0.9850757284993061
+Connected components t=0.7* (AA) *,MMseqs2 (NT),Purity between methods (adim.),0.9834666824126834
+Connected components t=0.7* (AA) *,Diamond (AA),Purity between methods (adim.),0.971420979599067
+Connected components t=0.7* (AA) *,Panaroo,Purity between methods (adim.),0.9690651918753854
+Connected components t=0.7* (AA) *,Ppanggolin,Purity between methods (adim.),0.979052877092498
+Connected components t=0.7* (AA) *,Panta,Purity between methods (adim.),0.9817765731419155
+Connected components t=0.7* (AA) *,PanX,Purity between methods (adim.),0.9725604654138817
+Connected components t=0.7* (AA) *,Sketch - UMAP* (AA) *,Purity between methods (adim.),0.8282109572594059
+Connected components t=0.7* (AA) *,Sketch - UMAP* (NT) *,Purity between methods (adim.),0.7395116766555461
+Connected components t=0.7* (AA) *,Connected components t=0.6* (AA) *,Purity between methods (adim.),0.9938787359885054
+Connected components t=0.7* (AA) *,Connected components t=0.7* (AA) *,Purity between methods (adim.),1.0
+Connected components t=0.7* (AA) *,Connected components t=0.6* (NT) *,Purity between methods (adim.),0.9572348026335213
+Connected components t=0.7* (AA) *,Connected components t=0.7* (NT) *,Purity between methods (adim.),0.9671400312952083
+Connected components t=0.6* (NT) *,CD-HIT (AA),Purity between methods (adim.),0.9388414868176316
+Connected components t=0.6* (NT) *,CD-HIT (NT),Purity between methods (adim.),0.936514028716798
+Connected components t=0.6* (NT) *,MMseqs2 (AA),Purity between methods (adim.),0.9533721078995798
+Connected components t=0.6* (NT) *,MMseqs2 (NT),Purity between methods (adim.),0.9528652829854448
+Connected components t=0.6* (NT) *,Diamond (AA),Purity between methods (adim.),0.9363664098097684
+Connected components t=0.6* (NT) *,Panaroo,Purity between methods (adim.),0.9340372411323532
+Connected components t=0.6* (NT) *,Ppanggolin,Purity between methods (adim.),0.9424876738212631
+Connected components t=0.6* (NT) *,Panta,Purity between methods (adim.),0.9488840571076825
+Connected components t=0.6* (NT) *,PanX,Purity between methods (adim.),0.9352623859352083
+Connected components t=0.6* (NT) *,Sketch - UMAP* (AA) *,Purity between methods (adim.),0.8201214411541831
+Connected components t=0.6* (NT) *,Sketch - UMAP* (NT) *,Purity between methods (adim.),0.7577032466318286
+Connected components t=0.6* (NT) *,Connected components t=0.6* (AA) *,Purity between methods (adim.),0.9613533701396475
+Connected components t=0.6* (NT) *,Connected components t=0.7* (AA) *,Purity between methods (adim.),0.9572348026335213
+Connected components t=0.6* (NT) *,Connected components t=0.6* (NT) *,Purity between methods (adim.),1.0
+Connected components t=0.6* (NT) *,Connected components t=0.7* (NT) *,Purity between methods (adim.),0.9874179484908427
+Connected components t=0.7* (NT) *,CD-HIT (AA),Purity between methods (adim.),0.947555922962613
+Connected components t=0.7* (NT) *,CD-HIT (NT),Purity between methods (adim.),0.94569592473404
+Connected components t=0.7* (NT) *,MMseqs2 (AA),Purity between methods (adim.),0.9602609902276285
+Connected components t=0.7* (NT) *,MMseqs2 (NT),Purity between methods (adim.),0.959995276194975
+Connected components t=0.7* (NT) *,Diamond (AA),Purity between methods (adim.),0.94569592473404
+Connected components t=0.7* (NT) *,Panaroo,Purity between methods (adim.),0.9438299480772674
+Connected components t=0.7* (NT) *,Ppanggolin,Purity between methods (adim.),0.9518663950478777
+Connected components t=0.7* (NT) *,Panta,Purity between methods (adim.),0.9580379658863009
+Connected components t=0.7* (NT) *,PanX,Purity between methods (adim.),0.9454753068798173
+Connected components t=0.7* (NT) *,Sketch - UMAP* (AA) *,Purity between methods (adim.),0.82151890014073
+Connected components t=0.7* (NT) *,Sketch - UMAP* (NT) *,Purity between methods (adim.),0.7565468985267634
+Connected components t=0.7* (NT) *,Connected components t=0.6* (AA) *,Purity between methods (adim.),0.969777489100804
+Connected components t=0.7* (NT) *,Connected components t=0.7* (AA) *,Purity between methods (adim.),0.9671400312952083
+Connected components t=0.7* (NT) *,Connected components t=0.6* (NT) *,Purity between methods (adim.),0.9874179484908427
+Connected components t=0.7* (NT) *,Connected components t=0.7* (NT) *,Purity between methods (adim.),1.0

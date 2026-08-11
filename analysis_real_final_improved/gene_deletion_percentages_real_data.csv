@@ -1,0 +1,16 @@
+assembly,seed,clusterer,seqtype,combo,n_original_genes,n_genes_kept,n_genes_deleted,deleted_pct
+real_data,run,panx,aa,panx/aa,101614,101587,27,0.026571141771803097
+real_data,run,cdhit,aa,cdhit/aa,101614,101613,1,0.0009841163619186332
+real_data,run,diamond,aa,diamond/aa,101614,101613,1,0.0009841163619186332
+real_data,run,connected_components_t0.6,nt,connected_components_t0.6/nt,101614,101613,1,0.0009841163619186332
+real_data,run,connected_components_t0.7,nt,connected_components_t0.7/nt,101614,101613,1,0.0009841163619186332
+real_data,run,hdbscan_umap,nt,hdbscan_umap/nt,101614,101613,1,0.0009841163619186332
+real_data,run,ppanggolin,aa,ppanggolin/aa,101614,101613,1,0.0009841163619186332
+real_data,run,panaroo,aa,panaroo/aa,101614,100534,1080,1.062845670872124
+real_data,run,mmseqs2,aa,mmseqs2/aa,101614,101613,1,0.0009841163619186332
+real_data,run,panta,aa,panta/aa,101614,100722,892,0.8778317948314209
+real_data,run,connected_components_t0.6,aa,connected_components_t0.6/aa,101614,101613,1,0.0009841163619186332
+real_data,run,connected_components_t0.7,aa,connected_components_t0.7/aa,101614,101613,1,0.0009841163619186332
+real_data,run,hdbscan_umap,aa,hdbscan_umap/aa,101614,101613,1,0.0009841163619186332
+real_data,run,cdhit,nt,cdhit/nt,101614,101613,1,0.0009841163619186332
+real_data,run,mmseqs2,nt,mmseqs2/nt,101614,101613,1,0.0009841163619186332

@@ -1,0 +1,16 @@
+method,combo,mean_total_clusters,mean_singleton_clusters,mean_pair_clusters,mean_other_clusters
+CD-HIT (AA),cdhit/aa,4607.0,1199.0,317.0,3091.0
+CD-HIT (NT),cdhit/nt,4374.0,1073.0,285.0,3016.0
+MMseqs2 (AA),mmseqs2/aa,5485.0,1634.0,478.0,3373.0
+MMseqs2 (NT),mmseqs2/nt,5433.0,1593.0,472.0,3368.0
+Diamond (AA),diamond/aa,4560.0,1286.0,263.0,3011.0
+Panaroo,panaroo/aa,3522.0,489.0,200.0,2833.0
+Ppanggolin,ppanggolin/aa,4475.0,1121.0,288.0,3066.0
+Panta,panta/aa,5076.0,1435.0,389.0,3252.0
+PanX,panx/aa,4073.0,949.0,239.0,2885.0
+Sketch - UMAP* (AA),hdbscan_umap/aa,4676.0,968.0,0.0,3708.0
+Sketch - UMAP* (NT),hdbscan_umap/nt,4959.0,47.0,15.0,4897.0
+Connected components t=0.6* (AA),connected_components_t0.6/aa,5974.0,2101.0,518.0,3355.0
+Connected components t=0.7* (AA),connected_components_t0.7/aa,5561.0,1832.0,450.0,3279.0
+Connected components t=0.6* (NT),connected_components_t0.6/nt,9106.0,4241.0,883.0,3982.0
+Connected components t=0.7* (NT),connected_components_t0.7/nt,8281.0,3792.0,722.0,3767.0

@@ -1,0 +1,15 @@
+method,combo,metric,mean,std,n
+CD-HIT (AA),cdhit/aa,runtime,3.0,0.0,1
+CD-HIT (NT),cdhit/nt,runtime,18.0,0.0,1
+MMseqs2 (AA),mmseqs2/aa,runtime,3.0,0.0,1
+MMseqs2 (NT),mmseqs2/nt,runtime,5.0,0.0,1
+Diamond (AA),diamond/aa,runtime,3.0,0.0,1
+Panaroo,panaroo/aa,runtime,67.0,0.0,1
+Ppanggolin,ppanggolin/aa,runtime,7.0,0.0,1
+Panta,panta/aa,runtime,8.0,0.0,1
+Sketch - UMAP* (AA),hdbscan_umap/aa,runtime,301.357,0.0,1
+Sketch - UMAP* (NT),hdbscan_umap/nt,runtime,233.288,0.0,1
+Connected components t=0.6* (AA),connected_components_t0.6/aa,runtime,6522.0,0.0,1
+Connected components t=0.7* (AA),connected_components_t0.7/aa,runtime,6522.0,0.0,1
+Connected components t=0.6* (NT),connected_components_t0.6/nt,runtime,7442.0,0.0,1
+Connected components t=0.7* (NT),connected_components_t0.7/nt,runtime,7442.0,0.0,1

@@ -134,7 +134,7 @@ DEFAULT_METHODS = list(REAL_DATA_CLUSTERERS)
 
 # Matches folder names such as "diamond", "diamond_st-aa", "diamond_st-aa_c-0.9"
 FOLDER_NAME_RE = re.compile(
-    r"^(?P<clusterer>[a-zA-Z0-9]+)(?:_st-(?P<seqtype>nt|aa))?(?:_c-(?P<c>[0-9.]+))?$"
+    r"^(?P<clusterer>[a-zA-Z0-9]+)(?:_st-(?P<seqtype>[a-zA-Z0-9]+))?(?:_c-(?P<c>[0-9.]+))?$"
 )
 
 
@@ -476,18 +476,114 @@ def parse_panx(folderpath):
 
 
 def parse_sketch(folderpath):
-    """Sketch produces several sub-methods in one file; returns
-    {submethod_name: {cluster_id: [gene_id, ...]}}."""
+    """Sketch produces several sub-methods (e.g. connected_components_t0.1,
+    connected_components_t0.6, hdbscan_dist, ...) sharing one clusters.tsv,
+    with one row per (method, cluster) member. Returns
+    {submethod_name: {cluster_id: [gene_id, ...]}}.
+
+    - 'method' is treated as a fully separate clustering result: clusters
+      are keyed (method -> cluster_id -> members), never merged/flattened
+      across methods/thresholds.
+    - 'cluster_id' is only unique *within* a method, so it is always looked
+      up nested under its method, never as a bare global key.
+    - Every row is one member (cluster_size == number of member rows for
+      that cluster_id, including the representative's own row), so a
+      1-row cluster is a genuine singleton, not something to be dropped or
+      merged with anything else.
+    - The representative is identified via is_representative, not by row
+      position, and cross-checked against the 'representative' column so a
+      malformed/missing flag is caught rather than silently guessed at.
+    """
     tsv_path = os.path.join(folderpath, "distance_clustering", "clusters.tsv")
     if not os.path.isfile(tsv_path):
         return {}
     import csv
+
+    TRUE_VALUES = {"true", "1", "yes"}
+
+    # method -> cluster_id -> list of member gene ids (one per row)
     per_submethod = defaultdict(lambda: defaultdict(list))
+    # method -> cluster_id -> representative gene id (from is_representative)
+    representatives = defaultdict(dict)
+    # method -> cluster_id -> declared cluster_size (from the file, for validation)
+    declared_sizes = defaultdict(dict)
+
+    n_rows = 0
     with open(tsv_path, newline="") as fh:
         reader = csv.DictReader(fh, delimiter="\t")
+        required_cols = {"method", "cluster_id", "representative", "member",
+                          "cluster_size", "is_representative"}
+        missing = required_cols - set(reader.fieldnames or [])
+        if missing:
+            raise RuntimeError(f"{tsv_path}: missing expected column(s) {sorted(missing)}")
+
         for row in reader:
-            per_submethod[row["method"]][row["cluster_id"]].append(row["member"])
-    return {k: dict(v) for k, v in per_submethod.items()}
+            n_rows += 1
+            method = row["method"]
+            cluster_id = row["cluster_id"]
+            member = row["member"]
+
+            per_submethod[method][cluster_id].append(member)
+
+            declared_size = row.get("cluster_size")
+            if declared_size not in (None, ""):
+                declared_sizes[method][cluster_id] = int(declared_size)
+
+            is_rep = row.get("is_representative", "").strip().lower() in TRUE_VALUES
+            if is_rep:
+                prev = representatives[method].get(cluster_id)
+                if prev is not None and prev != member:
+                    warnings.warn(
+                        f"{tsv_path}: cluster {cluster_id!r} (method "
+                        f"{method!r}) has more than one row flagged "
+                        f"is_representative=True ({prev!r} and {member!r}); "
+                        "keeping the first one seen."
+                    )
+                else:
+                    representatives[method][cluster_id] = member
+                    # Sanity-check against the separate 'representative' column.
+                    declared_rep = row.get("representative")
+                    if declared_rep and declared_rep != member:
+                        warnings.warn(
+                            f"{tsv_path}: cluster {cluster_id!r} (method "
+                            f"{method!r}) row flagged is_representative=True "
+                            f"has member {member!r} but representative "
+                            f"column says {declared_rep!r}."
+                        )
+
+    # Validate every cluster's actual member count against its declared
+    # cluster_size, and that every cluster got a representative -- these
+    # are cheap checks that catch a broken/partial file instead of
+    # silently producing wrong per-cluster COG composition numbers.
+    n_size_mismatches = 0
+    n_missing_representative = 0
+    for method, clusters in per_submethod.items():
+        for cluster_id, members in clusters.items():
+            expected = declared_sizes.get(method, {}).get(cluster_id)
+            if expected is not None and expected != len(members):
+                n_size_mismatches += 1
+            if cluster_id not in representatives.get(method, {}):
+                n_missing_representative += 1
+    if n_size_mismatches:
+        warnings.warn(
+            f"{tsv_path}: {n_size_mismatches} cluster(s) whose actual "
+            "member-row count didn't match their declared cluster_size "
+            "column -- check the file for truncation/duplication."
+        )
+    if n_missing_representative:
+        warnings.warn(
+            f"{tsv_path}: {n_missing_representative} cluster(s) had no row "
+            "with is_representative=True (including possible singleton "
+            "clusters where this flag is missing/malformed)."
+        )
+
+    # Stash representatives on an attribute of the returned dict-of-dicts
+    # so callers that want them (e.g. for an output column) can get at
+    # them without re-parsing the file; existing callers that just do
+    # {submethod: {cluster_id: [genes]}} are unaffected.
+    result = {k: dict(v) for k, v in per_submethod.items()}
+    parse_sketch.last_representatives = {k: dict(v) for k, v in representatives.items()}
+    return result
 
 
 CLUSTER_PARSERS = {
@@ -595,14 +691,15 @@ def write_summary_tsv(out_path, records, multi_category):
     with open(out_path, "w") as fh:
         fh.write(header_comment)
         fh.write(
-            "method\tcluster_id\tgene_ids\tnumber_of_genes\tCOG_function\t"
+            "method\tcluster_id\trepresentative\tgene_ids\tnumber_of_genes\tCOG_function\t"
             "percentage\toriginal_COG_description\n"
         )
         for rec in records:
             fh.write(
-                "{method}\t{cluster_id}\t{gene_ids}\t{n}\t{cog}\t{pct:.1f}%\t{raw_cog}\n".format(
+                "{method}\t{cluster_id}\t{rep}\t{gene_ids}\t{n}\t{cog}\t{pct:.1f}%\t{raw_cog}\n".format(
                     method=rec["method"],
                     cluster_id=rec["cluster_id"],
+                    rep=rec.get("representative", ""),
                     gene_ids=",".join(rec["gene_ids"]),
                     n=rec["number_of_genes"],
                     cog=rec["COG_function"],
@@ -671,10 +768,12 @@ def process_method_folder(
         except Exception as exc:  # noqa: BLE001 - report and skip, don't abort the whole run
             warnings.warn(f"Skipping {folderpath} (sketch): {exc}")
             return
+        reps_by_submethod = getattr(parse_sketch, "last_representatives", {})
         for submethod, clusters in submethod_dict.items():
             if wanted_sketch_methods is not None and submethod not in wanted_sketch_methods:
                 continue
             full_label = f"{method_label}:{submethod}"
+            reps = reps_by_submethod.get(submethod, {})
             for cluster_id, gene_ids in clusters.items():
                 for cat, count, pct, desc in summarise_cluster(
                     gene_ids, gene_to_categories, multi_category, gene_to_product_desc
@@ -683,6 +782,7 @@ def process_method_folder(
                         "method": full_label,
                         "sketch_submethod": submethod,
                         "cluster_id": cluster_id,
+                        "representative": reps.get(cluster_id, ""),
                         "gene_ids": gene_ids,
                         "number_of_genes": len(gene_ids),
                         "COG_function": cat,

@@ -1,0 +1,16 @@
+method,clusters_95_100,clusters_15_95,clusters_0_15
+CD-HIT (AA),1508,868,2231
+CD-HIT (NT),1526,801,2047
+MMseqs2 (AA),1440,1065,2980
+MMseqs2 (NT),1441,1050,2942
+Diamond (AA),1529,799,2232
+Panaroo,1595,714,1213
+Ppanggolin,1533,860,2082
+Panta,1492,961,2623
+PanX,1568,729,1776
+Sketch - UMAP* (AA),544,3154,978
+Sketch - UMAP* (NT),208,3781,970
+Connected components t=0.6* (AA),1434,1031,3509
+Connected components t=0.7* (AA),1472,962,3127
+Connected components t=0.6* (NT),1151,1421,6534
+Connected components t=0.7* (NT),1227,1294,5760

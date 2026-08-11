@@ -1,0 +1,226 @@
+method_i,method_j,metric,value
+CD-HIT (AA),CD-HIT (AA),Adjusted mutual information between methods (adim.),1.0
+CD-HIT (AA),CD-HIT (NT),Adjusted mutual information between methods (adim.),0.9892822837655592
+CD-HIT (AA),MMseqs2 (AA),Adjusted mutual information between methods (adim.),0.9807659577697747
+CD-HIT (AA),MMseqs2 (NT),Adjusted mutual information between methods (adim.),0.9792038537372582
+CD-HIT (AA),Diamond (AA),Adjusted mutual information between methods (adim.),0.9888124669152726
+CD-HIT (AA),Panaroo,Adjusted mutual information between methods (adim.),0.9848638081161324
+CD-HIT (AA),Ppanggolin,Adjusted mutual information between methods (adim.),0.9892239004336761
+CD-HIT (AA),Panta,Adjusted mutual information between methods (adim.),0.9798201602574308
+CD-HIT (AA),PanX,Adjusted mutual information between methods (adim.),0.9879792177692062
+CD-HIT (AA),Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),0.8752316910357139
+CD-HIT (AA),Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),0.8026891445158622
+CD-HIT (AA),Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),0.9779141049703024
+CD-HIT (AA),Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),0.9807466516873199
+CD-HIT (AA),Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),0.9488349880291094
+CD-HIT (AA),Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),0.9570164905342066
+CD-HIT (NT),CD-HIT (AA),Adjusted mutual information between methods (adim.),0.9892822837655592
+CD-HIT (NT),CD-HIT (NT),Adjusted mutual information between methods (adim.),1.0
+CD-HIT (NT),MMseqs2 (AA),Adjusted mutual information between methods (adim.),0.9773802330001053
+CD-HIT (NT),MMseqs2 (NT),Adjusted mutual information between methods (adim.),0.979088399391696
+CD-HIT (NT),Diamond (AA),Adjusted mutual information between methods (adim.),0.9889589062925525
+CD-HIT (NT),Panaroo,Adjusted mutual information between methods (adim.),0.9865420171575056
+CD-HIT (NT),Ppanggolin,Adjusted mutual information between methods (adim.),0.9876467998685287
+CD-HIT (NT),Panta,Adjusted mutual information between methods (adim.),0.9784791179975576
+CD-HIT (NT),PanX,Adjusted mutual information between methods (adim.),0.9889520798698204
+CD-HIT (NT),Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),0.8736449065370605
+CD-HIT (NT),Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),0.8019377870478537
+CD-HIT (NT),Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),0.9750466381915244
+CD-HIT (NT),Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),0.9780106885944161
+CD-HIT (NT),Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),0.946392422660904
+CD-HIT (NT),Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),0.955123593464594
+MMseqs2 (AA),CD-HIT (AA),Adjusted mutual information between methods (adim.),0.9807659577697747
+MMseqs2 (AA),CD-HIT (NT),Adjusted mutual information between methods (adim.),0.9773802330001053
+MMseqs2 (AA),MMseqs2 (AA),Adjusted mutual information between methods (adim.),1.0
+MMseqs2 (AA),MMseqs2 (NT),Adjusted mutual information between methods (adim.),0.9956954116908908
+MMseqs2 (AA),Diamond (AA),Adjusted mutual information between methods (adim.),0.9784227025554753
+MMseqs2 (AA),Panaroo,Adjusted mutual information between methods (adim.),0.9762411313377726
+MMseqs2 (AA),Ppanggolin,Adjusted mutual information between methods (adim.),0.9861410825782144
+MMseqs2 (AA),Panta,Adjusted mutual information between methods (adim.),0.9875440262551103
+MMseqs2 (AA),PanX,Adjusted mutual information between methods (adim.),0.9775190499521562
+MMseqs2 (AA),Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),0.8822885225167045
+MMseqs2 (AA),Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),0.8096716945802778
+MMseqs2 (AA),Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),0.9885023732995656
+MMseqs2 (AA),Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),0.989339417892828
+MMseqs2 (AA),Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),0.9601515782355242
+MMseqs2 (AA),Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),0.9664189339063696
+MMseqs2 (NT),CD-HIT (AA),Adjusted mutual information between methods (adim.),0.9792038537372582
+MMseqs2 (NT),CD-HIT (NT),Adjusted mutual information between methods (adim.),0.979088399391696
+MMseqs2 (NT),MMseqs2 (AA),Adjusted mutual information between methods (adim.),0.9956954116908908
+MMseqs2 (NT),MMseqs2 (NT),Adjusted mutual information between methods (adim.),1.0
+MMseqs2 (NT),Diamond (AA),Adjusted mutual information between methods (adim.),0.9774500436154304
+MMseqs2 (NT),Panaroo,Adjusted mutual information between methods (adim.),0.9764672099920672
+MMseqs2 (NT),Ppanggolin,Adjusted mutual information between methods (adim.),0.9847197364314216
+MMseqs2 (NT),Panta,Adjusted mutual information between methods (adim.),0.9872118111055688
+MMseqs2 (NT),PanX,Adjusted mutual information between methods (adim.),0.977133182678963
+MMseqs2 (NT),Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),0.8818545620778359
+MMseqs2 (NT),Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),0.8097724751291775
+MMseqs2 (NT),Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),0.9873663824361233
+MMseqs2 (NT),Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),0.9881944487404837
+MMseqs2 (NT),Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),0.9599053034693924
+MMseqs2 (NT),Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),0.9663946069205823
+Diamond (AA),CD-HIT (AA),Adjusted mutual information between methods (adim.),0.9888124669152726
+Diamond (AA),CD-HIT (NT),Adjusted mutual information between methods (adim.),0.9889589062925525
+Diamond (AA),MMseqs2 (AA),Adjusted mutual information between methods (adim.),0.9784227025554753
+Diamond (AA),MMseqs2 (NT),Adjusted mutual information between methods (adim.),0.9774500436154304
+Diamond (AA),Diamond (AA),Adjusted mutual information between methods (adim.),1.0
+Diamond (AA),Panaroo,Adjusted mutual information between methods (adim.),0.9856022329085002
+Diamond (AA),Ppanggolin,Adjusted mutual information between methods (adim.),0.9888902369463511
+Diamond (AA),Panta,Adjusted mutual information between methods (adim.),0.9794284795966699
+Diamond (AA),PanX,Adjusted mutual information between methods (adim.),0.9901441246273355
+Diamond (AA),Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),0.8736743193644985
+Diamond (AA),Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),0.801206251038296
+Diamond (AA),Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),0.9757756295292873
+Diamond (AA),Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),0.9790948268815834
+Diamond (AA),Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),0.9459746705915899
+Diamond (AA),Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),0.9547305868207058
+Panaroo,CD-HIT (AA),Adjusted mutual information between methods (adim.),0.9848638081161324
+Panaroo,CD-HIT (NT),Adjusted mutual information between methods (adim.),0.9865420171575056
+Panaroo,MMseqs2 (AA),Adjusted mutual information between methods (adim.),0.9762411313377726
+Panaroo,MMseqs2 (NT),Adjusted mutual information between methods (adim.),0.9764672099920672
+Panaroo,Diamond (AA),Adjusted mutual information between methods (adim.),0.9856022329085002
+Panaroo,Panaroo,Adjusted mutual information between methods (adim.),1.0
+Panaroo,Ppanggolin,Adjusted mutual information between methods (adim.),0.9860210974263399
+Panaroo,Panta,Adjusted mutual information between methods (adim.),0.9814945470363405
+Panaroo,PanX,Adjusted mutual information between methods (adim.),0.9892012211172497
+Panaroo,Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),0.8754284281406222
+Panaroo,Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),0.802722101259657
+Panaroo,Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),0.9739850475716
+Panaroo,Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),0.9772941777085103
+Panaroo,Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),0.9448518922004636
+Panaroo,Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),0.9536699754563929
+Ppanggolin,CD-HIT (AA),Adjusted mutual information between methods (adim.),0.9892239004336761
+Ppanggolin,CD-HIT (NT),Adjusted mutual information between methods (adim.),0.9876467998685287
+Ppanggolin,MMseqs2 (AA),Adjusted mutual information between methods (adim.),0.9861410825782144
+Ppanggolin,MMseqs2 (NT),Adjusted mutual information between methods (adim.),0.9847197364314216
+Ppanggolin,Diamond (AA),Adjusted mutual information between methods (adim.),0.9888902369463511
+Ppanggolin,Panaroo,Adjusted mutual information between methods (adim.),0.9860210974263399
+Ppanggolin,Ppanggolin,Adjusted mutual information between methods (adim.),1.0
+Ppanggolin,Panta,Adjusted mutual information between methods (adim.),0.9836593911605591
+Ppanggolin,PanX,Adjusted mutual information between methods (adim.),0.9898163513351269
+Ppanggolin,Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),0.8785187020511726
+Ppanggolin,Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),0.8054561509599854
+Ppanggolin,Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),0.9814117720782262
+Ppanggolin,Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),0.9841868306252406
+Ppanggolin,Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),0.9502567595143605
+Ppanggolin,Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),0.9588030708340312
+Panta,CD-HIT (AA),Adjusted mutual information between methods (adim.),0.9798201602574308
+Panta,CD-HIT (NT),Adjusted mutual information between methods (adim.),0.9784791179975576
+Panta,MMseqs2 (AA),Adjusted mutual information between methods (adim.),0.9875440262551103
+Panta,MMseqs2 (NT),Adjusted mutual information between methods (adim.),0.9872118111055688
+Panta,Diamond (AA),Adjusted mutual information between methods (adim.),0.9794284795966699
+Panta,Panaroo,Adjusted mutual information between methods (adim.),0.9814945470363405
+Panta,Ppanggolin,Adjusted mutual information between methods (adim.),0.9836593911605591
+Panta,Panta,Adjusted mutual information between methods (adim.),1.0
+Panta,PanX,Adjusted mutual information between methods (adim.),0.9804627935975848
+Panta,Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),0.8793072516192051
+Panta,Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),0.8073249748254511
+Panta,Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),0.9848092273634955
+Panta,Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),0.9868090142968914
+Panta,Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),0.9570344496220574
+Panta,Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),0.9650033771030221
+PanX,CD-HIT (AA),Adjusted mutual information between methods (adim.),0.9879792177692062
+PanX,CD-HIT (NT),Adjusted mutual information between methods (adim.),0.9889520798698204
+PanX,MMseqs2 (AA),Adjusted mutual information between methods (adim.),0.9775190499521562
+PanX,MMseqs2 (NT),Adjusted mutual information between methods (adim.),0.977133182678963
+PanX,Diamond (AA),Adjusted mutual information between methods (adim.),0.9901441246273355
+PanX,Panaroo,Adjusted mutual information between methods (adim.),0.9892012211172497
+PanX,Ppanggolin,Adjusted mutual information between methods (adim.),0.9898163513351269
+PanX,Panta,Adjusted mutual information between methods (adim.),0.9804627935975848
+PanX,PanX,Adjusted mutual information between methods (adim.),1.0
+PanX,Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),0.8742440095247805
+PanX,Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),0.8019456424286387
+PanX,Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),0.9750927117540975
+PanX,Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),0.9790513270856159
+PanX,Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),0.9437526251455708
+PanX,Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),0.9531798436896881
+Sketch - UMAP* (AA) *,CD-HIT (AA),Adjusted mutual information between methods (adim.),0.8752316910357139
+Sketch - UMAP* (AA) *,CD-HIT (NT),Adjusted mutual information between methods (adim.),0.8736449065370605
+Sketch - UMAP* (AA) *,MMseqs2 (AA),Adjusted mutual information between methods (adim.),0.8822885225167045
+Sketch - UMAP* (AA) *,MMseqs2 (NT),Adjusted mutual information between methods (adim.),0.8818545620778359
+Sketch - UMAP* (AA) *,Diamond (AA),Adjusted mutual information between methods (adim.),0.8736743193644985
+Sketch - UMAP* (AA) *,Panaroo,Adjusted mutual information between methods (adim.),0.8754284281406222
+Sketch - UMAP* (AA) *,Ppanggolin,Adjusted mutual information between methods (adim.),0.8785187020511726
+Sketch - UMAP* (AA) *,Panta,Adjusted mutual information between methods (adim.),0.8793072516192051
+Sketch - UMAP* (AA) *,PanX,Adjusted mutual information between methods (adim.),0.8742440095247805
+Sketch - UMAP* (AA) *,Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),1.0
+Sketch - UMAP* (AA) *,Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),0.7773961390501236
+Sketch - UMAP* (AA) *,Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),0.881173772162158
+Sketch - UMAP* (AA) *,Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),0.8820515544972694
+Sketch - UMAP* (AA) *,Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),0.8634600743777424
+Sketch - UMAP* (AA) *,Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),0.86739918286357
+Sketch - UMAP* (NT) *,CD-HIT (AA),Adjusted mutual information between methods (adim.),0.8026891445158622
+Sketch - UMAP* (NT) *,CD-HIT (NT),Adjusted mutual information between methods (adim.),0.8019377870478537
+Sketch - UMAP* (NT) *,MMseqs2 (AA),Adjusted mutual information between methods (adim.),0.8096716945802778
+Sketch - UMAP* (NT) *,MMseqs2 (NT),Adjusted mutual information between methods (adim.),0.8097724751291775
+Sketch - UMAP* (NT) *,Diamond (AA),Adjusted mutual information between methods (adim.),0.801206251038296
+Sketch - UMAP* (NT) *,Panaroo,Adjusted mutual information between methods (adim.),0.802722101259657
+Sketch - UMAP* (NT) *,Ppanggolin,Adjusted mutual information between methods (adim.),0.8054561509599854
+Sketch - UMAP* (NT) *,Panta,Adjusted mutual information between methods (adim.),0.8073249748254511
+Sketch - UMAP* (NT) *,PanX,Adjusted mutual information between methods (adim.),0.8019456424286387
+Sketch - UMAP* (NT) *,Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),0.7773961390501236
+Sketch - UMAP* (NT) *,Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),1.0
+Sketch - UMAP* (NT) *,Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),0.8144254776895851
+Sketch - UMAP* (NT) *,Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),0.8131289940929719
+Sketch - UMAP* (NT) *,Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),0.8187797801155217
+Sketch - UMAP* (NT) *,Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),0.8217198822325513
+Connected components t=0.6* (AA) *,CD-HIT (AA),Adjusted mutual information between methods (adim.),0.9779141049703024
+Connected components t=0.6* (AA) *,CD-HIT (NT),Adjusted mutual information between methods (adim.),0.9750466381915244
+Connected components t=0.6* (AA) *,MMseqs2 (AA),Adjusted mutual information between methods (adim.),0.9885023732995656
+Connected components t=0.6* (AA) *,MMseqs2 (NT),Adjusted mutual information between methods (adim.),0.9873663824361233
+Connected components t=0.6* (AA) *,Diamond (AA),Adjusted mutual information between methods (adim.),0.9757756295292873
+Connected components t=0.6* (AA) *,Panaroo,Adjusted mutual information between methods (adim.),0.9739850475716
+Connected components t=0.6* (AA) *,Ppanggolin,Adjusted mutual information between methods (adim.),0.9814117720782262
+Connected components t=0.6* (AA) *,Panta,Adjusted mutual information between methods (adim.),0.9848092273634955
+Connected components t=0.6* (AA) *,PanX,Adjusted mutual information between methods (adim.),0.9750927117540975
+Connected components t=0.6* (AA) *,Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),0.881173772162158
+Connected components t=0.6* (AA) *,Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),0.8144254776895851
+Connected components t=0.6* (AA) *,Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),1.0
+Connected components t=0.6* (AA) *,Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),0.9955030121378015
+Connected components t=0.6* (AA) *,Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),0.9663667865500233
+Connected components t=0.6* (AA) *,Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),0.9737011704483859
+Connected components t=0.7* (AA) *,CD-HIT (AA),Adjusted mutual information between methods (adim.),0.9807466516873199
+Connected components t=0.7* (AA) *,CD-HIT (NT),Adjusted mutual information between methods (adim.),0.9780106885944161
+Connected components t=0.7* (AA) *,MMseqs2 (AA),Adjusted mutual information between methods (adim.),0.989339417892828
+Connected components t=0.7* (AA) *,MMseqs2 (NT),Adjusted mutual information between methods (adim.),0.9881944487404837
+Connected components t=0.7* (AA) *,Diamond (AA),Adjusted mutual information between methods (adim.),0.9790948268815834
+Connected components t=0.7* (AA) *,Panaroo,Adjusted mutual information between methods (adim.),0.9772941777085103
+Connected components t=0.7* (AA) *,Ppanggolin,Adjusted mutual information between methods (adim.),0.9841868306252406
+Connected components t=0.7* (AA) *,Panta,Adjusted mutual information between methods (adim.),0.9868090142968914
+Connected components t=0.7* (AA) *,PanX,Adjusted mutual information between methods (adim.),0.9790513270856159
+Connected components t=0.7* (AA) *,Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),0.8820515544972694
+Connected components t=0.7* (AA) *,Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),0.8131289940929719
+Connected components t=0.7* (AA) *,Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),0.9955030121378015
+Connected components t=0.7* (AA) *,Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),1.0
+Connected components t=0.7* (AA) *,Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),0.9628207528984649
+Connected components t=0.7* (AA) *,Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),0.9713844174280748
+Connected components t=0.6* (NT) *,CD-HIT (AA),Adjusted mutual information between methods (adim.),0.9488349880291094
+Connected components t=0.6* (NT) *,CD-HIT (NT),Adjusted mutual information between methods (adim.),0.946392422660904
+Connected components t=0.6* (NT) *,MMseqs2 (AA),Adjusted mutual information between methods (adim.),0.9601515782355242
+Connected components t=0.6* (NT) *,MMseqs2 (NT),Adjusted mutual information between methods (adim.),0.9599053034693924
+Connected components t=0.6* (NT) *,Diamond (AA),Adjusted mutual information between methods (adim.),0.9459746705915899
+Connected components t=0.6* (NT) *,Panaroo,Adjusted mutual information between methods (adim.),0.9448518922004636
+Connected components t=0.6* (NT) *,Ppanggolin,Adjusted mutual information between methods (adim.),0.9502567595143605
+Connected components t=0.6* (NT) *,Panta,Adjusted mutual information between methods (adim.),0.9570344496220574
+Connected components t=0.6* (NT) *,PanX,Adjusted mutual information between methods (adim.),0.9437526251455708
+Connected components t=0.6* (NT) *,Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),0.8634600743777424
+Connected components t=0.6* (NT) *,Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),0.8187797801155217
+Connected components t=0.6* (NT) *,Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),0.9663667865500233
+Connected components t=0.6* (NT) *,Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),0.9628207528984649
+Connected components t=0.6* (NT) *,Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),1.0
+Connected components t=0.6* (NT) *,Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),0.990388454787453
+Connected components t=0.7* (NT) *,CD-HIT (AA),Adjusted mutual information between methods (adim.),0.9570164905342066
+Connected components t=0.7* (NT) *,CD-HIT (NT),Adjusted mutual information between methods (adim.),0.955123593464594
+Connected components t=0.7* (NT) *,MMseqs2 (AA),Adjusted mutual information between methods (adim.),0.9664189339063696
+Connected components t=0.7* (NT) *,MMseqs2 (NT),Adjusted mutual information between methods (adim.),0.9663946069205823
+Connected components t=0.7* (NT) *,Diamond (AA),Adjusted mutual information between methods (adim.),0.9547305868207058
+Connected components t=0.7* (NT) *,Panaroo,Adjusted mutual information between methods (adim.),0.9536699754563929
+Connected components t=0.7* (NT) *,Ppanggolin,Adjusted mutual information between methods (adim.),0.9588030708340312
+Connected components t=0.7* (NT) *,Panta,Adjusted mutual information between methods (adim.),0.9650033771030221
+Connected components t=0.7* (NT) *,PanX,Adjusted mutual information between methods (adim.),0.9531798436896881
+Connected components t=0.7* (NT) *,Sketch - UMAP* (AA) *,Adjusted mutual information between methods (adim.),0.86739918286357
+Connected components t=0.7* (NT) *,Sketch - UMAP* (NT) *,Adjusted mutual information between methods (adim.),0.8217198822325513
+Connected components t=0.7* (NT) *,Connected components t=0.6* (AA) *,Adjusted mutual information between methods (adim.),0.9737011704483859
+Connected components t=0.7* (NT) *,Connected components t=0.7* (AA) *,Adjusted mutual information between methods (adim.),0.9713844174280748
+Connected components t=0.7* (NT) *,Connected components t=0.6* (NT) *,Adjusted mutual information between methods (adim.),0.990388454787453
+Connected components t=0.7* (NT) *,Connected components t=0.7* (NT) *,Adjusted mutual information between methods (adim.),1.0

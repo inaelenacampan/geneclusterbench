@@ -1,0 +1,64 @@
+method,combo,c,mean_total_clusters,mean_singleton_clusters,mean_pair_clusters,mean_other_clusters
+CD-HIT (AA),cdhit/aa,0.5,3390.0,553.0,173.0,2664.0
+CD-HIT (AA),cdhit/aa,0.6,3551.0,637.0,182.0,2732.0
+CD-HIT (AA),cdhit/aa,0.7,3742.0,730.0,210.0,2802.0
+CD-HIT (AA),cdhit/aa,0.8,4014.0,873.0,247.0,2894.0
+CD-HIT (AA),cdhit/aa,0.85,4244.0,996.0,263.0,2985.0
+CD-HIT (AA),cdhit/aa,0.9,4607.0,1199.0,317.0,3091.0
+CD-HIT (AA),cdhit/aa,0.95,5725.0,1830.0,472.0,3423.0
+CD-HIT (NT),cdhit/nt,0.5,,,,
+CD-HIT (NT),cdhit/nt,0.6,,,,
+CD-HIT (NT),cdhit/nt,0.7,,,,
+CD-HIT (NT),cdhit/nt,0.8,3809.0,773.0,227.0,2809.0
+CD-HIT (NT),cdhit/nt,0.85,3998.0,869.0,239.0,2890.0
+CD-HIT (NT),cdhit/nt,0.9,4374.0,1073.0,285.0,3016.0
+CD-HIT (NT),cdhit/nt,0.95,5813.0,2103.0,425.0,3285.0
+MMseqs2 (AA),mmseqs2/aa,0.5,4710.0,1170.0,399.0,3141.0
+MMseqs2 (AA),mmseqs2/aa,0.6,4826.0,1219.0,404.0,3203.0
+MMseqs2 (AA),mmseqs2/aa,0.7,4935.0,1284.0,422.0,3229.0
+MMseqs2 (AA),mmseqs2/aa,0.8,5113.0,1396.0,434.0,3283.0
+MMseqs2 (AA),mmseqs2/aa,0.85,5251.0,1470.0,456.0,3325.0
+MMseqs2 (AA),mmseqs2/aa,0.9,5485.0,1634.0,478.0,3373.0
+MMseqs2 (AA),mmseqs2/aa,0.95,6386.0,2186.0,609.0,3591.0
+MMseqs2 (NT),mmseqs2/nt,0.5,4830.0,1216.0,395.0,3219.0
+MMseqs2 (NT),mmseqs2/nt,0.6,4897.0,1254.0,408.0,3235.0
+MMseqs2 (NT),mmseqs2/nt,0.7,4965.0,1300.0,416.0,3249.0
+MMseqs2 (NT),mmseqs2/nt,0.8,5124.0,1408.0,442.0,3274.0
+MMseqs2 (NT),mmseqs2/nt,0.85,5214.0,1463.0,443.0,3308.0
+MMseqs2 (NT),mmseqs2/nt,0.9,5433.0,1593.0,472.0,3368.0
+MMseqs2 (NT),mmseqs2/nt,0.95,6691.0,2538.0,579.0,3574.0
+Diamond (AA),diamond/aa,0.5,3517.0,655.0,192.0,2670.0
+Diamond (AA),diamond/aa,0.6,3631.0,702.0,198.0,2731.0
+Diamond (AA),diamond/aa,0.7,3776.0,778.0,206.0,2792.0
+Diamond (AA),diamond/aa,0.8,3982.0,890.0,227.0,2865.0
+Diamond (AA),diamond/aa,0.85,4125.0,965.0,233.0,2927.0
+Diamond (AA),diamond/aa,0.9,4560.0,1286.0,263.0,3011.0
+Diamond (AA),diamond/aa,0.95,5480.0,1784.0,395.0,3301.0
+Panaroo,panaroo/aa,0.5,3335.0,363.0,187.0,2785.0
+Panaroo,panaroo/aa,0.6,3457.0,474.0,180.0,2803.0
+Panaroo,panaroo/aa,0.7,3492.0,498.0,189.0,2805.0
+Panaroo,panaroo/aa,0.8,3498.0,493.0,190.0,2815.0
+Panaroo,panaroo/aa,0.85,3487.0,469.0,194.0,2824.0
+Panaroo,panaroo/aa,0.9,3522.0,489.0,200.0,2833.0
+Panaroo,panaroo/aa,0.95,3534.0,497.0,187.0,2850.0
+Ppanggolin,ppanggolin/aa,0.5,3648.0,670.0,197.0,2781.0
+Ppanggolin,ppanggolin/aa,0.6,3771.0,726.0,201.0,2844.0
+Ppanggolin,ppanggolin/aa,0.7,3903.0,802.0,214.0,2887.0
+Ppanggolin,ppanggolin/aa,0.8,4110.0,909.0,243.0,2958.0
+Ppanggolin,ppanggolin/aa,0.85,4254.0,989.0,259.0,3006.0
+Ppanggolin,ppanggolin/aa,0.9,4475.0,1121.0,288.0,3066.0
+Ppanggolin,ppanggolin/aa,0.95,5261.0,1633.0,388.0,3240.0
+Panta,panta/aa,0.5,4670.0,1162.0,346.0,3162.0
+Panta,panta/aa,0.6,4706.0,1173.0,353.0,3180.0
+Panta,panta/aa,0.7,4750.0,1206.0,362.0,3182.0
+Panta,panta/aa,0.8,4819.0,1263.0,360.0,3196.0
+Panta,panta/aa,0.85,4906.0,1312.0,374.0,3220.0
+Panta,panta/aa,0.9,5076.0,1435.0,389.0,3252.0
+Panta,panta/aa,0.95,5731.0,1879.0,466.0,3386.0
+PanX,panx/aa,0.5,3790.0,775.0,214.0,2801.0
+PanX,panx/aa,0.6,3780.0,764.0,214.0,2802.0
+PanX,panx/aa,0.7,3785.0,768.0,215.0,2802.0
+PanX,panx/aa,0.8,3837.0,802.0,215.0,2820.0
+PanX,panx/aa,0.85,3899.0,840.0,221.0,2838.0
+PanX,panx/aa,0.9,4073.0,949.0,239.0,2885.0
+PanX,panx/aa,0.95,4742.0,1380.0,301.0,3061.0

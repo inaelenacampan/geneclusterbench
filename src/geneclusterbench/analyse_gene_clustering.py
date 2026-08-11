@@ -90,6 +90,7 @@ PARAMORDER = ["st", "c"]
 DEFAULT_PARAMS = {"st": "nt", "c": 0.9}
 AXIS_TITLE_FONT_SIZE = 10
 BASE_FONT_SIZE = 7
+NJ_TREE_TIP_FONT_SIZE = 9  # tip-label font size for NJ tree plots (slightly larger than BASE_FONT_SIZE)
 DOPREM = True
 
 SIM_ONLY_SKETCH_METHOD_NAMES = ["hdbscan_dist", "hdbscan_tsne"]
@@ -285,6 +286,139 @@ CONFIGDICT_COLOURS = {
     "embed_hdbscan_tsne/aa": "#D9770B",
     "embed_hdbscan_umap/aa": "#F7C177",
 }
+
+# --- method-group colour coding for the NJ tree plots -----------------
+# Three high-level groups of methods, requested for consistent colour
+# coding on the NJ tree tip labels (one colour per group, applied
+# consistently across every NJ tree plot):
+#   1. Sequence clustering / similarity methods -- CD-HIT, MMseqs2,
+#      Diamond (AA).
+#   2. Pangenome methods -- Panaroo, Ppanggolin, Panta, PanX.
+#   3. Sketching / embedding methods -- Sketch (all sub-methods:
+#      hdbscan_dist/hdbscan_tsne/hdbscan_umap and the connected-components
+#      sweep) and Embeddings (all embed_* sub-methods).
+# Keyed by the "clusterer" prefix of a combo key (combo.split("/")[0]),
+# so it works directly off the same `x` list every heatmap/tree already
+# carries.
+METHOD_GROUP_NAMES = {
+    "Sequence clustering / similarity": ["cdhit", "mmseqs2", "diamond"],
+    "Pangenome methods": ["panaroo", "ppanggolin", "panta", "panx"],
+    "Sketching / embedding methods": (
+        ["sketch", "embeddings"] + SKETCH_METHOD_NAMES + EMBED_METHOD_NAMES
+    ),
+}
+
+METHOD_GROUP_COLOURS = {
+    "Sequence clustering / similarity": "#3B7DD8",  # blue
+    "Pangenome methods": "#2E9E5B",                  # green
+    "Sketching / embedding methods": "#D98A2B",      # orange
+}
+
+# reverse lookup: clusterer prefix -> group name, built once from the
+# dict above so callers don't need to loop over METHOD_GROUP_NAMES.
+_METHOD_PREFIX_TO_GROUP = {
+    prefix: group
+    for group, prefixes in METHOD_GROUP_NAMES.items()
+    for prefix in prefixes
+}
+
+
+def get_method_group(combo_key):
+    print(f"[TRACE] >>> Entering get_method_group() - defined near line 320 of {__file__}")
+    """Map a combo key (e.g. "cdhit/aa", "hdbscan_umap/nt",
+    "connected_components_t0.6/aa") to its high-level method group name
+    (one of METHOD_GROUP_NAMES's keys), for consistent colour coding.
+    Returns None if the clusterer prefix isn't recognised."""
+    prefix = combo_key.split("/")[0]
+    return _METHOD_PREFIX_TO_GROUP.get(prefix)
+
+
+# --- shared title helper for real-data mode -----------------------------
+# In "real_data" mode every figure's title ends with
+# "... -- {namedict[assembly]} ({datatype})", but there is only ever one
+# real-data "assembly" (namedict[assembly] is always the literal string
+# "Real data" and datatype is always the literal string "real_data"), so
+# appending "(real_data)" to the title is pure redundancy -- the title
+# already says "Real data" via namedict[assembly]. We therefore never add
+# the "(datatype)" suffix in real_data mode, on any figure.
+# "simulations" mode is unaffected (namedict[assembly] differs per
+# assembly there, so the suffix is never redundant) -- it always keeps
+# its "(datatype)" suffix.
+
+
+def get_datatype_title_suffix(datatype):
+    print(f"[TRACE] >>> Entering get_datatype_title_suffix() - defined near line 320 of {__file__}")
+    """Return " ({datatype})" the way every title used to hard-code it,
+    except that for "real_data" this is never returned, since
+    namedict[assembly] is always the literal string "Real data" already,
+    so appending "(real_data)" would just duplicate it in every title.
+    Other datatypes (e.g. "simulations") always get the suffix, since
+    it's not redundant there."""
+    if datatype != "real_data":
+        return f" ({datatype})"
+    return ""
+
+
+def write_metric_csv(df, outfolder, filename_stub):
+    print(f"[TRACE] >>> Entering write_metric_csv() - defined near line 320 of {__file__}")
+    """Shared CSV-writer for every numeric metric exported alongside the
+    plots (requirement 6): writes `df` (already containing full, unrounded
+    precision) to "<outfolder>/csv/<filename_stub>.csv", creating the csv/
+    subdirectory if needed. Mirrors save_figure's per-format subdirectory
+    convention (png/, pdf/, svg/) with a matching csv/ subdirectory, so
+    every numeric export sits alongside its figure counterpart and is easy
+    to find from the filename_stub alone.
+
+    Input:
+        df             -- a pandas DataFrame with the exact values used to
+                           draw the corresponding plot (no rounding).
+        outfolder      -- the run's top-level output folder.
+        filename_stub  -- file name without extension, ideally matching
+                           (or clearly related to) the plot's own stub.
+    Output: none (writes "<outfolder>/csv/<filename_stub>.csv").
+    """
+    csv_dir = os.path.join(outfolder, "csv")
+    os.makedirs(csv_dir, exist_ok=True)
+    df.to_csv(os.path.join(csv_dir, f"{filename_stub}.csv"), index=False)
+
+
+def jensen_shannon_divergence(p, q, base=2.0):
+    print(f"[TRACE] >>> Entering jensen_shannon_divergence() - defined near line 320 of {__file__}")
+    """Jensen-Shannon divergence between two discrete distributions `p`
+    and `q` (same-length, non-negative arrays; need not already be
+    normalised -- they're renormalised to sum to 1 here). Symmetric and
+    bounded in [0, 1] when `base=2.0` (the default), since JSD(P||Q) =
+    0.5*KL(P||M) + 0.5*KL(Q||M) with M = 0.5*(P+Q), and log base 2 makes
+    the maximum divergence (no shared support) equal to 1 bit.
+
+    Zero handling: KL terms only sum over indices where the numerator
+    probability is > 0 (the standard 0*log(0/x) := 0 convention), and
+    since M = 0.5*(P+Q) is always > 0 wherever P (or Q) is > 0, this never
+    divides by zero. Categories where both P and Q are 0 simply drop out
+    of the sum, which is the mathematically correct contribution (0).
+
+    Input:  p, q -- array-likes of non-negative numbers, same length.
+            base -- logarithm base; 2.0 gives divergence in bits
+                    (bounded [0, 1]), None gives natural-log nats.
+    Output: float, the Jensen-Shannon divergence between p and q.
+    """
+    p = np.asarray(p, dtype=float)
+    q = np.asarray(q, dtype=float)
+    p_sum = p.sum()
+    q_sum = q.sum()
+    p = p / p_sum if p_sum > 0 else p
+    q = q / q_sum if q_sum > 0 else q
+    m = 0.5 * (p + q)
+
+    def _kl(a, b):
+        mask = a > 0
+        return np.sum(a[mask] * np.log(a[mask] / b[mask]))
+
+    jsd = 0.5 * _kl(p, m) + 0.5 * _kl(q, m)
+    if base is not None:
+        jsd = jsd / np.log(base)
+    # guard against tiny negative values from floating-point noise
+    return max(0.0, float(jsd))
 
 
 def nicesp(uglysp):
@@ -2759,9 +2893,24 @@ def plot_nj_tree_from_matrix(
         label_func=label_func,
     )
 
+    # requirement 1: colour-code each tip label by its method group
+    # (sequence clustering/similarity, pangenome, sketching/embedding --
+    # see METHOD_GROUP_NAMES/METHOD_GROUP_COLOURS) for consistent,
+    # readable grouping across every NJ tree plot. `labels` is in the
+    # same order as `x`, and Bio.Phylo's tip labels are plain text
+    # objects whose text is " {label}" (see label_func above), so match
+    # each axis text back to its combo key by stripping the leading
+    # space label_func adds.
+    label_to_combo = {lbl.strip(): combo for lbl, combo in zip(labels, x)}
     for text_obj in ax.texts:
         text_obj.set_fontproperties(ibmplexsans)
-        text_obj.set_fontsize(BASE_FONT_SIZE)
+        text_obj.set_fontsize(NJ_TREE_TIP_FONT_SIZE)
+        combo = label_to_combo.get(text_obj.get_text().strip())
+        if combo is not None:
+            group = get_method_group(combo)
+            if group is not None:
+                text_obj.set_color(METHOD_GROUP_COLOURS[group])
+                text_obj.set_fontweight("bold")
 
     # Leave headroom to the right of the deepest branch tip so long tip
     # labels have somewhere to sit instead of overlapping other branches.
@@ -2780,10 +2929,25 @@ def plot_nj_tree_from_matrix(
     for label in ax.get_xticklabels():
         label.set_fontproperties(ibmplexsans)
 
-    title = f"NJ tree — {namedict[assembly]} ({datatype})"
+    datatype_suffix = get_datatype_title_suffix(datatype)
+    title = f"NJ tree — {namedict[assembly]}{datatype_suffix}"
     if title_suffix:
-        title = f"NJ tree, {title_suffix} — {namedict[assembly]} ({datatype})"
+        title = f"NJ tree, {title_suffix} — {namedict[assembly]}{datatype_suffix}"
     ax.set_title(title, fontproperties=ibmplexsansbold, fontsize=AXIS_TITLE_FONT_SIZE)
+
+    # legend for the method-group colour coding, restricted to whichever
+    # groups are actually present among this tree's tips
+    groups_present = [g for g in METHOD_GROUP_COLOURS if any(get_method_group(c) == g for c in x)]
+    if groups_present:
+        from matplotlib.lines import Line2D
+        legend_handles = [
+            Line2D([0], [0], color=METHOD_GROUP_COLOURS[g], lw=0, marker="s", markersize=8)
+            for g in groups_present
+        ]
+        ax.legend(
+            legend_handles, groups_present, loc="lower right",
+            prop=ibmplexsans, fontsize=BASE_FONT_SIZE, frameon=True,
+        )
 
     fig.tight_layout()
     save_figure(fig, outfolder, "_".join([filename_prefix, datatype, assembly]), bbox_inches="tight")
@@ -2850,6 +3014,8 @@ def plotter(theargs):
     xs.sort()
     clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
 
+    csv_rows = []  # requirement 6: exact mean/std/n behind every point on this c-sweep plot
+
     for seqtype in SEQTYPES:
         availcl = list(set(list(subdf[subdf["st"] == seqtype].index.get_level_values("clusterer"))))
         ynams = [
@@ -2878,6 +3044,15 @@ def plotter(theargs):
                 ymean[cluster_index, x_index] = tmpdf.mean()
                 ycount[cluster_index, x_index] = tmpdf.count()
                 ystd[cluster_index, x_index] = tmpdf.std() if tmpdf.count() >= 2 else 0.0
+                csv_rows.append({
+                    "method": FANCYDICT[ynam],
+                    "combo": ynam,
+                    "metric": name,
+                    "c": x_value,
+                    "mean": ymean[cluster_index, x_index],
+                    "std": ystd[cluster_index, x_index],
+                    "n": ycount[cluster_index, x_index],
+                })
 
         for y_index, ynam in enumerate(ynams):
             ax.plot(xs, ymean[y_index, :], "-o", c=CONFIGDICT_COLOURS[ynam], label=FANCYDICT[ynam])
@@ -2922,6 +3097,8 @@ def plotter(theargs):
     
     outnamescaff = name.replace(" ", "").replace("#", "NumberOf")
 
+    write_metric_csv(pd.DataFrame(csv_rows), outfolder, "_".join(["plot_c", datatype, assembly, outnamescaff]))
+
     if outnamescaff!= "runtime" :
         # change to log scale
         ax.set_yscale("log")
@@ -2938,6 +3115,171 @@ def plotter(theargs):
 
 # here we fix a c in comparaison to the previous plots
 # now we compare clustering methods between them for this fixed c
+
+def _find_runtime_axis_break(values):
+    print(f"[TRACE] >>> Entering _find_runtime_axis_break() - defined near line 3100 of {__file__}")
+    """Look for a natural gap in a set of runtime values that's large
+    enough to justify a broken y-axis (requirement 5): fast methods
+    (~seconds) and slow methods (~thousands of seconds) otherwise get
+    squashed onto the same linear axis, making the fast methods
+    indistinguishable from zero.
+
+    Method: sort the positive values, and find the pair of consecutive
+    values with the largest ratio between them. If that ratio is at
+    least 5x, treat it as the break point; otherwise there's no
+    meaningful bimodal split and no break is needed.
+
+    Input:  values -- iterable of runtime means (may include NaN/0).
+    Output: (low_max, high_min) tuple marking the top of the "low" axis
+            and the bottom of the "high" axis, or None if no break is
+            warranted (fewer than 2 positive values, or no gap >= 5x).
+    """
+    positive_sorted = sorted(v for v in values if v is not None and not np.isnan(v) and v > 0)
+    if len(positive_sorted) < 2:
+        return None
+    ratios = [positive_sorted[i + 1] / positive_sorted[i] for i in range(len(positive_sorted) - 1)]
+    best_idx = int(np.argmax(ratios))
+    if ratios[best_idx] < 5.0:
+        return None
+    return positive_sorted[best_idx], positive_sorted[best_idx + 1]
+
+
+def _plot_runtime_broken_axis(
+    x, x_fancy, ymean, ystd, ycount, namedict, outfolder, assembly, datatype,
+    font_props,
+):
+    print(f"[TRACE] >>> Entering _plot_runtime_broken_axis() - defined near line 3100 of {__file__}")
+    """Runtime bar plot with a broken y-axis (requirement 5): when
+    runtimes span multiple orders of magnitude (e.g. ~3 s for CD-HIT vs
+    ~7000 s for sketching methods), a single linear axis makes the fast
+    methods invisible. This draws the same bars on two stacked axes --
+    a short "high" axis on top covering the slow methods' range, and a
+    taller "low" axis on the bottom covering the fast methods' range --
+    with a diagonal break mark where the axis is cut, so every method's
+    bar height is readable regardless of scale, while still keeping all
+    methods on one figure for direct comparison.
+
+    Falls back to a single ordinary axis (via the shared bar-drawing
+    logic below) if no runtime values span a big enough gap to need a
+    break (see _find_runtime_axis_break).
+
+    Input/Output: same data as plotter_pointplots's runtime branch;
+        saves the figure via save_figure exactly like the non-runtime
+        path, under the same filename stub ("plot_point_<datatype>_
+        <assembly>_runtime").
+    """
+    ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
+    positions = list(range(len(x)))
+    bar_width = 0.5
+    break_pts = _find_runtime_axis_break(ymean)
+
+    def _draw_bars(ax):
+        for index in positions:
+            ax.bar(
+                index, ymean[index], bar_width,
+                color=CONFIGDICT_COLOURS[x[index]], label=x_fancy[index],
+            )
+            if ycount[index] >= 2:
+                lower_err = min(ystd[index], ymean[index])
+                ax.errorbar(
+                    index, ymean[index],
+                    yerr=[[max(0, lower_err)], [ystd[index]]],
+                    fmt="none", color="black", capsize=4.0, linewidth=1.0,
+                )
+
+    if break_pts is None:
+        # no large enough gap -- draw as a single ordinary axis
+        fig = plt.figure(1, dpi=150, figsize=DEFAULT_FIGSIZE)
+        ax = fig.subplots()
+        _draw_bars(ax)
+        ax.set_ylim(0.0, None)
+        ax.set_xticks(positions)
+        ax.set_xticklabels(x_fancy, rotation=35, ha="right", rotation_mode="anchor")
+        ax.set_xlabel("Clusterer", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
+        ax.set_ylabel(CONFIGDICT["runtime"]["ylabel"], fontproperties=ibmplexsans, loc="top", fontsize=AXIS_TITLE_FONT_SIZE)
+        ax.xaxis.set_minor_locator(AutoMinorLocator())
+        ax.yaxis.set_minor_locator(AutoMinorLocator())
+        ax.tick_params(which="major", direction="in")
+        ax.tick_params(which="minor", direction="in")
+        ax.xaxis.set_ticks_position("both")
+        ax.yaxis.set_ticks_position("both")
+        for label in ax.get_xticklabels() + ax.get_yticklabels():
+            label.set_fontproperties(ibmplexsans)
+        plt.text(0, 1.01, namedict[assembly], fontproperties=ibmplexsansitalics, horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
+        add_sketch_bracket(ax, x, positions, bar_width=bar_width, fontprops=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1)
+        family_footnote = get_family_footnote(x)
+        if family_footnote is not None:
+            plt.text(
+                0.5, -0.44, family_footnote,
+                fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
+                horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
+            )
+        save_figure(fig, outfolder, "_".join(["plot_point", datatype, assembly, "runtime"]), bbox_inches="tight")
+        fig.clf()
+        del fig, ax
+        return
+
+    low_max, high_min = break_pts
+    top_max = max(v for v in ymean if v is not None and not np.isnan(v))
+    fig, (ax_top, ax_bot) = plt.subplots(
+        2, 1, sharex=True, dpi=150,
+        figsize=(DEFAULT_FIGSIZE[0], DEFAULT_FIGSIZE[1] + 1.0),
+        gridspec_kw={"height_ratios": [1, 1.6], "hspace": 0.08},
+    )
+    _draw_bars(ax_top)
+    _draw_bars(ax_bot)
+
+    ax_top.set_ylim(high_min * 0.85, top_max * 1.08)
+    ax_bot.set_ylim(0.0, low_max * 1.35)
+
+    # hide the spine/ticks between the two axes and draw diagonal break marks
+    ax_top.spines["bottom"].set_visible(False)
+    ax_bot.spines["top"].set_visible(False)
+    ax_top.tick_params(labeltop=False, top=False, bottom=False)
+    ax_bot.xaxis.tick_bottom()
+
+    d = 0.012
+    kwargs = dict(transform=ax_top.transAxes, color="black", clip_on=False, linewidth=1.0)
+    ax_top.plot((-d, +d), (-d, +d), **kwargs)
+    ax_top.plot((1 - d, 1 + d), (-d, +d), **kwargs)
+    kwargs.update(transform=ax_bot.transAxes)
+    ax_bot.plot((-d, +d), (1 - 0.7 * d, 1 + 0.7 * d), **kwargs)
+    ax_bot.plot((1 - d, 1 + d), (1 - 0.7 * d, 1 + 0.7 * d), **kwargs)
+
+    ax_bot.set_xticks(positions)
+    ax_bot.set_xticklabels(x_fancy, rotation=35, ha="right", rotation_mode="anchor")
+    ax_bot.set_xlabel("Clusterer", fontproperties=ibmplexsans, loc="right", fontsize=AXIS_TITLE_FONT_SIZE)
+    fig.text(
+        0.04, 0.5, CONFIGDICT["runtime"]["ylabel"], va="center", rotation="vertical",
+        fontproperties=ibmplexsans, fontsize=AXIS_TITLE_FONT_SIZE,
+    )
+
+    for ax in (ax_top, ax_bot):
+        ax.xaxis.set_minor_locator(AutoMinorLocator())
+        ax.yaxis.set_minor_locator(AutoMinorLocator())
+        ax.tick_params(which="major", direction="in")
+        ax.tick_params(which="minor", direction="in")
+        ax.yaxis.set_ticks_position("both")
+        for label in ax.get_yticklabels():
+            label.set_fontproperties(ibmplexsans)
+    for label in ax_bot.get_xticklabels():
+        label.set_fontproperties(ibmplexsans)
+
+    ax_top.text(0, 1.02, namedict[assembly], fontproperties=ibmplexsansitalics, horizontalalignment="left", verticalalignment="bottom", transform=ax_top.transAxes)
+
+    add_sketch_bracket(ax_bot, x, positions, bar_width=bar_width, fontprops=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1)
+
+    family_footnote = get_family_footnote(x)
+    if family_footnote is not None:
+        ax_bot.text(
+            0.5, -0.5, family_footnote,
+            fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
+            horizontalalignment="center", verticalalignment="top", transform=ax_bot.transAxes,
+        )
+
+    save_figure(fig, outfolder, "_".join(["plot_point", datatype, assembly, "runtime"]), bbox_inches="tight")
+    plt.close(fig)
+
 
 def plotter_pointplots(theargs):
     print(f"[TRACE] >>> Entering plotter_pointplots() - defined at line 2899 of {__file__}")
@@ -3015,12 +3357,34 @@ def plotter_pointplots(theargs):
         ycount.append(tmpdf.count())
         ystd.append(tmpdf.std() if tmpdf.count() >= 2 else 0.0)
 
+    outnamescaff = name.replace(" ", "").replace("#", "NumberOf")
+
+    # requirement 6: export the exact (unrounded) mean/std/n values behind
+    # this bar plot to CSV -- same x/ymean/ystd/ycount arrays used to draw
+    # the figure below, so there's no risk of the CSV and plot disagreeing.
+    write_metric_csv(
+        pd.DataFrame({
+            "method": x_fancy,
+            "combo": x,
+            "metric": name,
+            "mean": ymean,
+            "std": ystd,
+            "n": ycount,
+        }),
+        outfolder, "_".join(["plot_point", datatype, assembly, outnamescaff]),
+    )
+
+    if name == "runtime":
+        _plot_runtime_broken_axis(
+            x, x_fancy, ymean, ystd, ycount, namedict, outfolder, assembly,
+            datatype, font_props,
+        )
+        return
+
     fig = plt.figure(1, dpi=150, figsize=DEFAULT_FIGSIZE)
     ax = fig.subplots()
     positions = list(range(len(x)))
     bar_width = 0.5
-
-    outnamescaff = name.replace(" ", "").replace("#", "NumberOf")
 
     for index in positions:
         ax.bar(
@@ -3165,6 +3529,16 @@ def number_of_clusters_violin(theargs):
         data.append(tmpdf.values)
         counts.append(tmpdf.count())
 
+    # requirement 6: raw per-seed values behind every violin, exact precision
+    write_metric_csv(
+        pd.DataFrame([
+            {"method": FANCYDICT[x_value], "combo": x_value, "metric": name, "seed_index": i, "value": v}
+            for x_value, values in zip(x, data)
+            for i, v in enumerate(values)
+        ]),
+        outfolder, "_".join(["plot_violin", datatype, assembly, name.replace(" ", "").replace("#", "NumberOf")]),
+    )
+
     fig = plt.figure(1, dpi=150, figsize=DEFAULT_FIGSIZE)
     ax = fig.subplots()
     positions = list(range(1, len(x) + 1))
@@ -3304,6 +3678,19 @@ def number_of_clusters_stacked_bar(theargs):
         mean_pairs.append(tmpdf["n_pairs"].astype(float).mean())
 
     mean_rest = [t - s - p for t, s, p in zip(mean_total, mean_singletons, mean_pairs)]
+
+    # requirement 6: exact singleton/pair/rest/total counts behind this bar
+    write_metric_csv(
+        pd.DataFrame({
+            "method": x_fancy,
+            "combo": x,
+            "mean_total_clusters": mean_total,
+            "mean_singleton_clusters": mean_singletons,
+            "mean_pair_clusters": mean_pairs,
+            "mean_other_clusters": mean_rest,
+        }),
+        outfolder, "_".join(["plot_stackedbar", datatype, assembly, "n_clusters"]),
+    )
 
     positions = list(range(len(x)))
     bar_width = 0.5
@@ -3492,6 +3879,20 @@ def number_of_clusters_stacked_bar_vs_c(theargs):
 
     fig = plt.figure(1, dpi=150, figsize=(max(DEFAULT_FIGSIZE[0], n_c * n_methods * 0.65), DEFAULT_FIGSIZE[1]))
     ax = fig.subplots()
+
+    # requirement 6: exact singleton/pair/rest/total counts vs c behind this plot
+    write_metric_csv(
+        pd.DataFrame({
+            "method": [FANCYDICT[x[m_idx]] for m_idx in range(n_methods) for c_idx in range(n_c)],
+            "combo": [x[m_idx] for m_idx in range(n_methods) for c_idx in range(n_c)],
+            "c": [xs[c_idx] for m_idx in range(n_methods) for c_idx in range(n_c)],
+            "mean_total_clusters": mean_total.flatten(),
+            "mean_singleton_clusters": mean_singletons.flatten(),
+            "mean_pair_clusters": mean_pairs.flatten(),
+            "mean_other_clusters": mean_rest.flatten(),
+        }),
+        outfolder, "_".join(["plot_stackedbar_c", datatype, assembly, "n_clusters"]),
+    )
 
     group_positions = np.arange(n_c) * group_spacing
     offsets = (np.arange(n_methods) - (n_methods - 1) / 2.0) * bar_width
@@ -4293,6 +4694,19 @@ def plot_core_genome_curve_realdata(theargs):
         label = f"{FANCYDICT[combo]}. core: {core_size} total: {len(counts)}"
         ax.step(ranks, counts, where="post", label=label, color=color, linewidth=1.3)
 
+    # requirement 6: exact per-cluster strain counts + core-genome size
+    # summary behind this curve
+    write_metric_csv(
+        pd.DataFrame({
+            "method": [FANCYDICT[combo] for combo in x if combo in curves for _ in curves[combo]],
+            "combo": [combo for combo in x if combo in curves for _ in curves[combo]],
+            "cluster_rank": [r for combo in x if combo in curves for r in range(1, len(curves[combo]) + 1)],
+            "strains_in_cluster": [c for combo in x if combo in curves for c in curves[combo]],
+            "total_strains": total_strains,
+        }),
+        outfolder, "_".join(["plot_core_genome_estimation", datatype, assembly]),
+    )
+
     ax.axhline(total_strains, color="grey", linestyle="--", linewidth=0.8)
     ax.set_xlabel("cluster rank", fontsize=AXIS_TITLE_FONT_SIZE, fontproperties=ibmplexsans)
     ax.set_ylabel("number of strains in cluster", fontsize=AXIS_TITLE_FONT_SIZE, fontproperties=ibmplexsans)
@@ -4300,7 +4714,7 @@ def plot_core_genome_curve_realdata(theargs):
     ax.yaxis.set_minor_locator(AutoMinorLocator())
     ax.legend(loc="upper right", fontsize=BASE_FONT_SIZE, frameon=True)
     ax.set_title(
-        f"Core genome estimation — {namedict[assembly]} ({datatype})",
+        f"Core genome estimation — {namedict[assembly]}{get_datatype_title_suffix(datatype)}",
         fontproperties=ibmplexsansbold,
     )
     for label in ax.get_xticklabels() + ax.get_yticklabels():
@@ -4368,6 +4782,91 @@ def compute_occupancy_by_combo(labels_by_seed, x, total_strains):
     return occupancy
 
 
+
+# Strain-prevalence ranges used both by the U-plot category-count CSV and
+# the pairwise Jensen-Shannon divergence CSV (requirements 2 and 3).
+# Bounds follow the standard pangenome core/shell/cloud convention: core
+# (95-100% of strains), shell (15-95%), cloud (0-15%). Edges are
+# inclusive of their upper bound and exclusive of their lower bound
+# except for the first bin, which includes 0%, so every cluster falls
+# into exactly one category.
+OCCUPANCY_CATEGORY_EDGES = [
+    ("clusters_0_15", 0.0, 15.0),
+    ("clusters_15_95", 15.0, 95.0),
+    ("clusters_95_100", 95.0, 100.0),
+]
+
+
+def compute_occupancy_category_counts(occupancy, x):
+    print(f"[TRACE] >>> Entering compute_occupancy_category_counts() - defined near line 4500 of {__file__}")
+    """For every method (combo) present in `occupancy` ({combo: [cluster
+    occupancy percentages]}, as built by compute_occupancy_by_combo --
+    the exact same data used to draw the U plots), count how many
+    clusters fall into each of the three strain-prevalence ranges defined
+    by OCCUPANCY_CATEGORY_EDGES (0-15%, 15-95%, 95-100% of strains).
+
+    Input:  occupancy -- {combo: [percentages]} dict, as returned by
+                          compute_occupancy_by_combo.
+            x          -- ordered list of combo keys, controlling row
+                          order in the returned DataFrame.
+    Output: pandas DataFrame with one row per method and columns
+            "method", "clusters_0_15", "clusters_15_95",
+            "clusters_95_100" (counts, plus the FANCYDICT display label
+            for readability).
+    """
+    rows = []
+    for combo in x:
+        if combo not in occupancy:
+            continue
+        percentages = np.asarray(occupancy[combo], dtype=float)
+        row = {"method": FANCYDICT.get(combo, combo), "combo": combo}
+        for col_name, lo, hi in OCCUPANCY_CATEGORY_EDGES:
+            if lo == 0.0:
+                mask = (percentages >= lo) & (percentages <= hi)
+            else:
+                mask = (percentages > lo) & (percentages <= hi)
+            row[col_name] = int(mask.sum())
+        rows.append(row)
+    # column order matches the ranges low->high as requested in the prompt
+    return pd.DataFrame(rows, columns=["method", "combo", "clusters_95_100", "clusters_15_95", "clusters_0_15"])
+
+
+def compute_occupancy_jsd_matrix(occupancy, x):
+    print(f"[TRACE] >>> Entering compute_occupancy_jsd_matrix() - defined near line 4500 of {__file__}")
+    """Pairwise Jensen-Shannon divergence (base-2, bounded [0, 1]) between
+    every pair of methods' distributions over the same three
+    strain-prevalence categories used by compute_occupancy_category_counts
+    (0-15%, 15-95%, 95-100% of strains) -- i.e. the same underlying data
+    as the U plots, reduced to the 3-category distribution each method's
+    clusters fall into.
+
+    Input:  occupancy -- {combo: [percentages]} dict (see
+                          compute_occupancy_by_combo).
+            x          -- ordered list of combo keys, controlling row/
+                          column order in the returned matrix.
+    Output: pandas DataFrame, a symmetric (n x n) matrix of JSD values
+            with method display labels as both the index and the columns
+            (diagonal is 0.0, since JSD(P, P) = 0).
+    """
+    combos = [combo for combo in x if combo in occupancy]
+    category_cols = [name for name, _, _ in OCCUPANCY_CATEGORY_EDGES]
+    counts_df = compute_occupancy_category_counts(occupancy, combos).set_index("combo")
+
+    labels = [FANCYDICT.get(combo, combo) for combo in combos]
+    n = len(combos)
+    jsd_mat = np.zeros((n, n), dtype=float)
+    for i, combo_i in enumerate(combos):
+        dist_i = counts_df.loc[combo_i, category_cols].to_numpy(dtype=float)
+        for j, combo_j in enumerate(combos):
+            if j < i:
+                jsd_mat[i, j] = jsd_mat[j, i]
+                continue
+            dist_j = counts_df.loc[combo_j, category_cols].to_numpy(dtype=float)
+            jsd_mat[i, j] = 0.0 if i == j else jensen_shannon_divergence(dist_i, dist_j, base=2.0)
+
+    return pd.DataFrame(jsd_mat, index=labels, columns=labels)
+
+
 def plot_cluster_occupancy_uplot(theargs):
     print(f"[TRACE] >>> Entering plot_cluster_occupancy_uplot() - defined at line 4309 of {__file__}")
     """Cluster-occupancy "U plot" (real data only): for each tool, the
@@ -4430,6 +4929,25 @@ def plot_cluster_occupancy_uplot(theargs):
         )
         return
 
+    # requirement 2: one CSV, all methods, with the cluster counts in
+    # each of the three strain-prevalence ranges -- computed from the
+    # exact same `occupancy` data used to draw the U plot below, so the
+    # CSV and the figure can never disagree.
+    occupancy_counts_df = compute_occupancy_category_counts(occupancy, x)
+    write_metric_csv(
+        occupancy_counts_df.drop(columns=["combo"]), outfolder,
+        "_".join(["cluster_occupancy_category_counts", datatype, assembly]),
+    )
+
+    # requirement 3: pairwise Jensen-Shannon divergence between methods'
+    # distributions over those same three categories, as a method x
+    # method matrix CSV.
+    jsd_df = compute_occupancy_jsd_matrix(occupancy, x)
+    write_metric_csv(
+        jsd_df.reset_index().rename(columns={"index": "method"}), outfolder,
+        "_".join(["cluster_occupancy_jsd", datatype, assembly]),
+    )
+
     pooled_percentages = [pct for percentages in occupancy.values() for pct in percentages]
     bin_edges = compute_adaptive_occupancy_bins(pooled_percentages)
     bin_midpoints = (bin_edges[:-1] + bin_edges[1:]) / 2.0
@@ -4470,7 +4988,7 @@ def plot_cluster_occupancy_uplot(theargs):
     ax.yaxis.set_minor_locator(AutoMinorLocator())
     ax.legend(loc="upper left", fontsize=BASE_FONT_SIZE, frameon=True)
     ax.set_title(
-        f"Cluster occupancy distribution (U plot) — {namedict[assembly]} ({datatype})",
+        f"Cluster occupancy distribution (U plot) — {namedict[assembly]}{get_datatype_title_suffix(datatype)}",
         fontproperties=ibmplexsansbold,
     )
     for label in ax.get_xticklabels() + ax.get_yticklabels():
@@ -4578,7 +5096,7 @@ def plot_cluster_occupancy_uplot_single(theargs):
         ax.xaxis.set_minor_locator(AutoMinorLocator())
         ax.yaxis.set_minor_locator(AutoMinorLocator())
         ax.set_title(
-            f"Cluster occupancy — {FANCYDICT[combo]}, {namedict[assembly]} ({datatype}), "
+            f"Cluster occupancy — {FANCYDICT[combo]}, {namedict[assembly]}{get_datatype_title_suffix(datatype)}, "
             f"n={len(percentages)}",
             fontproperties=ibmplexsansbold, fontsize=AXIS_TITLE_FONT_SIZE,
         )
@@ -4844,7 +5362,7 @@ def plot_gene_deletion_boxplot(theargs):
     ax.set_ylim(bottom=0)
     ax.yaxis.set_minor_locator(AutoMinorLocator())
     ax.set_title(
-        f"Gene deletion across seeds — {namedict[assembly]} ({datatype})",
+        f"Gene deletion across seeds — {namedict[assembly]}{get_datatype_title_suffix(datatype)}",
         fontproperties=ibmplexsansbold,
     )
     fig.tight_layout()
@@ -5010,6 +5528,22 @@ def _plot_triangular_pairwise_heatmap(
     save_figure(fig, outfolder, "_".join([filename_prefix, datatype, assembly]), bbox_inches="tight")
     plt.close(fig)
     del fig, ax
+
+    # requirement 6: export the exact matrix values behind this heatmap
+    # (covers pairwise ARI/AMI/purity/V-measure/F1/exact-match, since they
+    # all share this function) -- full precision, long format for easy
+    # downstream use, plus the wide method x method matrix for reference.
+    full_mat = np.where(np.isnan(mat), mat.T, mat)
+    np.fill_diagonal(full_mat, 1.0)
+    write_metric_csv(
+        pd.DataFrame({
+            "method_i": [labels[i] for i in range(len(x)) for j in range(len(x))],
+            "method_j": [labels[j] for i in range(len(x)) for j in range(len(x))],
+            "metric": cbar_label,
+            "value": full_mat.flatten(),
+        }),
+        outfolder, "_".join([filename_prefix, datatype, assembly]),
+    )
 
     # Every caller of this shared function passes a matrix that is
     # symmetric between methods i and j (upper triangle NaN'd out by the

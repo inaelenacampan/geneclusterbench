@@ -1,0 +1,226 @@
+method_i,method_j,metric,value
+CD-HIT (AA),CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (AA),CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (AA),MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (AA),MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (AA),Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (AA),Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+CD-HIT (AA),Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (AA),Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+CD-HIT (AA),PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+CD-HIT (AA),Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (AA),Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (AA),Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (AA),Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (AA),Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (AA),Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (NT),CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (NT),CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (NT),MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (NT),MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (NT),Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (NT),Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+CD-HIT (NT),Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (NT),Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+CD-HIT (NT),PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+CD-HIT (NT),Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (NT),Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (NT),Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (NT),Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (NT),Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+CD-HIT (NT),Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (AA),CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (AA),CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (AA),MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (AA),MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (AA),Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (AA),Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+MMseqs2 (AA),Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (AA),Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+MMseqs2 (AA),PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+MMseqs2 (AA),Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (AA),Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (AA),Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (AA),Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (AA),Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (AA),Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (NT),CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (NT),CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (NT),MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (NT),MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (NT),Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (NT),Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+MMseqs2 (NT),Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (NT),Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+MMseqs2 (NT),PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+MMseqs2 (NT),Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (NT),Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (NT),Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (NT),Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (NT),Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+MMseqs2 (NT),Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Diamond (AA),CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Diamond (AA),CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Diamond (AA),MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Diamond (AA),MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Diamond (AA),Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Diamond (AA),Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Diamond (AA),Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Diamond (AA),Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Diamond (AA),PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+Diamond (AA),Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Diamond (AA),Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Diamond (AA),Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Diamond (AA),Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Diamond (AA),Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Diamond (AA),Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Panaroo,CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Panaroo,CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Panaroo,MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Panaroo,MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Panaroo,Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Panaroo,Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Panaroo,Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Panaroo,Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9911157928210836
+Panaroo,PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9945824530850332
+Panaroo,Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Panaroo,Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Panaroo,Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Panaroo,Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Panaroo,Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Panaroo,Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Ppanggolin,CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Ppanggolin,CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Ppanggolin,MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Ppanggolin,MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Ppanggolin,Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Ppanggolin,Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Ppanggolin,Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Ppanggolin,Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Ppanggolin,PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+Ppanggolin,Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Ppanggolin,Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Ppanggolin,Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Ppanggolin,Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Ppanggolin,Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Ppanggolin,Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Panta,CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Panta,CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Panta,MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Panta,MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Panta,Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Panta,Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9911157928210836
+Panta,Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Panta,Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Panta,PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9954673296788575
+Panta,Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Panta,Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Panta,Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Panta,Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Panta,Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Panta,Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+PanX,CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+PanX,CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+PanX,MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+PanX,MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+PanX,Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+PanX,Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9945824530850332
+PanX,Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+PanX,Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9954673296788575
+PanX,PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+PanX,Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+PanX,Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+PanX,Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+PanX,Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+PanX,Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+PanX,Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+Sketch - UMAP* (AA) *,CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (AA) *,CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (AA) *,MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (AA) *,MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (AA) *,Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (AA) *,Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Sketch - UMAP* (AA) *,Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (AA) *,Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Sketch - UMAP* (AA) *,PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+Sketch - UMAP* (AA) *,Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (AA) *,Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (AA) *,Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (AA) *,Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (AA) *,Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (AA) *,Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (NT) *,CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (NT) *,CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (NT) *,MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (NT) *,MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (NT) *,Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (NT) *,Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Sketch - UMAP* (NT) *,Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (NT) *,Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Sketch - UMAP* (NT) *,PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+Sketch - UMAP* (NT) *,Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (NT) *,Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (NT) *,Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (NT) *,Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (NT) *,Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Sketch - UMAP* (NT) *,Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (AA) *,CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (AA) *,CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (AA) *,MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (AA) *,MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (AA) *,Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (AA) *,Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Connected components t=0.6* (AA) *,Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (AA) *,Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Connected components t=0.6* (AA) *,PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+Connected components t=0.6* (AA) *,Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (AA) *,Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (AA) *,Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (AA) *,Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (AA) *,Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (AA) *,Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (AA) *,CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (AA) *,CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (AA) *,MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (AA) *,MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (AA) *,Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (AA) *,Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Connected components t=0.7* (AA) *,Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (AA) *,Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Connected components t=0.7* (AA) *,PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+Connected components t=0.7* (AA) *,Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (AA) *,Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (AA) *,Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (AA) *,Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (AA) *,Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (AA) *,Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (NT) *,CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (NT) *,CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (NT) *,MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (NT) *,MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (NT) *,Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (NT) *,Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Connected components t=0.6* (NT) *,Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (NT) *,Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Connected components t=0.6* (NT) *,PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+Connected components t=0.6* (NT) *,Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (NT) *,Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (NT) *,Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (NT) *,Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (NT) *,Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.6* (NT) *,Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (NT) *,CD-HIT (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (NT) *,CD-HIT (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (NT) *,MMseqs2 (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (NT) *,MMseqs2 (NT),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (NT) *,Diamond (AA),"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (NT) *,Panaroo,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9946623002072749
+Connected components t=0.7* (NT) *,Ppanggolin,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (NT) *,Panta,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9955964118911705
+Connected components t=0.7* (NT) *,PanX,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",0.9998720472440945
+Connected components t=0.7* (NT) *,Sketch - UMAP* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (NT) *,Sketch - UMAP* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (NT) *,Connected components t=0.6* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (NT) *,Connected components t=0.7* (AA) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (NT) *,Connected components t=0.6* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0
+Connected components t=0.7* (NT) *,Connected components t=0.7* (NT) *,"Gene-retention adjusted Dice score between methods, penalised for deleted genes (adim.)",1.0

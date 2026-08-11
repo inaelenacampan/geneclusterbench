@@ -1,0 +1,57 @@
+method,combo,metric,c,mean,std,n
+MMseqs2 (NT),mmseqs2/nt,runtime,0.5,14.0,0.0,1
+MMseqs2 (NT),mmseqs2/nt,runtime,0.6,5.0,0.0,1
+MMseqs2 (NT),mmseqs2/nt,runtime,0.7,5.0,0.0,1
+MMseqs2 (NT),mmseqs2/nt,runtime,0.8,5.0,0.0,1
+MMseqs2 (NT),mmseqs2/nt,runtime,0.85,5.0,0.0,1
+MMseqs2 (NT),mmseqs2/nt,runtime,0.9,5.0,0.0,1
+MMseqs2 (NT),mmseqs2/nt,runtime,0.95,6.0,0.0,1
+CD-HIT (NT),cdhit/nt,runtime,0.5,,0.0,0
+CD-HIT (NT),cdhit/nt,runtime,0.6,,0.0,0
+CD-HIT (NT),cdhit/nt,runtime,0.7,,0.0,0
+CD-HIT (NT),cdhit/nt,runtime,0.8,822.0,0.0,1
+CD-HIT (NT),cdhit/nt,runtime,0.85,772.0,0.0,1
+CD-HIT (NT),cdhit/nt,runtime,0.9,18.0,0.0,1
+CD-HIT (NT),cdhit/nt,runtime,0.95,15.0,0.0,1
+Panta,panta/aa,runtime,0.5,7.0,0.0,1
+Panta,panta/aa,runtime,0.6,8.0,0.0,1
+Panta,panta/aa,runtime,0.7,8.0,0.0,1
+Panta,panta/aa,runtime,0.8,8.0,0.0,1
+Panta,panta/aa,runtime,0.85,8.0,0.0,1
+Panta,panta/aa,runtime,0.9,8.0,0.0,1
+Panta,panta/aa,runtime,0.95,8.0,0.0,1
+Panaroo,panaroo/aa,runtime,0.5,70.0,0.0,1
+Panaroo,panaroo/aa,runtime,0.6,71.0,0.0,1
+Panaroo,panaroo/aa,runtime,0.7,69.0,0.0,1
+Panaroo,panaroo/aa,runtime,0.8,65.0,0.0,1
+Panaroo,panaroo/aa,runtime,0.85,66.0,0.0,1
+Panaroo,panaroo/aa,runtime,0.9,67.0,0.0,1
+Panaroo,panaroo/aa,runtime,0.95,74.0,0.0,1
+Diamond (AA),diamond/aa,runtime,0.5,4.0,0.0,1
+Diamond (AA),diamond/aa,runtime,0.6,4.0,0.0,1
+Diamond (AA),diamond/aa,runtime,0.7,4.0,0.0,1
+Diamond (AA),diamond/aa,runtime,0.8,4.0,0.0,1
+Diamond (AA),diamond/aa,runtime,0.85,3.0,0.0,1
+Diamond (AA),diamond/aa,runtime,0.9,3.0,0.0,1
+Diamond (AA),diamond/aa,runtime,0.95,3.0,0.0,1
+Ppanggolin,ppanggolin/aa,runtime,0.5,6.0,0.0,1
+Ppanggolin,ppanggolin/aa,runtime,0.6,5.0,0.0,1
+Ppanggolin,ppanggolin/aa,runtime,0.7,6.0,0.0,1
+Ppanggolin,ppanggolin/aa,runtime,0.8,6.0,0.0,1
+Ppanggolin,ppanggolin/aa,runtime,0.85,7.0,0.0,1
+Ppanggolin,ppanggolin/aa,runtime,0.9,7.0,0.0,1
+Ppanggolin,ppanggolin/aa,runtime,0.95,8.0,0.0,1
+MMseqs2 (AA),mmseqs2/aa,runtime,0.5,4.0,0.0,1
+MMseqs2 (AA),mmseqs2/aa,runtime,0.6,3.0,0.0,1
+MMseqs2 (AA),mmseqs2/aa,runtime,0.7,2.0,0.0,1
+MMseqs2 (AA),mmseqs2/aa,runtime,0.8,3.0,0.0,1
+MMseqs2 (AA),mmseqs2/aa,runtime,0.85,3.0,0.0,1
+MMseqs2 (AA),mmseqs2/aa,runtime,0.9,3.0,0.0,1
+MMseqs2 (AA),mmseqs2/aa,runtime,0.95,3.0,0.0,1
+CD-HIT (AA),cdhit/aa,runtime,0.5,53.0,0.0,1
+CD-HIT (AA),cdhit/aa,runtime,0.6,3.0,0.0,1
+CD-HIT (AA),cdhit/aa,runtime,0.7,3.0,0.0,1
+CD-HIT (AA),cdhit/aa,runtime,0.8,3.0,0.0,1
+CD-HIT (AA),cdhit/aa,runtime,0.85,3.0,0.0,1
+CD-HIT (AA),cdhit/aa,runtime,0.9,3.0,0.0,1
+CD-HIT (AA),cdhit/aa,runtime,0.95,3.0,0.0,1
