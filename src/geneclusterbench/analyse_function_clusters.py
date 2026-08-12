@@ -626,8 +626,9 @@ def discover_method_folders(clustering_run_dir):
 # ==========================================================================
 
 def summarise_cluster(gene_ids, gene_to_categories, multi_category, gene_to_product_desc=None):
-    """Return list of (category_label, count, percentage, original_descriptions)
-    for one cluster's gene list, sorted by descending percentage.
+    """Return list of (category_label, count, percentage, original_descriptions,
+    genes_with_this_category) for one cluster's gene list, sorted by
+    descending percentage.
 
     Percentage is count(genes with this category) / total genes in cluster
     * 100. Genes unknown to gene_to_categories entirely (shouldn't happen
@@ -640,6 +641,14 @@ def summarise_cluster(gene_ids, gene_to_categories, multi_category, gene_to_prod
     e.g. "Hydroxymethylglutaryl-CoA synthase". Included regardless of
     whether the gene had a COG hit. If gene_to_product_desc isn't
     supplied, this is left empty.
+
+    genes_with_this_category is the list of gene ids (in cluster order)
+    FROM THIS CLUSTER that actually fall into that category/row -- i.e.
+    the specific subset of the cluster's gene_ids behind that row's
+    count/percentage, not the whole cluster's gene list. Note: with
+    --multi-category all, a gene assigned to more than one COG category
+    letter will appear in more than one row's gene list (by design -- it
+    genuinely contributes to each of those functions).
     """
     n_genes = len(gene_ids)
     if n_genes == 0:
@@ -647,6 +656,7 @@ def summarise_cluster(gene_ids, gene_to_categories, multi_category, gene_to_prod
 
     category_counts = defaultdict(int)
     category_descriptions = defaultdict(list)
+    category_genes = defaultdict(list)
     for gene_id in gene_ids:
         categories = gene_to_categories.get(gene_id, [NO_COG_LABEL])
         desc = ""
@@ -654,11 +664,18 @@ def summarise_cluster(gene_ids, gene_to_categories, multi_category, gene_to_prod
             desc = gene_to_product_desc.get(gene_id, "")
         for cat in categories:
             category_counts[cat] += 1
+            category_genes[cat].append(gene_id)
             if desc and desc not in category_descriptions[cat]:
                 category_descriptions[cat].append(desc)
 
     rows = [
-        (cat, count, 100.0 * count / n_genes, ";".join(category_descriptions.get(cat, [])))
+        (
+            cat,
+            count,
+            100.0 * count / n_genes,
+            ";".join(category_descriptions.get(cat, [])),
+            category_genes.get(cat, []),
+        )
         for cat, count in category_counts.items()
     ]
     rows.sort(key=lambda r: r[2], reverse=True)
@@ -687,16 +704,27 @@ def write_summary_tsv(out_path, records, multi_category):
           "Included regardless of whether the gene had a COG hit; empty only "
           "if the annotation tsv had no 'product' column or the value itself "
           "was empty.\n"
+        + "# 'function_gene_ids': the SPECIFIC gene ids (comma-separated) from "
+          "this row's cluster that actually fall into this row's COG_function "
+          "-- i.e. the subset of 'gene_ids' behind number_of_genes_with_function/"
+          "percentage, NOT the full cluster gene list. With --multi-category "
+          "all, a gene assigned >1 COG category letter will appear in "
+          "function_gene_ids for more than one row of the same cluster.\n"
+        + "# 'number_of_genes_with_function': count of gene ids in "
+          "function_gene_ids (i.e. len(function_gene_ids)); percentage = 100 * "
+          "number_of_genes_with_function / number_of_genes.\n"
     )
     with open(out_path, "w") as fh:
         fh.write(header_comment)
         fh.write(
             "method\tcluster_id\trepresentative\tgene_ids\tnumber_of_genes\tCOG_function\t"
-            "percentage\toriginal_COG_description\n"
+            "percentage\toriginal_COG_description\tfunction_gene_ids\t"
+            "number_of_genes_with_function\n"
         )
         for rec in records:
             fh.write(
-                "{method}\t{cluster_id}\t{rep}\t{gene_ids}\t{n}\t{cog}\t{pct:.1f}%\t{raw_cog}\n".format(
+                "{method}\t{cluster_id}\t{rep}\t{gene_ids}\t{n}\t{cog}\t{pct:.1f}%\t{raw_cog}\t"
+                "{func_genes}\t{n_func}\n".format(
                     method=rec["method"],
                     cluster_id=rec["cluster_id"],
                     rep=rec.get("representative", ""),
@@ -705,6 +733,8 @@ def write_summary_tsv(out_path, records, multi_category):
                     cog=rec["COG_function"],
                     pct=rec["percentage"],
                     raw_cog=rec.get("original_COG_description", ""),
+                    func_genes=",".join(rec.get("function_gene_ids", [])),
+                    n_func=rec.get("number_of_genes_with_function", ""),
                 )
             )
 
@@ -775,7 +805,7 @@ def process_method_folder(
             full_label = f"{method_label}:{submethod}"
             reps = reps_by_submethod.get(submethod, {})
             for cluster_id, gene_ids in clusters.items():
-                for cat, count, pct, desc in summarise_cluster(
+                for cat, count, pct, desc, cat_genes in summarise_cluster(
                     gene_ids, gene_to_categories, multi_category, gene_to_product_desc
                 ):
                     yield {
@@ -788,6 +818,8 @@ def process_method_folder(
                         "COG_function": cat,
                         "percentage": pct,
                         "original_COG_description": desc,
+                        "function_gene_ids": cat_genes,
+                        "number_of_genes_with_function": count,
                     }
         return
 
@@ -803,7 +835,7 @@ def process_method_folder(
         return
 
     for cluster_id, gene_ids in clusters.items():
-        for cat, count, pct, desc in summarise_cluster(
+        for cat, count, pct, desc, cat_genes in summarise_cluster(
             gene_ids, gene_to_categories, multi_category, gene_to_product_desc
         ):
             yield {
@@ -814,6 +846,8 @@ def process_method_folder(
                 "COG_function": cat,
                 "percentage": pct,
                 "original_COG_description": desc,
+                "function_gene_ids": cat_genes,
+                "number_of_genes_with_function": count,
             }
 
 
