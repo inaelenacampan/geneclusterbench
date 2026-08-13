@@ -2095,6 +2095,81 @@ def get_truth_matrix_path(datapath, assembly, seed):
     return matches[0]
 
 
+def get_simulation_ground_truth_cluster_stats(datapath, assembly):
+    print(f"[TRACE] >>> Entering get_simulation_ground_truth_cluster_stats()")
+    """Ground-truth number-of-clusters summary (n_seeds/mean/min/max) for
+    one simulated assembly, computed the same way as
+    fast_count_groundtruth_clusters.sh: for every seed directory under
+    datapath/simulations/<assembly>/, locate that seed's single
+    *truth_matrix* file and count the number of DISTINCT values in its
+    "original_gene" column (the number of true simulated gene families),
+    then take the mean/min/max of that per-seed count across all seeds
+    found.
+
+    This reuses get_truth_matrix_path() -- the exact same lookup used by
+    get_info_from_folder() to load the ground truth for the metrics
+    themselves -- so the set of files considered here is identical to
+    the one used everywhere else in the pipeline; only the aggregation
+    (mean/min/max across seeds) is new, and it mirrors the bash script's
+    awk-based distinct-value count 1:1 (nunique() on "original_gene" is
+    the same quantity as the bash script's `length(seen)` over that
+    column).
+
+    Input:
+        datapath -- root path to the simulation data (same as
+            args.datapath / get_truth_matrix_path's datapath argument).
+        assembly -- assembly identifier (subdirectory name).
+    Output: dict with keys "n_seeds", "mean", "min", "max", or None if
+        no seed under this assembly has a locatable truth_matrix file
+        (e.g. assembly not present under datapath, mirroring the bash
+        script's "no truth_matrix files found" case for that assembly).
+    """
+    assembly_dir = os.path.join(datapath, "simulations", str(assembly))
+    if not os.path.isdir(assembly_dir):
+        warnings.warn(
+            f"Cannot compute ground-truth cluster-count stats for assembly "
+            f"{assembly!r}: {assembly_dir} does not exist",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return None
+
+    n_clusters_per_seed = []
+    for seed in sorted(os.listdir(assembly_dir)):
+        seed_dir = os.path.join(assembly_dir, seed)
+        if not os.path.isdir(seed_dir):
+            continue
+        try:
+            truth_path = get_truth_matrix_path(datapath, assembly, seed)
+        except RuntimeError as exc:
+            warnings.warn(
+                f"Skipping ground-truth cluster-count stats for "
+                f"{assembly}/{seed}: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
+        truthmatrix = pd.read_csv(truth_path, sep="\t")
+        n_clusters_per_seed.append(int(truthmatrix["original_gene"].nunique()))
+
+    if not n_clusters_per_seed:
+        warnings.warn(
+            f"No truth_matrix files found for assembly {assembly!r} under "
+            f"{assembly_dir}; skipping ground-truth cluster-count overlay",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return None
+
+    arr = np.array(n_clusters_per_seed, dtype=float)
+    return {
+        "n_seeds": len(n_clusters_per_seed),
+        "mean": float(arr.mean()),
+        "min": float(arr.min()),
+        "max": float(arr.max()),
+    }
+
+
 def get_info_from_folder(theargs):
     print(f"[TRACE] >>> Entering get_info_from_folder() - defined at line 1966 of {__file__}")
     """Top-level orchestration function for one (assembly, seed) unit of
@@ -3485,9 +3560,16 @@ def number_of_clusters_violin(theargs):
     reproducible; systematic over- or under-clustering shows up as the
     whole violin sitting well above or below the true value.
 
-    Input/Output: same shape/behaviour as plotter_pointplots.
+    Input/Output: same shape/behaviour as plotter_pointplots, except that
+        theargs carries one extra trailing element, gt_stats: for
+        simulation data's "n_clusters" plot this is the dict returned by
+        get_simulation_ground_truth_cluster_stats() (mean/min/max number
+        of true clusters across seeds, reusing the same
+        fast_count_groundtruth_clusters.sh logic); it is None for every
+        other case (real data, or gt_stats unavailable), in which case
+        no overlay is drawn and the plot is unchanged from before.
     """
-    name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
+    name, datadf, namedict, outfolder, assembly, datatype, font_props, gt_stats = theargs
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
 
     print(f"\t- Plotting violin {name} for simulations of {namedict[assembly]}")
@@ -3563,6 +3645,38 @@ def number_of_clusters_violin(theargs):
     for p, d, c, key in zip(positions, data, counts, x):
         if c < 2 and len(d):
             ax.plot(p, d[0], "o", c=CONFIGDICT_COLOURS[key])
+
+    # Ground-truth number-of-clusters overlay (simulation data only, and
+    # only on the "n_clusters" plot -- gt_stats is None otherwise, e.g.
+    # for real data, or if no truth_matrix files could be located). Kept
+    # deliberately subtle (thin lines, low alpha, drawn behind the
+    # violins) so it doesn't obscure the per-method distributions: a
+    # very thin shaded band spans min-to-max across the whole plot
+    # width, with a slightly bolder thin line marking the mean.
+    if datatype == "simulations" and name == "n_clusters" and gt_stats is not None:
+        gt_colour = "dimgray"
+        ax.axhspan(
+            gt_stats["min"], gt_stats["max"],
+            color=gt_colour, alpha=0.10, linewidth=0, zorder=0.5,
+        )
+        ax.axhline(
+            gt_stats["mean"], color=gt_colour, linestyle="-",
+            linewidth=0.8, alpha=0.75, zorder=0.5,
+        )
+        for bound in ("min", "max"):
+            ax.axhline(
+                gt_stats[bound], color=gt_colour, linestyle=":",
+                linewidth=0.6, alpha=0.6, zorder=0.5,
+            )
+        ax.text(
+            1.0, gt_stats["mean"],
+            f" true n_clusters: mean={gt_stats['mean']:.0f}, "
+            f"min={gt_stats['min']:.0f}, max={gt_stats['max']:.0f} "
+            f"(n={gt_stats['n_seeds']} seeds)",
+            transform=ax.get_yaxis_transform(),
+            fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 2,
+            color=gt_colour, va="center", ha="left",
+        )
 
     ax.set_xticks(positions)
     ax.set_xticklabels(x_fancy, rotation=35, ha="right", rotation_mode="anchor")
@@ -6237,8 +6351,22 @@ def main():
             for assembly in assemblies
         ]
 
+        # Ground-truth number-of-clusters stats (mean/min/max across seeds)
+        # per assembly, reusing get_truth_matrix_path/original_gene logic
+        # from fast_count_groundtruth_clusters.sh -- used only to draw the
+        # thin overlay on the simulation "n_clusters" violin plot below.
+        print("\n> Computing ground-truth cluster-count stats per assembly "
+              "(for the n_clusters violin-plot overlay)...")
+        ground_truth_stats_by_assembly = {
+            assembly: get_simulation_ground_truth_cluster_stats(args.datapath, assembly)
+            for assembly in assemblies
+        }
+
         plottingtasks_violin = [
-            ("n_clusters", outdf, namedict, args.outfolder, assembly, datatype, font_props)
+            (
+                "n_clusters", outdf, namedict, args.outfolder, assembly, datatype, font_props,
+                ground_truth_stats_by_assembly.get(assembly),
+            )
             for assembly in assemblies
         ]
 
@@ -6377,8 +6505,11 @@ def main():
             for assembly in assemblies
         ]
 
+        # Real data has no simulated ground truth, so the violin-plot
+        # overlay is always disabled here (gt_stats=None); the plot is
+        # rendered exactly as before.
         plottingtasks_violin = [
-            ("n_clusters", outdf, namedict, args.outfolder, assembly, datatype, font_props)
+            ("n_clusters", outdf, namedict, args.outfolder, assembly, datatype, font_props, None)
             for assembly in assemblies
         ]
 
