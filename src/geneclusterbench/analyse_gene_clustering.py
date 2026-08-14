@@ -18,9 +18,10 @@ from numpy.random import default_rng
 import re
 import subprocess
 import copy
+import zlib
 from io import StringIO
-from Bio import Phylo
-from Bio.Phylo.TreeConstruction import DistanceMatrix, DistanceTreeConstructor
+from scipy.cluster.hierarchy import dendrogram, linkage
+from scipy.spatial.distance import squareform
 
 # Figure formats written by save_figure for every plot in the pipeline,
 # and the per-format output subdirectories under each run's --out-folder
@@ -90,7 +91,20 @@ PARAMORDER = ["st", "c"]
 DEFAULT_PARAMS = {"st": "nt", "c": 0.9}
 AXIS_TITLE_FONT_SIZE = 10
 BASE_FONT_SIZE = 7
-NJ_TREE_TIP_FONT_SIZE = 9  # tip-label font size for NJ tree plots (slightly larger than BASE_FONT_SIZE)
+NJ_TREE_TIP_FONT_SIZE = 9  # tip-label font size for dendrogram plots (slightly larger than BASE_FONT_SIZE)
+DENDROGRAM_LINKAGE_METHOD = "average"  # UPGMA -- standard choice for clustering a precomputed distance matrix
+
+# Number of label-shuffles used by permutation_test_agreement when computing
+# the ARI/AMI-vs-ground-truth p-values reported in outdf (see
+# calculate_values_from_cluster_matrix). 1000 gives p-value resolution of
+# ~1e-3 (finest reportable value is 1/(nperm+1)) at a runtime cost of
+# ~1000 extra ARI/AMI evaluations per (assembly, seed, clusterer) row;
+# raise it (e.g. to 10000, permutation_test_agreement's own default) if
+# finer-grained p-values are needed and the extra runtime is acceptable.
+AGREEMENT_PVALUE_NPERM = 1000
+SIGNIFICANCE_ALPHA = 0.05  # threshold used to flag "significant" p-values in plots/tables
+ADJ_RAND_INDEX_PVALUE_COL = "adj_rand_index_pvalue"
+ADJ_MUTUAL_INFO_PVALUE_COL = "adj_mutual_info_pvalue"
 DOPREM = True
 
 SIM_ONLY_SKETCH_METHOD_NAMES = ["hdbscan_dist", "hdbscan_tsne"]
@@ -599,8 +613,17 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
         heatmaps for the simulation pipeline. All of these range roughly
         0 (no agreement, worse than random for AMI/ARI) to 1 (perfect
         agreement with the ground truth), so higher is always better.
-        (Permutation-test p-values for ARI/AMI/V-measure are not
-        computed or included any more.)
+
+        ARI and AMI are also each accompanied by an empirical permutation
+        p-value (adj_rand_index_pvalue, adj_mutual_info_pvalue -- see
+        permutation_test_agreement) testing whether that method's
+        agreement with the ground truth is stronger than chance label
+        assignment would produce. Purity/homogeneity/completeness/
+        V-measure are not accompanied by a p-value: unlike ARI (chance-
+        corrected pairwise agreement) and AMI (chance-corrected mutual
+        information), those metrics don't have the same "expected value
+        under random labelling" framing that a label-shuffling null
+        directly tests, so no p-value is computed for them here.
     """
     genes_present, probelab = get_labels_list_from_df(indf)
 
@@ -630,11 +653,25 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
         truthlab_matched = truthlab
         truthdf_matched = truthdf
 
-    # NOTE: permutation-test p-values for ARI/AMI/V-measure are no longer
-    # computed or reported. permutation_test_agreement (below) is kept
-    # in the module for reference/future re-enabling, but is not called
-    # here any more. The ARI/AMI/V-measure point estimates themselves are
-    # still calculated exactly as before.
+    # Empirical permutation-test p-values for ARI and AMI against the
+    # ground truth (see permutation_test_agreement's docstring for the
+    # method and its rationale). Each call reuses the already-matched
+    # label lists above, so it is testing exactly the same comparison as
+    # the point estimate computed just below it. Seeded deterministically
+    # from (assembly, seed, clusterer/method, metric) so re-running the
+    # pipeline on the same inputs reproduces the same p-values.
+    ari_seed = _stable_permutation_seed(infotuple, "ari")
+    ami_seed = _stable_permutation_seed(infotuple, "ami")
+    _, ari_pvalue = permutation_test_agreement(
+        truthlab_matched, probelab_matched,
+        metric_function=metrics.adjusted_rand_score,
+        nperm=AGREEMENT_PVALUE_NPERM, seed=ari_seed,
+    )
+    _, ami_pvalue = permutation_test_agreement(
+        truthlab_matched, probelab_matched,
+        metric_function=adjusted_mutual_info_score,
+        nperm=AGREEMENT_PVALUE_NPERM, seed=ami_seed,
+    )
 
     outlist = [
         True,
@@ -644,12 +681,20 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
         # Adjusted Rand index: pairwise agreement between the predicted and
         # true clusterings, corrected for chance grouping; 0 = random, 1 = perfect.
         float(metrics.adjusted_rand_score(truthlab_matched, probelab_matched)),
+        # Empirical permutation p-value for the ARI above (see
+        # permutation_test_agreement): fraction of label-shuffled ARI
+        # scores >= the observed ARI. Small p-value => this clusterer's
+        # agreement with the ground truth is unlikely to be chance.
+        ari_pvalue,
         # Purity: fraction of genes whose predicted cluster matches the
         # majority true class of that predicted cluster (see get_purity).
         get_purity(probelab_matched, truthdf_matched, matched_genes),
         # Adjusted mutual information: information-theoretic agreement
         # score, corrected for chance, between predicted and true labels.
         float(adjusted_mutual_info_score(truthlab_matched, probelab_matched)),
+        # Empirical permutation p-value for the AMI above, same method as
+        # ari_pvalue but using AMI as the test statistic.
+        ami_pvalue,
     ]
     # Homogeneity (each predicted cluster contains only members of a
     # single true class), completeness (all members of a true class are
@@ -657,6 +702,27 @@ def calculate_values_from_cluster_matrix(infotuple, indf, truthlab, truthdf):
     # harmonic mean) -- standard sklearn cluster-agreement metrics.
     outlist += [float(el) for el in metrics.homogeneity_completeness_v_measure(truthlab_matched, probelab_matched)]
     return outlist
+
+
+def _stable_permutation_seed(infotuple, suffix):
+    print(f"[TRACE] >>> Entering _stable_permutation_seed() - defined near line 660 of {__file__}")
+    """Deterministic RNG seed for permutation_test_agreement, derived from
+    the (assembly, seed, clusterer) row identity plus which metric it's
+    for (`suffix`, e.g. "ari"/"ami"). Using a fixed seed per row+metric
+    (instead of leaving `seed=None`, which would draw a fresh, unlogged
+    seed from OS entropy every run) means re-running the pipeline on
+    identical inputs reproduces identical p-values, while still using an
+    independent permutation stream per metric/row (so ARI and AMI don't
+    share a null distribution by accident).
+
+    Input:  infotuple -- the same (assembly, seed, clusterer) tuple passed
+                into calculate_values_from_cluster_matrix.
+            suffix     -- short string identifying which metric this seed
+                is for (e.g. "ari", "ami").
+    Output: a 32-bit unsigned int suitable for numpy.random.default_rng.
+    """
+    key = "_".join(str(el) for el in infotuple) + f"_{suffix}"
+    return zlib.crc32(key.encode("utf-8"))
 
 
 def permutation_test_agreement(labels1, labels2, metric_function=metrics.adjusted_rand_score, nperm=10000, seed=None):
@@ -2581,9 +2647,17 @@ def _process_one_realdata_folder(args):
                 f"runtime={method_runtime if not (isinstance(method_runtime, float) and np.isnan(method_runtime)) else 'n/a'}s"
             )
 
+            # 8 truth-dependent NaNs: adj_rand_index, adj_rand_index_pvalue,
+            # purity, adj_mutual_info, adj_mutual_info_pvalue, homogeneity,
+            # completeness, v_measure -- real data has no ground truth, so
+            # none of these (including the ARI/AMI p-values) are
+            # meaningful here; row shape must still match
+            # calculate_values_from_cluster_matrix's output (see
+            # build_results_dataframe) so no per-mode branching is needed
+            # downstream.
             row = (
                 [False, theass, theseed, method_name,
-                 np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+                 np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
                 + [n_clusters, n_singletons, n_pairs]
                 + paramlist
                 + [method_runtime]
@@ -2619,15 +2693,18 @@ def _process_one_realdata_folder(args):
         f"runtime={runtime if not np.isnan(runtime) else 'n/a'}s"
     )
 
-    # Truth-dependent columns (ARI, purity, AMI, homogeneity, completeness,
-    # v-measure, ...) do not exist for real data -> NaN, but the row shape
-    # is kept identical to calculate_values_from_cluster_matrix's output
-    # (6 truth-dependent columns: adj_rand_index, purity, adj_mutual_info,
-    # homogeneity, completeness, v_measure) so build_results_dataframe
-    # needs no per-mode branching.
+    # Truth-dependent columns (ARI, ARI p-value, purity, AMI, AMI p-value,
+    # homogeneity, completeness, v-measure) do not exist for real data ->
+    # NaN (including the ARI/AMI p-values, which are only meaningful when
+    # there's a ground truth to permutation-test against), but the row
+    # shape is kept identical to calculate_values_from_cluster_matrix's
+    # output (8 truth-dependent columns: adj_rand_index,
+    # adj_rand_index_pvalue, purity, adj_mutual_info,
+    # adj_mutual_info_pvalue, homogeneity, completeness, v_measure) so
+    # build_results_dataframe needs no per-mode branching.
     row = (
         [False, theass, theseed, tmpclusterer,
-         np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+         np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
         + [n_clusters, n_singletons, n_pairs]
         + paramlist
         + [runtime]
@@ -2870,20 +2947,29 @@ def plot_nj_tree_from_matrix(
     filename_prefix, title_suffix=None,
 ):
     print(f"[TRACE] >>> Entering plot_nj_tree_from_matrix() - defined at line 2653 of {__file__}")
-    """Neighbour-joining tree companion for a symmetric method-vs-method
-    similarity matrix (requirement 3): every symmetric heatmap this
-    pipeline draws (pairwise ARI/AMI/purity/V-measure/F1) gets a matching
-    tree, so relationships between methods can be read off as a
-    dendrogram in addition to the heatmap's raw numbers.
+    """Dendrogram companion for a symmetric method-vs-method similarity
+    matrix (requirement 3): every symmetric heatmap this pipeline draws
+    (pairwise ARI/AMI/purity/V-measure/F1) gets a matching dendrogram, so
+    relationships between methods can be read off as a clustering
+    hierarchy in addition to the heatmap's raw numbers.
 
     Method: `mat` holds a similarity score in ~[0, 1] (1 = identical
     clusterings) for every method pair, with only the lower triangle
     filled and the diagonal at 1.0 (see _plot_triangular_pairwise_heatmap).
     This is converted to a distance matrix via distance = 1 - similarity
     (clipped to >= 0 to absorb floating-point noise), mirrored into a
-    full symmetric matrix, and then neighbour-joining (Bio.Phylo's
-    DistanceTreeConstructor.nj) is run on it to build an unrooted tree,
-    which is drawn with Bio.Phylo's own plotting onto a matplotlib axis.
+    full symmetric matrix, and then agglomerative hierarchical clustering
+    (scipy's average-linkage/UPGMA `linkage`) is run on it to build a
+    dendrogram, which is drawn with scipy's own plotting onto a
+    matplotlib axis.
+
+    Note: unlike the neighbour-joining tree this function used to
+    produce, a dendrogram is a *rooted, ultrametric* hierarchy -- every
+    tip ends at the same total height, and branch lengths reflect linkage
+    (merge) distance rather than an estimate of independent evolutionary
+    change along each branch. That's the correct/expected output for
+    clustering method-similarity data (there's no meaningful "unrooted
+    tree" interpretation for it), which is why NJ was swapped out here.
 
     Input:
         mat            -- same (n x n) matrix passed to
@@ -2892,18 +2978,19 @@ def plot_nj_tree_from_matrix(
                            triangle NaN, diagonal 1.0).
         x              -- ordered list of combo keys (rows/columns of mat).
         labels         -- display labels for each row/column (same order
-                           as x; used as the tree's tip labels).
+                           as x; used as the dendrogram's leaf labels).
         namedict, outfolder, assembly, datatype, font_props -- standard
                            plotting bookkeeping (see other plot functions).
         filename_prefix -- prefix used to build the output file name
                            (by convention, the heatmap's own
-                           filename_prefix + "_njtree").
+                           filename_prefix + "_dendrogram").
         title_suffix   -- optional short description of the metric shown
                            (e.g. the heatmap's cbar_label), used in the
                            figure title.
     Output: none (saves PNG/PDF/SVG figures to `outfolder` via
         save_figure). Silently skipped (with a warning) if fewer than 3
-        methods are present, since a tree isn't meaningful below that.
+        methods are present, since a dendrogram isn't meaningful below
+        that.
     """
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
 
@@ -2911,7 +2998,7 @@ def plot_nj_tree_from_matrix(
     if n < 3:
         warnings.warn(
             f"Fewer than 3 methods available for {assembly}/{datatype} "
-            f"({filename_prefix}); skipping NJ tree",
+            f"({filename_prefix}); skipping dendrogram",
             RuntimeWarning, stacklevel=2,
         )
         return
@@ -2924,94 +3011,95 @@ def plot_nj_tree_from_matrix(
     if np.isnan(full_sim).any():
         warnings.warn(
             f"Incomplete pairwise data for {assembly}/{datatype} "
-            f"({filename_prefix}); skipping NJ tree",
+            f"({filename_prefix}); skipping dendrogram",
             RuntimeWarning, stacklevel=2,
         )
         return
     dist = np.clip(1.0 - full_sim, 0.0, None)
+    # A valid distance matrix needs an exactly-zero diagonal (it's
+    # currently ~0 up to floating-point noise from the 1 - similarity
+    # step above); squareform() requires this to be exact.
+    np.fill_diagonal(dist, 0.0)
 
-    # Bio.Phylo's DistanceMatrix wants the lower triangle as a list of
-    # lists, row i holding i+1 entries (through the diagonal).
-    lower_triangle = [list(dist[i, : i + 1]) for i in range(n)]
-    dm = DistanceMatrix(names=list(labels), matrix=lower_triangle)
-
-    constructor = DistanceTreeConstructor()
-    tree = constructor.nj(dm)
-    tree.root_at_midpoint()
-    # Bio.Phylo auto-names internal nodes ("Inner1", "Inner2", ...) which
-    # Phylo.draw would otherwise print at every internal node, cluttering
-    # the figure -- blank them out so only the method tip labels show.
-    for clade in tree.get_nonterminals():
-        clade.name = None
+    # scipy's `linkage` wants a condensed distance matrix (the upper
+    # triangle only, as a 1-D array) -- squareform() converts our square
+    # symmetric matrix into that form.
+    condensed_dist = squareform(dist, checks=False)
+    Z = linkage(condensed_dist, method=DENDROGRAM_LINKAGE_METHOD)
 
     # --- readability tuning (requirement 3) -----------------------------
-    # The default Phylo.draw layout packs tips at a fixed ~1-unit vertical
-    # spacing regardless of figure size, and labels sit flush against the
-    # tips, so with many/long method names (e.g. "Connected components
-    # t=0.7* (NT) *") the tip labels visually collide with each other and
-    # with neighbouring branch lines (the "strikethrough" look). We fix
-    # this by: (1) giving each tip much more vertical room by scaling
-    # figure height more aggressively with n, (2) reserving extra
-    # horizontal room to the right for the (possibly long) tip labels
-    # instead of letting them run past the axes, (3) nudging labels away
-    # from their tip with a small leading space, and (4) dropping the
-    # meaningless numeric "taxa" y-axis that Phylo.draw adds by default.
-    # None of this touches the underlying tree topology/branch lengths.
+    # The default dendrogram layout packs leaves at a fixed ~1-unit
+    # vertical spacing regardless of figure size, and labels sit flush
+    # against the leaves, so with many/long method names (e.g.
+    # "Connected components t=0.7* (NT) *") the leaf labels visually
+    # collide with each other and with neighbouring branch lines. We fix
+    # this by: (1) giving each leaf much more vertical room by scaling
+    # figure height more aggressively with n, and (2) reserving extra
+    # horizontal room for the (possibly long) leaf labels instead of
+    # letting them run past the axes. None of this touches the
+    # underlying clustering topology/merge distances.
     fig_h = max(5.0, n * 0.55 + 2.0)
     fig_w = max(9.0, n * 0.22 + 6.0)
     fig = plt.figure(1, dpi=150, figsize=(fig_w, fig_h))
     ax = fig.subplots()
 
-    label_func = lambda clade: f" {clade.name}" if clade.name else ""
-    Phylo.draw(
-        tree, axes=ax, do_show=False, branch_labels=None,
-        label_func=label_func,
+    # orientation="left" puts the root at the left and leaves at the
+    # right with the merge-distance axis running left-to-right, matching
+    # the previous tree layout (branch length on the x-axis, tip labels
+    # reading left-to-right on the right-hand side).
+    dendrogram(
+        Z, ax=ax, orientation="left", labels=list(labels),
+        color_threshold=0, above_threshold_color="#4A4A4A",
     )
 
-    # requirement 1: colour-code each tip label by its method group
+    # requirement 1: colour-code each leaf label by its method group
     # (sequence clustering/similarity, pangenome, sketching/embedding --
     # see METHOD_GROUP_NAMES/METHOD_GROUP_COLOURS) for consistent,
-    # readable grouping across every NJ tree plot. `labels` is in the
-    # same order as `x`, and Bio.Phylo's tip labels are plain text
-    # objects whose text is " {label}" (see label_func above), so match
-    # each axis text back to its combo key by stripping the leading
-    # space label_func adds.
-    label_to_combo = {lbl.strip(): combo for lbl, combo in zip(labels, x)}
-    for text_obj in ax.texts:
+    # readable grouping across every dendrogram plot. `labels` is in the
+    # same order as `x`; scipy's dendrogram() reorders the leaf tick
+    # labels to match the clustering's leaf order, so match each tick
+    # label back to its combo key by text rather than by position.
+    label_to_combo = {lbl: combo for lbl, combo in zip(labels, x)}
+    for text_obj in ax.get_yticklabels():
         text_obj.set_fontproperties(ibmplexsans)
         text_obj.set_fontsize(NJ_TREE_TIP_FONT_SIZE)
-        combo = label_to_combo.get(text_obj.get_text().strip())
+        combo = label_to_combo.get(text_obj.get_text())
         if combo is not None:
             group = get_method_group(combo)
             if group is not None:
                 text_obj.set_color(METHOD_GROUP_COLOURS[group])
                 text_obj.set_fontweight("bold")
 
-    # Leave headroom to the right of the deepest branch tip so long tip
+    # Leave headroom to the right of the deepest merge so long leaf
     # labels have somewhere to sit instead of overlapping other branches.
+    # Grab the ticks scipy chose (sensible distance values) before
+    # extending the range, so the extra headroom doesn't grow spurious
+    # ticks (e.g. negative "distance" values) of its own.
+    # Note: with orientation="left" matplotlib's xlim is reversed (xmin is
+    # the numerically larger, root-side value; xmax is 0, the leaf side),
+    # so bound the kept ticks with min()/max() rather than assuming order.
     xmin, xmax = ax.get_xlim()
+    xticks = ax.get_xticks()
+    lo, hi = sorted((xmin, xmax))
     ax.set_xlim(xmin, xmin + (xmax - xmin) * 1.55)
+    ax.set_xticks([t for t in xticks if lo <= t <= hi])
 
-    # The y-axis ("taxa", with numeric ticks) carries no information for a
-    # tree -- tip identity is already given by the text labels -- so hide
-    # it entirely and give that space back to the plot.
     ax.set_ylabel("")
-    ax.yaxis.set_visible(False)
     for spine in ("left", "right", "top"):
         ax.spines[spine].set_visible(False)
 
-    ax.set_xlabel("Branch length", fontproperties=ibmplexsans, fontsize=AXIS_TITLE_FONT_SIZE)
+    ax.set_xlabel("Distance (1 − similarity)", fontproperties=ibmplexsans, fontsize=AXIS_TITLE_FONT_SIZE)
     for label in ax.get_xticklabels():
         label.set_fontproperties(ibmplexsans)
 
     datatype_suffix = get_datatype_title_suffix(datatype)
-    title = f"NJ tree — {namedict[assembly]}{datatype_suffix}"
+    title = f"Dendrogram — {namedict[assembly]}{datatype_suffix}"
     if title_suffix:
-        title = f"NJ tree, {title_suffix} — {namedict[assembly]}{datatype_suffix}"
+        title = f"Dendrogram, {title_suffix} — {namedict[assembly]}{datatype_suffix}"
     ax.set_title(title, fontproperties=ibmplexsansbold, fontsize=AXIS_TITLE_FONT_SIZE)
 
     # legend for the method-group colour coding, restricted to whichever
-    # groups are actually present among this tree's tips
+    # groups are actually present among this dendrogram's leaves
     groups_present = [g for g in METHOD_GROUP_COLOURS if any(get_method_group(c) == g for c in x)]
     if groups_present:
         from matplotlib.lines import Line2D
@@ -3065,7 +3153,13 @@ def plotter(theargs):
         datatype, font_props) tuple; `name` selects which metric column
         of `datadf` to plot, `datadf` is the full simulation results
         table (outdf), and the rest control labelling/output location.
-    Output: none (saves a PNG/PDF/SVG figure to `outfolder`).
+    Output: none (saves a PNG/PDF/SVG figure to `outfolder`). When `name`
+        is "adj_rand_index" or "adj_mutual_info", the companion CSV
+        (written via write_metric_csv) also includes a "mean_pvalue"
+        column -- the mean empirical permutation p-value (see
+        permutation_test_agreement) across seed replicates at that
+        (method, c) point -- alongside the plotted mean/std/n; for every
+        other metric that column is NaN (no p-value is computed).
     """
     name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
@@ -3088,6 +3182,13 @@ def plotter(theargs):
     xs = list(set(list(subdf["c"].astype(float))))
     xs.sort()
     clusterers = list(set(list(subdf.index.get_level_values("clusterer"))))
+
+    # p-value column to accompany `name`, when one exists (ARI/AMI only --
+    # see calculate_values_from_cluster_matrix). None for every other metric.
+    pvalue_col = {
+        "adj_rand_index": ADJ_RAND_INDEX_PVALUE_COL,
+        "adj_mutual_info": ADJ_MUTUAL_INFO_PVALUE_COL,
+    }.get(name)
 
     csv_rows = []  # requirement 6: exact mean/std/n behind every point on this c-sweep plot
 
@@ -3119,6 +3220,18 @@ def plotter(theargs):
                 ymean[cluster_index, x_index] = tmpdf.mean()
                 ycount[cluster_index, x_index] = tmpdf.count()
                 ystd[cluster_index, x_index] = tmpdf.std() if tmpdf.count() >= 2 else 0.0
+                # mean permutation p-value at this (method, c) point, when
+                # `name` is ARI or AMI; NaN (no p-value) for every other metric.
+                mean_pvalue = np.nan
+                if pvalue_col is not None:
+                    pdf = subdf[
+                        (subdf["st"] == seqtype)
+                        & (subdf.index.get_level_values("simulations") == (datatype == "simulations"))
+                        & (subdf.index.get_level_values("assembly") == assembly)
+                        & (subdf.index.get_level_values("clusterer") == ynam.split("/")[0])
+                        & (subdf["c"] == x_value)
+                    ][pvalue_col].astype(float)
+                    mean_pvalue = pdf.mean()
                 csv_rows.append({
                     "method": FANCYDICT[ynam],
                     "combo": ynam,
@@ -3127,6 +3240,7 @@ def plotter(theargs):
                     "mean": ymean[cluster_index, x_index],
                     "std": ystd[cluster_index, x_index],
                     "n": ycount[cluster_index, x_index],
+                    "mean_pvalue": mean_pvalue,
                 })
 
         for y_index, ynam in enumerate(ynams):
@@ -3387,6 +3501,11 @@ def plotter_pointplots(theargs):
     Input/Output: same shape as plotter (see its docstring); this
         function additionally filters out DIAMOND/panx-runtime outliers
         from the runtime plot and orders methods via build_ordered_combo_list.
+        For "adj_rand_index"/"adj_mutual_info", bars are additionally
+        marked with "†" above the error bar when that method's mean
+        permutation p-value (see permutation_test_agreement) is below
+        SIGNIFICANCE_ALPHA, and the companion CSV gets a "mean_pvalue"
+        column (NaN for every other metric).
     """
     name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
@@ -3417,26 +3536,41 @@ def plotter_pointplots(theargs):
         )
         return
 
+    # p-value column to accompany `name`, when one exists (ARI/AMI only --
+    # see calculate_values_from_cluster_matrix). None for every other metric.
+    pvalue_col = {
+        "adj_rand_index": ADJ_RAND_INDEX_PVALUE_COL,
+        "adj_mutual_info": ADJ_MUTUAL_INFO_PVALUE_COL,
+    }.get(name)
+
     x_fancy = [FANCYDICT[value] for value in x]
     ymean = []
     ystd = []
     ycount = []
+    ypvalue = []  # mean permutation p-value per method, only populated when pvalue_col is set
     for x_value in x:
         tmpdf = subdf[
             (subdf.index.get_level_values("simulations") == (datatype == "simulations"))
             & (subdf.index.get_level_values("assembly") == assembly)
             & (subdf.index.get_level_values("clusterer") == x_value.split("/")[0])
             & (subdf["st"] == x_value.split("/")[1])
-        ][name].astype(float)
-        ymean.append(tmpdf.mean())
-        ycount.append(tmpdf.count())
-        ystd.append(tmpdf.std() if tmpdf.count() >= 2 else 0.0)
+        ]
+        vals = tmpdf[name].astype(float)
+        ymean.append(vals.mean())
+        ycount.append(vals.count())
+        ystd.append(vals.std() if vals.count() >= 2 else 0.0)
+        if pvalue_col is not None:
+            ypvalue.append(tmpdf[pvalue_col].astype(float).mean())
+        else:
+            ypvalue.append(np.nan)
 
     outnamescaff = name.replace(" ", "").replace("#", "NumberOf")
 
     # requirement 6: export the exact (unrounded) mean/std/n values behind
     # this bar plot to CSV -- same x/ymean/ystd/ycount arrays used to draw
     # the figure below, so there's no risk of the CSV and plot disagreeing.
+    # For ARI/AMI, also export the mean permutation-test p-value per method
+    # (mean_pvalue is NaN for every other metric, since no p-value exists).
     write_metric_csv(
         pd.DataFrame({
             "method": x_fancy,
@@ -3445,6 +3579,7 @@ def plotter_pointplots(theargs):
             "mean": ymean,
             "std": ystd,
             "n": ycount,
+            "mean_pvalue": ypvalue,
         }),
         outfolder, "_".join(["plot_point", datatype, assembly, outnamescaff]),
     )
@@ -3492,6 +3627,17 @@ def plotter_pointplots(theargs):
                     capsize=4.0,
                     linewidth=1.0,
                 )
+        # significance marker for ARI/AMI (see pvalue_col above): "†" above
+        # the bar/error-bar when the mean permutation p-value is below
+        # SIGNIFICANCE_ALPHA, i.e. this method's agreement with the ground
+        # truth is unlikely to be chance.
+        if pvalue_col is not None and not np.isnan(ypvalue[index]) and ypvalue[index] < SIGNIFICANCE_ALPHA:
+            marker_y = ymean[index] + (ystd[index] if ycount[index] >= 2 else 0.0)
+            ax.text(
+                index, marker_y, "†",
+                ha="center", va="bottom", fontsize=BASE_FONT_SIZE + 1,
+                fontproperties=ibmplexsans,
+            )
 
     ax.set_xticks(positions)
     ax.set_xticklabels(x_fancy, rotation=35, ha="right", rotation_mode="anchor")
@@ -3525,10 +3671,18 @@ def plotter_pointplots(theargs):
     # bracket under the sketching methods, so readers see they're one family
     add_sketch_bracket(ax, x, positions, bar_width=bar_width, fontprops=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1)
 
+    footnote_lines = []
     family_footnote = get_family_footnote(x)
     if family_footnote is not None:
+        footnote_lines.append(family_footnote)
+    if pvalue_col is not None and any(not np.isnan(p) and p < SIGNIFICANCE_ALPHA for p in ypvalue):
+        footnote_lines.append(
+            f"† mean permutation-test p < {SIGNIFICANCE_ALPHA:g} vs ground truth "
+            "(see permutation_test_agreement)"
+        )
+    if footnote_lines:
         plt.text(
-            0.5, -0.44, family_footnote,
+            0.5, -0.44, "\n".join(footnote_lines),
             fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
             horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
@@ -4112,6 +4266,16 @@ def methods_comparison_heatmap(theargs):
     specific failure mode (e.g. good purity but poor completeness would
     mean it is over-splitting true families into many small, "pure"
     fragments rather than correctly merging them).
+
+    Statistical significance: the Adjusted Rand index and Adjusted mutual
+    information cells are annotated with "†" when that method's mean
+    permutation-test p-value (see permutation_test_agreement, computed
+    per-seed in calculate_values_from_cluster_matrix and averaged here
+    across the same seed replicates as the cell's own mean score) is
+    below SIGNIFICANCE_ALPHA -- i.e. that method's agreement with the
+    simulated ground truth is unlikely to have arisen from chance label
+    assignment. Purity and V-measure are never annotated (no p-value is
+    computed for them; see calculate_values_from_cluster_matrix).
     """
     name, datadf, namedict, outfolder, assembly, datatype, font_props = theargs
     ibmplexsans, ibmplexsansitalics, ibmplexsansbold = font_props
@@ -4154,7 +4318,16 @@ def methods_comparison_heatmap(theargs):
         )
         return
 
+    # p-value column paired with each metric_col that has one (ARI, AMI);
+    # metric_cols without an entry here (purity, v_measure) are never
+    # significance-annotated below.
+    metric_pvalue_cols = {
+        "adj_rand_index": ADJ_RAND_INDEX_PVALUE_COL,
+        "adj_mutual_info": ADJ_MUTUAL_INFO_PVALUE_COL,
+    }
+
     mat = np.full((len(x), len(metric_cols)), np.nan)
+    pmat = np.full((len(x), len(metric_cols)), np.nan)  # mean p-value, where applicable
     for i, combo in enumerate(x):
         clusterer, seqtype = combo.split("/")
         tmpdf = subdf[
@@ -4163,10 +4336,26 @@ def methods_comparison_heatmap(theargs):
         ]
         for j, metric_col in enumerate(metric_cols):
             mat[i, j] = tmpdf[metric_col].astype(float).mean()
+            pvalue_col = metric_pvalue_cols.get(metric_col)
+            if pvalue_col is not None:
+                pmat[i, j] = tmpdf[pvalue_col].astype(float).mean()
 
     row_labels = [
         FANCYDICT[c] + (" *" if c.split("/")[0] in SKETCH_METHOD_NAMES or c.split("/")[0] in EMBED_METHOD_NAMES else "") for c in x
     ]
+
+    # export the exact mean values (and, for ARI/AMI, mean p-values) behind
+    # every cell of this heatmap
+    write_metric_csv(
+        pd.DataFrame({
+            "method": [FANCYDICT[c] for c in x for _ in metric_cols],
+            "combo": [c for c in x for _ in metric_cols],
+            "metric": [metric_col for _ in x for metric_col in metric_cols],
+            "mean": mat.flatten(),
+            "mean_pvalue": pmat.flatten(),
+        }),
+        outfolder, "_".join(["plot_heatmap_methodcomparison", datatype, assembly]),
+    )
 
     fig = plt.figure(
         1, dpi=150,
@@ -4189,14 +4378,20 @@ def methods_comparison_heatmap(theargs):
     ax.set_yticks(range(len(x)))
     ax.set_yticklabels(row_labels)
 
+    any_pvalue_annotated = False
     for i in range(len(x)):
         for j in range(len(metric_cols)):
             val = mat[i, j]
             if np.isnan(val):
                 continue
             txt_color = "white" if val < 0.5 else "black"
+            cell_text = f"{val:.2f}"
+            pval = pmat[i, j]
+            if not np.isnan(pval) and pval < SIGNIFICANCE_ALPHA:
+                cell_text += "†"
+                any_pvalue_annotated = True
             ax.text(
-                j, i, f"{val:.2f}",
+                j, i, cell_text,
                 ha="center", va="center",
                 fontsize=BASE_FONT_SIZE, color=txt_color,
                 fontproperties=ibmplexsans,
@@ -4219,10 +4414,18 @@ def methods_comparison_heatmap(theargs):
     plt.text(0, 1.03, namedict[assembly], fontproperties=ibmplexsansitalics,
              horizontalalignment="left", verticalalignment="bottom", transform=ax.transAxes)
 
+    footnote_lines = []
     family_footnote = get_family_footnote(x)
     if family_footnote is not None:
+        footnote_lines.append(family_footnote)
+    if any_pvalue_annotated:
+        footnote_lines.append(
+            f"† mean permutation-test p < {SIGNIFICANCE_ALPHA:g} vs ground truth "
+            "(ARI/AMI only; see permutation_test_agreement)"
+        )
+    if footnote_lines:
         plt.text(
-            0.5, -0.14, family_footnote,
+            0.5, -0.14, "\n".join(footnote_lines),
             fontproperties=ibmplexsansitalics, fontsize=BASE_FONT_SIZE - 1,
             horizontalalignment="center", verticalalignment="top", transform=ax.transAxes,
         )
@@ -5661,12 +5864,13 @@ def _plot_triangular_pairwise_heatmap(
 
     # Every caller of this shared function passes a matrix that is
     # symmetric between methods i and j (upper triangle NaN'd out by the
-    # caller purely for display; see docstring), so an NJ tree is always
-    # meaningful here. The heatmap figure above must be closed first,
-    # since both this and plot_nj_tree_from_matrix reuse figure number 1.
+    # caller purely for display; see docstring), so a dendrogram is
+    # always meaningful here. The heatmap figure above must be closed
+    # first, since both this and plot_nj_tree_from_matrix reuse figure
+    # number 1.
     plot_nj_tree_from_matrix(
         mat, x, labels, namedict, outfolder, assembly, datatype, font_props,
-        filename_prefix=filename_prefix + "_njtree",
+        filename_prefix=filename_prefix + "_dendrogram",
         title_suffix=cbar_label,
     )
 
@@ -6010,13 +6214,20 @@ def build_results_dataframe(listoflists):
             truth-agreement metrics [NaN for real data], cluster counts,
             clustering parameters in PARAMORDER, and runtime).
     Output: a DataFrame with columns
-        [adj_rand_index, purity, adj_mutual_info, homogeneity,
-         completeness, v_measure, n_clusters, n_singletons, n_pairs]
+        [adj_rand_index, adj_rand_index_pvalue, purity, adj_mutual_info,
+         adj_mutual_info_pvalue, homogeneity, completeness, v_measure,
+         n_clusters, n_singletons, n_pairs]
         + PARAMORDER + [runtime], indexed by a MultiIndex of
         (simulations, assembly, seed, clusterer) so rows can be sliced by
         any combination of those four keys elsewhere in the script.
-        (ARI/AMI/V-measure permutation-test p-values are no longer
-        computed or included as columns here.)
+
+        adj_rand_index_pvalue and adj_mutual_info_pvalue are empirical
+        permutation-test p-values (see permutation_test_agreement) for
+        the ARI/AMI columns immediately preceding them -- NaN for real
+        data (no ground truth to test against), same as the other
+        truth-agreement columns. No p-value column is included for
+        purity/homogeneity/completeness/v_measure (see
+        calculate_values_from_cluster_matrix's docstring for why).
     """
     outdf = pd.DataFrame(
         listoflists,
@@ -6026,8 +6237,10 @@ def build_results_dataframe(listoflists):
             "seed",
             "clusterer",
             "adj_rand_index",
+            ADJ_RAND_INDEX_PVALUE_COL,
             "purity",
             "adj_mutual_info",
+            ADJ_MUTUAL_INFO_PVALUE_COL,
             "homogeneity",
             "completeness",
             "v_measure",
